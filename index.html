@@ -15,6 +15,8 @@
       <span id="year-label">Año 1</span>
       <span id="era-label">Era Primitiva</span>
       <span id="pop-label">👥 2</span>
+      <span id="civ-label">🏛 0</span>
+      <span id="phase-label" style="color:#8f8">🤝 Unidad</span>
     </div>
     <div id="speed-controls">
       <button id="btn-pause">⏸</button>
@@ -22,6 +24,7 @@
       <button id="btn-5x">5x</button>
       <button id="btn-20x">20x</button>
       <button id="btn-100x">100x</button>
+      <button id="btn-history" title="Crónica del mundo">📜</button>
     </div>
   </div>
 
@@ -31,7 +34,14 @@
     <div id="human-list"></div>
   </div>
 
-  <!-- Intro tooltip -->
+  <!-- History / Chronicle panel -->
+  <div id="history-panel" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:420px;max-height:70vh;background:rgba(6,12,28,0.97);color:#dde;border-radius:12px;padding:18px 20px;font-size:12px;font-family:monospace;border:1px solid rgba(100,160,255,0.3);z-index:200;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <span style="color:#adf;font-size:15px;font-weight:bold">📜 Crónica del Mundo</span>
+      <button onclick="document.getElementById('history-panel').style.display='none'" style="background:rgba(255,80,80,0.2);border:1px solid rgba(255,80,80,0.4);color:#faa;border-radius:5px;padding:3px 10px;cursor:pointer">✕</button>
+    </div>
+    <div id="history-content" style="line-height:1.7"></div>
+  </div>
   <div id="intro-tip">
     <h2>🌍 Simulación de Civilización</h2>
     <div>Dos humanos aparecen en el mundo.<br>

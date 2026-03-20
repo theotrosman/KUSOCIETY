@@ -1,542 +1,1211 @@
-// ── Human names ───────────────────────────────────────────────────────────────
-const FIRST_NAMES_M = ['Arek','Bren','Cael','Dorn','Eron','Fael','Gorn','Hael',
-  'Ivar','Jorn','Kael','Lorn','Morn','Nael','Orin','Pael','Rael','Sorn',
-  'Tael','Uran','Vorn','Wren','Xael','Yorn','Zael','Bael','Cren','Dael'];
-const FIRST_NAMES_F = ['Aira','Bora','Cira','Duna','Elra','Fira','Gira','Hira',
-  'Iren','Jora','Kira','Lira','Mira','Nara','Oira','Pira','Rira','Sora',
-  'Tira','Ura','Vira','Wira','Xira','Yora','Zira','Asha','Bira','Cora'];
-const LAST_NAMES = ['del Bosque','de Piedra','del Río','de la Montaña','del Valle',
-  'de la Costa','del Norte','del Sur','del Este','del Oeste','de la Llanura',
-  'del Fuego','del Hielo','de la Selva','del Desierto'];
+// ═══════════════════════════════════════════════════════════════════════════════
+// HUMANS.JS — Civilización, supervivencia, ciudades, exploración
+// ═══════════════════════════════════════════════════════════════════════════════
 
-function randomName(rng, gender) {
-  const pool = gender === 'F' ? FIRST_NAMES_F : FIRST_NAMES_M;
-  return pool[Math.floor(rng()*pool.length)] + ' ' + LAST_NAMES[Math.floor(rng()*LAST_NAMES.length)];
-}
+const FIRST_NAMES_M=['Arek','Bren','Cael','Dorn','Eron','Fael','Gorn','Hael','Ivar','Jorn','Kael','Lorn','Morn','Nael','Orin','Rael','Sorn','Tael','Uran','Vorn','Wren','Zael','Aldor','Bram','Crix','Davan','Edric','Feron'];
+const FIRST_NAMES_F=['Aira','Bora','Cira','Duna','Elra','Fira','Gira','Hira','Iren','Jora','Kira','Lira','Mira','Nara','Oira','Rira','Sora','Tira','Vira','Xira','Yora','Zira','Alva','Bryn','Cela','Deva','Elia','Fawn'];
+const LAST_NAMES=['del Bosque','de Piedra','del Río','de la Montaña','del Valle','de la Costa','del Norte','del Sur','del Fuego','del Hielo','de la Selva','del Desierto','de la Llanura','del Mar'];
+function randomName(rng,g){const p=g==='F'?FIRST_NAMES_F:FIRST_NAMES_M;return p[Math.floor(rng()*p.length)]+' '+LAST_NAMES[Math.floor(rng()*LAST_NAMES.length)];}
 
-// ── Actions ───────────────────────────────────────────────────────────────────
-const ACTIONS = {
-  IDLE:'Descansando', WANDER:'Explorando', GATHER:'Recolectando',
-  HUNT:'Cazando', SLEEP:'Durmiendo', BUILD:'Construyendo',
-  SOCIALIZE:'Socializando', FISH:'Pescando', MINE:'Minando',
-  REPRODUCE:'Reproduciéndose', FARM:'Cultivando', CRAFT:'Fabricando',
+const ACTIONS={
+  IDLE:'Descansando',WANDER:'Explorando',GATHER:'Recolectando',
+  HUNT:'Cazando',SLEEP:'Durmiendo',BUILD:'Construyendo',
+  SOCIALIZE:'Socializando',FISH:'Pescando',MINE:'Minando',
+  REPRODUCE:'Reproduciéndose',FARM:'Cultivando',CRAFT:'Fabricando',
+  HEAL:'Curando',LEAD:'Liderando',MIGRATE:'Migrando',SICK:'Enfermo',
 };
 
-// ── World structures (placed by humans) ──────────────────────────────────────
-// Each entry: { tx, ty, type, hp, builtBy }
-const STRUCTURE_TYPES = {
-  hut:    { icon:'🏠', color:'#c8a060', label:'Cabaña',   cost:{wood:4,stone:2}, hp:50 },
-  farm:   { icon:'🌾', color:'#90c040', label:'Cultivo',  cost:{wood:1,stone:0}, hp:30 },
-  camp:   { icon:'🔥', color:'#ff8030', label:'Campamento',cost:{wood:2,stone:0},hp:20 },
-  quarry: { icon:'⛏', color:'#a09080', label:'Cantera',  cost:{wood:2,stone:3}, hp:40 },
+// ── Structures ────────────────────────────────────────────────────────────────
+const STRUCTURE_TYPES={
+  camp:     {icon:'🔥',color:'#ff8030',label:'Campamento', cost:{wood:2,stone:0},  hp:25,  decay:true, decayRate:2},
+  hut:      {icon:'🏠',color:'#c8a060',label:'Cabaña',     cost:{wood:4,stone:2},  hp:100, decay:false,decayRate:0},
+  farm:     {icon:'🌾',color:'#90c040',label:'Cultivo',    cost:{wood:1,stone:0},  hp:80,  decay:false,decayRate:0},
+  mine:     {icon:'⛏', color:'#a09080',label:'Mina',       cost:{wood:2,stone:3},  hp:100, decay:false,decayRate:0},
+  market:   {icon:'🏪',color:'#f0c040',label:'Mercado',    cost:{wood:6,stone:4},  hp:120, decay:false,decayRate:0},
+  temple:   {icon:'🛕',color:'#d0a0ff',label:'Templo',     cost:{wood:8,stone:8},  hp:150, decay:false,decayRate:0},
+  granary:  {icon:'🌽',color:'#c8d040',label:'Granero',    cost:{wood:5,stone:3},  hp:120, decay:false,decayRate:0},
+  watchtower:{icon:'🗼',color:'#a0c0e0',label:'Torre Vigía',cost:{wood:4,stone:6}, hp:130, decay:false,decayRate:0},
+  barracks: {icon:'⚔️', color:'#c04040',label:'Cuartel',   cost:{wood:8,stone:6},  hp:160, decay:false,decayRate:0},
+  wall:     {icon:'🧱',color:'#808060',label:'Muralla',    cost:{wood:3,stone:8},  hp:200, decay:false,decayRate:0},
+  blacksmith:{icon:'🔩',color:'#806040',label:'Herrero',   cost:{wood:6,stone:5},  hp:130, decay:false,decayRate:0},
+  harbor:   {icon:'⚓',color:'#4080c0',label:'Puerto',     cost:{wood:10,stone:6}, hp:150, decay:false,decayRate:0},
+  castle:   {icon:'🏰',color:'#8090a0',label:'Castillo',   cost:{wood:12,stone:18},hp:300, decay:false,decayRate:0},
+  cathedral:{icon:'⛪',color:'#e0d0ff',label:'Catedral',   cost:{wood:15,stone:15},hp:250, decay:false,decayRate:0},
+  palace:   {icon:'🏯',color:'#ffd700',label:'Palacio',    cost:{wood:20,stone:20},hp:350, decay:false,decayRate:0},
 };
-let structures = [];
-let structureGrid = null; // [ty][tx] → structure or null
-
-function initStructureGrid() {
-  structureGrid = Array.from({length:WORLD_H}, () => new Array(WORLD_W).fill(null));
+let structures=[],structureGrid=null;
+function initStructureGrid(){structureGrid=Array.from({length:WORLD_H},()=>new Array(WORLD_W).fill(null));}
+function placeStructure(tx,ty,type,builder){
+  if(!structureGrid||structureGrid[ty]?.[tx])return false;
+  const def=STRUCTURE_TYPES[type];
+  const s={tx,ty,type,hp:def.hp,maxHp:def.hp,builtBy:builder.name,civId:builder.civId,
+           icon:def.icon,color:def.color,label:def.label,decay:def.decay,decayRate:def.decayRate};
+  structures.push(s);structureGrid[ty][tx]=s;return true;
+}
+function getStructureAt(tx,ty){
+  if(tx<0||ty<0||tx>=WORLD_W||ty>=WORLD_H)return null;
+  return structureGrid[ty][tx];
+}
+function tickStructures(yearsElapsed){
+  for(let i=structures.length-1;i>=0;i--){
+    const s=structures[i];
+    if(s.decay&&s.decayRate>0){
+      s.hp-=yearsElapsed*s.decayRate;
+      if(s.hp<=0){structureGrid[s.ty][s.tx]=null;structures.splice(i,1);}
+    }
+  }
 }
 
-function placeStructure(tx, ty, type, builder) {
-  if(structureGrid[ty][tx]) return false; // occupied
-  const def = STRUCTURE_TYPES[type];
-  const s = { tx, ty, type, hp: def.hp, builtBy: builder.name, icon: def.icon, color: def.color };
-  structures.push(s);
-  structureGrid[ty][tx] = s;
+// ── Civilizations ─────────────────────────────────────────────────────────────
+let civIdCounter=0;
+const civilizations=new Map();
+class Civilization{
+  constructor(founder){
+    this.id=civIdCounter++;
+    this.name=_genCivName(founder._rng);
+    this.color=founder.color;
+    this.leaderId=founder.id;
+    this.members=new Set([founder.id]);
+    this.founded=year;
+    this.allies=new Set();
+    this.enemies=new Set();
+    this.era='primitiva';
+    this.population=1;
+  }
+  addMember(h){this.members.add(h.id);this.population=this.members.size;}
+  removeMember(id){this.members.delete(id);this.population=this.members.size;}
+}
+const CIV_PREFIXES=['Imperio','Reino','Tribu','Clan','Nación','Confederación','República'];
+const CIV_ROOTS=['Akar','Boral','Ceth','Dorn','Elvar','Forn','Gael','Hira','Ixal','Jorn','Kael','Lorn'];
+function _genCivName(rng){return CIV_PREFIXES[Math.floor(rng()*CIV_PREFIXES.length)]+' '+CIV_ROOTS[Math.floor(rng()*CIV_ROOTS.length)];}
+function getOrCreateCiv(founder){
+  const civ=new Civilization(founder);
+  civilizations.set(civ.id,civ);
+  founder.civId=civ.id;
+  return civ;
+}
+
+// ── Social phases ─────────────────────────────────────────────────────────────
+// Before year 1000: unified survival. After: division, conflict, classism.
+function getSocialPhase(){ return year>=1000?'division':'survival'; }
+
+// ── Terrain modification ───────────────────────────────────────────────────────
+// Humans can clear forest tiles and irrigate near farms
+const modifiedTiles=new Map(); // key="tx,ty" → {original, modified}
+function modifyTerrain(tx,ty,newBiome){
+  const cell=getCell(tx,ty);
+  if(!cell||!isLand(tx,ty))return false;
+  const key=`${tx},${ty}`;
+  if(!modifiedTiles.has(key))modifiedTiles.set(key,{original:cell.biome});
+  cell.biome=newBiome;
   return true;
 }
 
-function getStructureAt(tx, ty) {
-  if(tx<0||ty<0||tx>=WORLD_W||ty>=WORLD_H) return null;
-  return structureGrid[ty][tx];
+// ── Diseases ──────────────────────────────────────────────────────────────────
+const DISEASE_TYPES=[
+  {name:'Fiebre',    damage:0.8,spread:0.15,duration:8,  cure:10},
+  {name:'Plaga',     damage:1.5,spread:0.2, duration:14, cure:20},
+  {name:'Pestilencia',damage:1.2,spread:0.18,duration:12,cure:16},
+];
+let activeOutbreaks=[];
+function tickDiseases(yearsElapsed){
+  const rng=mulberry32(WORLD_SEED^year^0xDEAD);
+  const alive=humans.filter(h=>h.alive);
+  // Only trigger disease when population is large enough to survive it
+  if(rng()<0.0015*yearsElapsed&&alive.length>25){
+    const host=alive[Math.floor(rng()*alive.length)];
+    const dtype=DISEASE_TYPES[Math.floor(rng()*DISEASE_TYPES.length)];
+    activeOutbreaks.push({type:dtype,tx:host.tx,ty:host.ty,radius:6,yearsLeft:dtype.duration});
+    addWorldEvent(`🦠 Brote de ${dtype.name}`);
+  }
+  activeOutbreaks=activeOutbreaks.filter(o=>{o.yearsLeft-=yearsElapsed;return o.yearsLeft>0;});
+}
+
+// ── World events ──────────────────────────────────────────────────────────────
+const worldEvents=[];
+function addWorldEvent(text){worldEvents.unshift({year,text});if(worldEvents.length>100)worldEvents.pop();}
+
+// ── Spatial grid ──────────────────────────────────────────────────────────────
+const SPATIAL_CELL=16;
+let spatialGrid=null;
+function _spatialKey(tx,ty){return(Math.floor(tx/SPATIAL_CELL))|((Math.floor(ty/SPATIAL_CELL))<<16);}
+function initSpatialGrid(){spatialGrid=new Map();}
+function _spatialAdd(h){const k=_spatialKey(h.tx,h.ty);if(!spatialGrid.has(k))spatialGrid.set(k,new Set());spatialGrid.get(k).add(h);h._spatialKey=k;}
+function _spatialRemove(h){if(h._spatialKey===undefined)return;const s=spatialGrid.get(h._spatialKey);if(s)s.delete(h);}
+function _spatialUpdate(h){const k=_spatialKey(h.tx,h.ty);if(k===h._spatialKey)return;_spatialRemove(h);_spatialAdd(h);}
+function _spatialQuery(tx,ty,radius,excludeId){
+  const results=[];
+  const r2=radius*radius;
+  const cx0=Math.floor((tx-radius)/SPATIAL_CELL),cx1=Math.floor((tx+radius)/SPATIAL_CELL);
+  const cy0=Math.floor((ty-radius)/SPATIAL_CELL),cy1=Math.floor((ty+radius)/SPATIAL_CELL);
+  for(let cy=cy0;cy<=cy1;cy++)for(let cx=cx0;cx<=cx1;cx++){
+    const cell=spatialGrid.get(cx|(cy<<16));
+    if(!cell)continue;
+    for(const h of cell){
+      if(h.id===excludeId||!h.alive)continue;
+      const dx=h.tx-tx,dy=h.ty-ty;
+      if(dx*dx+dy*dy<=r2)results.push(h);
+    }
+  }
+  return results;
 }
 
 // ── Neural Brain ──────────────────────────────────────────────────────────────
-// Inputs(10): hunger,energy,health,nearFood,nearHuman,nearStructure,knowledge_norm,social,reproReady,danger
-// Hidden: 8  Outputs(9): seekFood,sleep,wander,socialize,gather,build,reproduce,farm,craft
-class NeuralBrain {
-  constructor(rng) {
-    this.iSize = 10; this.hSize = 8; this.oSize = 9;
-    this.wIH = Array.from({length:this.iSize*this.hSize}, ()=>rng()*2-1);
-    this.wHO = Array.from({length:this.hSize*this.oSize}, ()=>rng()*2-1);
-    this.bH  = Array.from({length:this.hSize}, ()=>rng()*0.1);
-    this.bO  = Array.from({length:this.oSize}, ()=>rng()*0.1);
-    this.learningRate = 0.08;
-    // Experience memory: last 8 (input,action,reward) tuples for batch learning
-    this.memory = [];
+// Simple but effective: biased initial weights toward survival actions
+class NeuralBrain{
+  constructor(rng){
+    this.iSize=10;this.hSize=8;this.oSize=8;
+    // Outputs: 0=seekFood 1=sleep 2=wander 3=socialize 4=gather 5=build 6=reproduce 7=farm
+    this.wIH=Array.from({length:this.iSize*this.hSize},()=>rng()*2-1);
+    this.wHO=Array.from({length:this.hSize*this.oSize},()=>rng()*2-1);
+    this.bH=new Float32Array(this.hSize);
+    this.bO=new Float32Array(this.oSize);
+    this.lr=0.10;
+    this.memory=[];
+    this.epsilon=0.35;
   }
-
-  _relu(x){ return x>0?x:x*0.05; } // leaky relu — avoids dead neurons
-
-  forward(inputs) {
-    const hidden = [];
-    for(let h=0;h<this.hSize;h++){
-      let s=this.bH[h];
-      for(let i=0;i<this.iSize;i++) s+=inputs[i]*this.wIH[i*this.hSize+h];
-      hidden.push(this._relu(s));
+  _relu(x){return x>0?x:x*0.05;}
+  forward(inp){
+    const h=new Float32Array(this.hSize);
+    for(let i=0;i<this.hSize;i++){
+      let s=this.bH[i];
+      for(let j=0;j<this.iSize;j++)s+=inp[j]*this.wIH[j*this.hSize+i];
+      h[i]=this._relu(s);
     }
-    const raw = [];
+    const raw=new Float32Array(this.oSize);
     for(let o=0;o<this.oSize;o++){
       let s=this.bO[o];
-      for(let h=0;h<this.hSize;h++) s+=hidden[h]*this.wHO[h*this.oSize+o];
-      raw.push(s);
+      for(let i=0;i<this.hSize;i++)s+=h[i]*this.wHO[i*this.oSize+o];
+      raw[o]=s;
     }
-    // softmax
-    const max=Math.max(...raw);
-    const exps=raw.map(x=>Math.exp(x-max));
-    const sum=exps.reduce((a,b)=>a+b,0);
-    return exps.map(x=>x/sum);
+    let mx=raw[0];for(let i=1;i<this.oSize;i++)if(raw[i]>mx)mx=raw[i];
+    let sm=0;const ex=new Float32Array(this.oSize);
+    for(let i=0;i<this.oSize;i++){ex[i]=Math.exp(raw[i]-mx);sm+=ex[i];}
+    for(let i=0;i<this.oSize;i++)ex[i]/=sm;
+    return ex;
   }
-
-  // Reinforce with speed-scaled learning — faster time = faster learning
-  reinforce(inputs, actionIdx, reward, speedMult) {
-    const lr = this.learningRate * Math.max(1, speedMult * 0.5);
-    this.memory.push({inputs:[...inputs], actionIdx, reward});
-    if(this.memory.length > 12) this.memory.shift();
-
-    // Learn from recent memory (experience replay)
-    for(const exp of this.memory) {
-      const probs = this.forward(exp.inputs);
-      const eff = lr * exp.reward;
-      if(Math.abs(eff) < 0.0001) continue;
-      for(let h=0;h<this.hSize;h++){
-        const grad = (exp.actionIdx===h ? 1-probs[h] : -probs[h]) * eff;
-        this.wHO[h*this.oSize+exp.actionIdx] += grad;
-      }
+  choose(inp,rng){
+    if(rng()<this.epsilon)return Math.floor(rng()*this.oSize);
+    const p=this.forward(inp);
+    let best=0;for(let i=1;i<p.length;i++)if(p[i]>p[best])best=i;
+    return best;
+  }
+  reinforce(inp,actionIdx,reward){
+    this.memory.push({inp:Float32Array.from(inp),actionIdx,reward});
+    if(this.memory.length>16)this.memory.shift();
+    for(const e of this.memory){
+      const p=this.forward(e.inp);
+      const eff=this.lr*e.reward;
+      if(Math.abs(eff)<0.00005)continue;
+      for(let h=0;h<this.hSize;h++)
+        this.wHO[h*this.oSize+e.actionIdx]+=(e.actionIdx===h?1-p[h]:-p[h])*eff;
     }
   }
 }
 
-// ── Brain inheritance ─────────────────────────────────────────────────────────
-function _inheritBrain(brainA, brainB, rng) {
-  const child = new NeuralBrain(rng);
-  const mutRate = 0.10; const mutStr = 0.25;
-  const mix = (a,b) => a.map((v,i)=>{
-    const base = brainB ? (rng()<0.5?v:b[i]) : v;
-    return rng()<mutRate ? base+(rng()*2-1)*mutStr : base;
+function _inheritBrain(bA,bB,rng){
+  const c=new NeuralBrain(rng);
+  const mutR=0.08,mutS=0.15;
+  const mix=(a,b)=>Array.from(a,(v,i)=>{
+    const base=bB?(rng()<0.5?v:b[i]):v;
+    return rng()<mutR?base+(rng()*2-1)*mutS:base;
   });
-  child.wIH = mix(brainA.wIH, brainB?.wIH);
-  child.wHO = mix(brainA.wHO, brainB?.wHO);
-  child.bH  = mix(brainA.bH,  brainB?.bH);
-  child.bO  = mix(brainA.bO,  brainB?.bO);
-  return child;
+  c.wIH=mix(bA.wIH,bB?.wIH);c.wHO=mix(bA.wHO,bB?.wHO);
+  c.bH=Array.from(mix(bA.bH,bB?.bH));c.bO=Array.from(mix(bA.bO,bB?.bO));
+  c.epsilon=Math.max(0.04,Math.min(0.40,(bA.epsilon+(bB?.epsilon||bA.epsilon))/2+(rng()*0.04-0.02)));
+  return c;
 }
 
-function _blendColor(cA, cB, rng) {
-  const p = c => { const m=c.match(/hsl\((\d+),(\d+)%,(\d+)%\)/); return m?[+m[1],+m[2],+m[3]]:[180,70,65]; };
-  const a=p(cA), b=p(cB||cA), t=rng();
-  return `hsl(${(Math.round(a[0]*(1-t)+b[0]*t+(rng()*20-10))+360)%360},${Math.round(Math.max(40,Math.min(90,a[1]*(1-t)+b[1]*t)))}%,${Math.round(Math.max(40,Math.min(80,a[2]*(1-t)+b[2]*t)))}%)`;
+function _blendColor(cA,cB,rng){
+  const p=c=>{const m=c.match(/hsl\((\d+),(\d+)%,(\d+)%\)/);return m?[+m[1],+m[2],+m[3]]:[180,70,65];};
+  const a=p(cA),b=p(cB||cA),t=rng();
+  return `hsl(${(Math.round(a[0]*(1-t)+b[0]*t+(rng()*20-10))+360)%360},`+
+         `${Math.round(Math.max(40,Math.min(90,a[1]*(1-t)+b[1]*t)))}%,`+
+         `${Math.round(Math.max(40,Math.min(80,a[2]*(1-t)+b[2]*t)))}%)`;
+}
+function _inheritTrait(a,b,rng){
+  const base=b!==undefined?(rng()<0.5?a:b):a;
+  return Math.max(1,Math.min(100,Math.round(base+(rng()*14-7))));
 }
 
 // ── Human class ───────────────────────────────────────────────────────────────
-let humanIdCounter = 0;
+let humanIdCounter=0;
+const POP_SOFT_CAP=150;
+const POP_HARD_CAP=300;
 
-class Human {
-  constructor(tx, ty, rng, gender, parentA, parentB) {
-    this.id       = humanIdCounter++;
-    this.gender   = gender || (rng()<0.5?'M':'F');
-    this.name     = randomName(rng, this.gender);
-    this.tx = tx; this.ty = ty;
-    this.age      = parentA ? 0 : 18+Math.floor(rng()*8);
-    this.health   = 100;
-    this.hunger   = 85;
-    this.energy   = 100;
-    this.alive    = true;
-    this.action   = ACTIONS.IDLE;
-    this.target   = null;
-    this.inventory = {food:8, wood:2, stone:1};
-    this.color    = parentA ? _blendColor(parentA.color, parentB?.color, rng) : `hsl(${Math.floor(rng()*360)},70%,65%)`;
-    this.selected = false;
-    this.log      = [];
-    this._rng     = rng;
-    this.brain    = (parentA?.brain) ? _inheritBrain(parentA.brain, parentB?.brain, rng) : new NeuralBrain(rng);
-    this.partner      = null;
-    this.reproTimer   = 0;
-    this.children     = 0;
-    this.knowledge    = parentA ? Math.floor((parentA.knowledge+(parentB?.knowledge||0))*0.3) : 0;
-    this.social       = 60;
-    this.homeBase     = null; // {tx,ty} of their hut/camp
-    this._prevHealth  = 100;
-    this._prevHunger  = 85;
-    this._moveQueue   = []; // path steps
+// Food types for immediate eating
+const FOOD_TYPES=['berries','wheat_wild','mushroom','animal','fish','tree_palm','cactus','bush','herb'];
+const WOOD_TYPES=['tree_oak','tree_pine','tree_palm','tree_jungle','bush'];
+const STONE_TYPES=['rock','iron_ore','clay'];
+
+class Human{
+  constructor(tx,ty,rng,gender,parentA,parentB){
+    this.id=humanIdCounter++;
+    this.gender=gender||(rng()<0.5?'F':'M');
+    this.name=randomName(rng,this.gender);
+    this.tx=tx;this.ty=ty;
+    this.px=tx*TILE+TILE/2;this.py=ty*TILE+TILE/2;
+    this.destPx=this.px;this.destPy=this.py;
+    this.tilesPerYear=6;
+
+    this.age=parentA?0:18+Math.floor(rng()*8);
+    this.health=100;this.hunger=95;this.energy=100;
+    this.alive=true;this.action=ACTIONS.IDLE;
+    this.target=null;
+    // Start with enough food to survive early game
+    this.inventory={food:parentA?12:20,wood:parentA?2:8,stone:parentA?1:4};
+    this.color=parentA?_blendColor(parentA.color,parentB?.color,rng):`hsl(${Math.floor(rng()*360)},70%,65%)`;
+    this.selected=false;this.log=[];
+    this._rng=rng;
+    this.brain=parentA?.brain?_inheritBrain(parentA.brain,parentB?.brain,rng):new NeuralBrain(rng);
+
+    this.traits={
+      strength:  parentA?_inheritTrait(parentA.traits.strength, parentB?.traits.strength,rng):40+Math.floor(rng()*30),
+      charisma:  parentA?_inheritTrait(parentA.traits.charisma, parentB?.traits.charisma,rng):40+Math.floor(rng()*30),
+      intellect: parentA?_inheritTrait(parentA.traits.intellect,parentB?.traits.intellect,rng):40+Math.floor(rng()*30),
+      fertility: parentA?_inheritTrait(parentA.traits.fertility,parentB?.traits.fertility,rng):40+Math.floor(rng()*30),
+    };
+
+    this.knowledge=parentA?Math.floor((parentA.knowledge+(parentB?.knowledge||0))*0.35)+8:20;
+    this.partner=null;this.reproTimer=0;this.children=0;
+    this.social=70;this.homeBase=null;
+    this._prevHealth=100;this._prevHunger=95;
+    this._spatialKey=undefined;
+    this.civId=parentA?.civId||null;
+    this.sick=false;this.sickType=null;this.sickTimer=0;
+    this.immunity=new Set();
+    this.leaderScore=0;
+    this.isLeader=false;
+    // Everyone can reproduce — survival of the species
+    this._canReproduce=true;
+    this._wanderAngle=rng()*Math.PI*2;
+    this._wanderDrift=0;
+    this._settleTx=tx;this._settleTy=ty;
+    this._settleScore=0;
+    this._groupTimer=0;
+    // Drives: each human has personal urgency weights that evolve
+    // These are separate from the neural net — hardwired survival imperatives
+    this._reproUrge=0;   // builds up over time, forces reproduction
+    this._exploreUrge=0; // builds up when settled, forces exploration
+    this._buildUrge=0;   // builds up over time, forces construction
+
+    // Social division system (post year 1000)
+    this.ideology=parentA?(parentA.ideology+(parentB?parentB.ideology:parentA.ideology))/2+(rng()*0.2-0.1):rng();
+    this.wealth=0;       // computed each tick from inventory
+    this.aggression=parentA?Math.max(0,Math.min(1,(parentA.aggression+(parentB?parentB.aggression:parentA.aggression))/2+(rng()*0.1-0.05))):rng()*0.3;
+    this._warTimer=0;    // cooldown between attacks
+    this._terrainModTimer=0; // cooldown for terrain modification
   }
 
-  addLog(msg) {
-    this.log.unshift(`Año ${year}: ${msg}`);
-    if(this.log.length>15) this.log.pop();
+  addLog(msg){this.log.unshift(`Año ${year}: ${msg}`);if(this.log.length>15)this.log.pop();}
+
+  // ── Frame movement ────────────────────────────────────────────────────────
+  updateMovement(dtSec,speedMult){
+    if(!this.alive)return;
+    const dx=this.destPx-this.px,dy=this.destPy-this.py;
+    const dist=Math.hypot(dx,dy);
+    if(dist<0.5){this.px=this.destPx;this.py=this.destPy;return;}
+    const pxPerSec=this.tilesPerYear*TILE*(speedMult/3);
+    const step=Math.min(pxPerSec*dtSec,dist);
+    this.px+=dx/dist*step;this.py+=dy/dist*step;
+    this.tx=Math.max(0,Math.min(WORLD_W-1,Math.round((this.px-TILE/2)/TILE)));
+    this.ty=Math.max(0,Math.min(WORLD_H-1,Math.round((this.py-TILE/2)/TILE)));
+    _spatialUpdate(this);
   }
 
-  // ── Main tick ────────────────────────────────────────────────────────────
-  tick(yearsElapsed, speedMult) {
-    if(!this.alive) return;
-    this.age += yearsElapsed;
+  // ── Annual tick ───────────────────────────────────────────────────────────
+  tick(yearsElapsed){
+    if(!this.alive)return;
+    this.age+=yearsElapsed;
 
-    const maxAge = 50 + Math.floor(this._rng()*20) + Math.floor(this.knowledge*0.4);
-    if(this.age > maxAge){ this._die('vejez'); return; }
+    // Lifespan — realistic: 30-80 base, knowledge/intellect extend life
+    // knowledge is unbounded but lifespan caps at ~120 naturally
+    const maxAge=30+Math.floor(this._rng()*50)
+      +Math.min(40,Math.floor(this.knowledge*0.15))
+      +Math.floor(this.traits.intellect*0.15);
+    if(this.age>maxAge){this._die('vejez');return;}
 
-    // Stat decay — slower decay so they survive longer
-    this.hunger = Math.max(0, this.hunger - yearsElapsed*3);
-    this.energy = Math.max(0, this.energy - yearsElapsed*2);
-    this.social = Math.max(0, this.social - yearsElapsed*1);
-    if(this.reproTimer>0) this.reproTimer -= yearsElapsed;
-
-    // Starvation
-    if(this.hunger<=0){
-      this.health = Math.max(0, this.health - yearsElapsed*4);
-      if(this.health<=0){ this._die('hambre'); return; }
+    // Disease
+    if(this.sick){
+      this.sickTimer-=yearsElapsed;
+      this.health=Math.max(0,this.health-this.sickType.damage*yearsElapsed);
+      if(this.sickTimer<=0||this.health<=0){
+        if(this.health<=0){this._die(this.sickType.name);return;}
+        this.sick=false;this.immunity.add(this.sickType.name);
+        this.addLog(`Se recuperó de ${this.sickType.name}`);this.sickType=null;
+      }
     } else {
-      this.health = Math.min(100, this.health + yearsElapsed*1.2);
+      for(const o of activeOutbreaks){
+        if(this.immunity.has(o.type.name))continue;
+        const d=Math.hypot(this.tx-o.tx,this.ty-o.ty);
+        if(d<=o.radius&&this._rng()<o.type.spread*0.03*yearsElapsed){
+          this.sick=true;this.sickType=o.type;
+          this.sickTimer=o.type.duration*(0.8+this._rng()*0.4);
+          this.addLog(`Contrajo ${o.type.name}`);break;
+        }
+      }
     }
 
-    // Auto-eat aggressively
-    if(this.hunger < 50 && this.inventory.food>0){
-      const eat = Math.min(this.inventory.food, Math.ceil(4*(1-this.hunger/50)));
-      this.inventory.food -= eat;
-      this.hunger = Math.min(100, this.hunger + eat*15);
+    // Stat decay — slow enough that survival is very achievable
+    this.hunger=Math.max(0,this.hunger-yearsElapsed*4);
+    this.energy=Math.max(0,this.energy-yearsElapsed*3);
+    this.social=Math.max(0,this.social-yearsElapsed*2);
+    if(this.reproTimer>0)this.reproTimer-=yearsElapsed;
+
+    // Auto-eat from inventory — proactive, not reactive
+    if(this.hunger<80&&this.inventory.food>0){
+      const need=Math.ceil((80-this.hunger)/20);
+      const eat=Math.min(this.inventory.food,need);
+      this.inventory.food-=eat;
+      this.hunger=Math.min(100,this.hunger+eat*20);
     }
 
-    // Neural inputs
-    const nearFood   = this._findNearbyResource(['berries','wheat_wild','mushroom','animal','fish','tree_palm','cactus','bush'],18)?1:0;
-    const nearHuman  = this._findNearbyHuman(10)?1:0;
-    const nearStruct = this.homeBase?1:0;
-    const reproReady = (this.age>=16&&this.age<=45&&this.reproTimer<=0&&this.hunger>50&&this.energy>40)?1:0;
-    const danger     = this.hunger<25||this.health<30?1:0;
+    if(this.hunger<=0){
+      this.health=Math.max(0,this.health-yearsElapsed*5);
+      if(this.health<=0){this._die('hambre');return;}
+    } else if(!this.sick){
+      this.health=Math.min(100,this.health+yearsElapsed*6);
+    }
 
-    const inputs = [
+    // Build up biological drives over time
+    if(this._canReproduce&&this.age>=16&&this.age<=50&&this.reproTimer<=0){
+      this._reproUrge=Math.min(1,this._reproUrge+yearsElapsed*0.35);
+    }
+    // Explore urge builds when staying in same area
+    this._exploreUrge=Math.min(1,this._exploreUrge+yearsElapsed*0.08);
+    // Build urge: always want to construct and improve
+    this._buildUrge=Math.min(1,this._buildUrge+yearsElapsed*0.2);
+
+    this.leaderScore=this.traits.charisma*0.4+this.traits.intellect*0.3+this.knowledge*0.2+this.children*3+this.age*0.05;
+    // Knowledge is unbounded — neural net inputs clamp it but growth never stops
+    this.brain.epsilon=Math.max(0.04,0.38-Math.min(this.knowledge,200)*0.0015);
+
+    // Compute wealth (drives classism)
+    this.wealth=this.inventory.food+this.inventory.wood*2+this.inventory.stone*1.5;
+
+    // Ideology drifts slowly — creates cultural divergence
+    if(getSocialPhase()==='division'){
+      this.ideology=Math.max(0,Math.min(1,this.ideology+(this._rng()*0.04-0.02)));
+    }
+
+    // Aggression grows with inequality and war experience
+    if(getSocialPhase()==='division'&&this._warTimer>0)this._warTimer-=yearsElapsed;
+
+    // Hard survival overrides
+    if(this.sick&&this.health<35){this._doHeal();return;}
+    if(this.hunger<10||this.health<8){this._seekFoodNow();return;}
+    if(this.energy<5){this._doSleep();return;}
+
+    const nearby=_spatialQuery(this.tx,this.ty,16,this.id);
+    const crowding=nearby.filter(h=>Math.hypot(h.tx-this.tx,h.ty-this.ty)<6).length;
+
+    if(this.hunger<25){this._seekFoodNow();return;}
+    if(this.energy<15){this._doSleep();return;}
+    if(crowding>=5){this._disperseFrom(nearby);return;}
+
+    // Biological imperative: reproduction urge overrides neural net
+    if(this._reproUrge>0.65&&this.hunger>40&&this.energy>35&&!this.sick){
+      this._tryReproduce(nearby);
+      return;
+    }
+    // Build urge: humans always want to construct things
+    if(this._buildUrge>0.6&&this.hunger>50&&this.energy>40&&
+       (this.inventory.wood>=2||this.inventory.stone>=2)){
+      this._buildUrge=0;
+      this._doBuild();
+      return;
+    }
+    // Explore urge: push humans to spread out and discover
+    if(this._exploreUrge>0.75&&crowding<3&&this.hunger>40){
+      this._exploreUrge=0;
+      this._doWander();
+      return;
+    }
+
+    // Neural net for everything else
+    const nearFood=this._findNearbyResource(FOOD_TYPES,25)?1:0;
+    const nearHuman=nearby.length>0?1:0;
+    const reproReady=(this.age>=16&&this.age<=45&&this.reproTimer<=0&&this.hunger>50&&this.energy>40&&this._canReproduce)?1:0;
+
+    const inputs=[
       this.hunger/100, this.energy/100, this.health/100,
-      nearFood, nearHuman, nearStruct,
-      Math.min(1,this.knowledge/100), this.social/100,
-      reproReady, danger,
+      nearFood, nearHuman, this.homeBase?1:0,
+      Math.min(1,this.knowledge/200), this.social/100,
+      reproReady, Math.min(1,crowding/5),
     ];
 
-    const probs = this.brain.forward(inputs);
-    // 0=seekFood,1=sleep,2=wander,3=socialize,4=gather,5=build,6=reproduce,7=farm,8=craft
-    let chosen;
-    if(this.hunger<15 || this.health<20) chosen=0;       // critical: eat
-    else if(this.energy<10)              chosen=1;       // critical: sleep
-    else {
-      chosen=0; let maxP=-1;
-      for(let i=0;i<probs.length;i++) if(probs[i]>maxP){maxP=probs[i];chosen=i;}
+    const chosen=this.brain.choose(inputs,this._rng);
+    this._executeAction(chosen,nearby);
+
+    // Post year 1000: social conflict, classism, racism
+    if(getSocialPhase()==='division'){
+      this._doSocialDivision(nearby);
     }
 
-    this._executeAction(chosen);
+    // Terrain modification: clear forest, irrigate
+    this._terrainModTimer-=yearsElapsed;
+    if(this._terrainModTimer<=0&&this.knowledge>30&&this.hunger>60){
+      this._modifyTerrain();
+      this._terrainModTimer=5+Math.floor(this._rng()*10);
+    }
 
-    // Reward: improvement in survival stats
-    const reward = ((this.health-this._prevHealth)*0.5 + (this.hunger-this._prevHunger)*0.5) / 100;
-    this.brain.reinforce(inputs, chosen, reward, speedMult);
-    this._prevHealth=this.health; this._prevHunger=this.hunger;
+    const reward=((this.health-this._prevHealth)*0.3+(this.hunger-this._prevHunger)*0.7)/100;
+    this.brain.reinforce(inputs,chosen,reward);
+    this._prevHealth=this.health;this._prevHunger=this.hunger;
   }
 
-  _executeAction(idx) {
+  _executeAction(idx,nearby){
     switch(idx){
-      case 0: this._seekFood();      break;
-      case 1: this._doSleep();       break;
-      case 2: this._wander();        break;
-      case 3: this._doSocialize();   break;
-      case 4: this._gatherResources();break;
-      case 5: this._doBuild();       break;
-      case 6: this._tryReproduce();  break;
-      case 7: this._doFarm();        break;
-      case 8: this._doCraft();       break;
+      case 0:this._seekFoodNow();break;
+      case 1:this._doSleep();break;
+      case 2:this._doWander();break;
+      case 3:this._doSocialize(nearby);break;
+      case 4:this._gatherResources();break;
+      case 5:this._doBuild();break;
+      case 6:this._tryReproduce(nearby);break;
+      case 7:this._doFarm();break;
+      default:this._seekFoodNow();break;
     }
   }
 
-  _doSleep() {
-    this.action = ACTIONS.SLEEP;
-    this.energy = Math.min(100, this.energy+40);
-  }
+  // ── SURVIVAL: Seek and immediately eat food ───────────────────────────────
+  _seekFoodNow(){
+    // 1. Eat from inventory first
+    if(this.inventory.food>0){
+      const eat=Math.min(this.inventory.food,4);
+      this.inventory.food-=eat;
+      this.hunger=Math.min(100,this.hunger+eat*20);
+      if(this.hunger>65){this.action=ACTIONS.IDLE;return;}
+    }
 
-  _doSocialize() {
-    const other = this._findNearbyHuman(8);
-    if(other){
-      this.action = ACTIONS.SOCIALIZE;
-      this.social = Math.min(100, this.social+25);
-      // Knowledge transfer — both learn from each other
-      if(other.knowledge > this.knowledge){
-        const gain = (other.knowledge-this.knowledge)*0.08;
-        this.knowledge = Math.min(100, this.knowledge+gain);
+    // 2. Eat from a farm nearby
+    const farm=this._findNearbyStructure('farm',16);
+    if(farm&&Math.hypot(farm.tx-this.tx,farm.ty-this.ty)<=2){
+      this._harvestFarm(farm);this.action=ACTIONS.FARM;return;
+    }
+    if(farm){this._setDest(farm.tx,farm.ty);this.action=ACTIONS.FARM;return;}
+
+    // 3. Find and immediately harvest a food resource
+    const res=this._findNearbyResource(FOOD_TYPES,40);
+    if(res){
+      if(Math.hypot(res.tx-this.tx,res.ty-this.ty)<=1.5){
+        this._harvestResourceNow(res);
+      } else {
+        this._setDest(res.tx,res.ty);
+        this.action=res.type==='animal'?ACTIONS.HUNT:res.type==='fish'?ACTIONS.FISH:ACTIONS.GATHER;
+        this.target=res;
       }
-      // Move toward them
-      this._stepToward(other.tx, other.ty);
-    } else {
-      this._wander();
+      return;
+    }
+
+    // 4. No food nearby — wander toward unexplored area
+    this._wanderAngle+=this._rng()*0.5-0.25;
+    const dist=15+Math.floor(this._rng()*20);
+    this._navigateTo(
+      Math.round(this.tx+Math.cos(this._wanderAngle)*dist),
+      Math.round(this.ty+Math.sin(this._wanderAngle)*dist)
+    );
+    this.action=ACTIONS.WANDER;
+  }
+
+  // Harvest a resource tile immediately (no travel needed)
+  _harvestResourceNow(res){
+    if(!res)return;
+    const def=RESOURCE_DEFS[res.type];
+    const harvest=Math.min(res.amount,12);
+    res.amount-=harvest;
+    if(def.food>0){
+      const foodGain=def.food*harvest;
+      this.hunger=Math.min(100,this.hunger+foodGain*0.8);
+      this.inventory.food+=Math.floor(foodGain*0.5);
+    }
+    if(def.wood>0)this.inventory.wood+=Math.floor(harvest*1.0);
+    if(def.stone>0)this.inventory.stone+=Math.floor(harvest*1.0);
+    this.knowledge=Math.min(9999,this.knowledge+0.5);
+    if(res.amount<=0)removeResource(res.tx,res.ty);
+    this.target=null;
+    this.action=ACTIONS.GATHER;
+  }
+
+  _doSleep(){
+    this.action=ACTIONS.SLEEP;
+    this.energy=Math.min(100,this.energy+55);
+    // Sleep near home if possible
+    if(this.homeBase&&Math.hypot(this.homeBase.tx-this.tx,this.homeBase.ty-this.ty)>8){
+      this._setDest(this.homeBase.tx,this.homeBase.ty);
     }
   }
 
-  _doBuild() {
-    const def = STRUCTURE_TYPES;
-    // Pick what to build based on needs
-    let type = 'camp';
-    if(this.inventory.wood>=4 && this.inventory.stone>=2) type='hut';
-    else if(this.inventory.wood>=2 && this.inventory.stone>=3) type='quarry';
-    else if(this.inventory.wood>=1) type='camp';
+  _doSocialize(nearby){
+    // Pick someone not too close (avoid clustering)
+    const candidates=nearby.filter(h=>Math.hypot(h.tx-this.tx,h.ty-this.ty)>3);
+    const other=candidates.length>0?candidates[Math.floor(this._rng()*candidates.length)]:
+                nearby.length>0?nearby[Math.floor(this._rng()*nearby.length)]:null;
+    if(other){
+      this.action=ACTIONS.SOCIALIZE;
+      this.social=Math.min(100,this.social+30);
+      // Knowledge transfer
+      if(other.knowledge>this.knowledge)
+        this.knowledge=Math.min(9999,this.knowledge+(other.knowledge-this.knowledge)*0.15);
+      // Civ joining
+      if(!this.civId&&other.civId&&this._rng()<0.3)this._joinCiv(other.civId);
+      // Alliance
+      if(this.civId&&other.civId&&this.civId!==other.civId){
+        const myCiv=civilizations.get(this.civId);
+        const theirCiv=civilizations.get(other.civId);
+        if(myCiv&&theirCiv&&!myCiv.enemies.has(other.civId)&&this._rng()<0.02){
+          myCiv.allies.add(other.civId);theirCiv.allies.add(this.civId);
+          addWorldEvent(`🤝 Alianza: ${myCiv.name} ↔ ${theirCiv.name}`);
+        }
+      }
+      // Move toward them only if far
+      const d=Math.hypot(other.tx-this.tx,other.ty-this.ty);
+      if(d>8)this._setDest(other.tx+Math.round(this._rng()*4-2),other.ty+Math.round(this._rng()*4-2));
+    } else {
+      this._doWander();
+    }
+  }
 
-    const cost = def[type].cost;
-    if(this.inventory.wood>=cost.wood && this.inventory.stone>=cost.stone){
-      // Find nearby empty land tile
-      for(let r=1;r<=3;r++){
-        for(let a=0;a<8;a++){
-          const angle=(a/8)*Math.PI*2;
-          const bx=Math.round(this.tx+Math.cos(angle)*r);
-          const by=Math.round(this.ty+Math.sin(angle)*r);
-          if(!isLand(bx,by)||getStructureAt(bx,by)) continue;
+  _doHeal(){
+    this.action=ACTIONS.HEAL;
+    if(this.inventory.food>0){
+      this.inventory.food--;
+      this.health=Math.min(100,this.health+15);
+    }
+    if(this.sick&&this.knowledge>12&&this._rng()<this.knowledge/this.sickType.cure){
+      this.sick=false;this.immunity.add(this.sickType.name);
+      this.addLog(`Se curó de ${this.sickType.name}`);
+      this.sickType=null;
+      this.knowledge=Math.min(9999,this.knowledge+4);
+    }
+    // Heal nearby sick
+    if(this.knowledge>25){
+      const nearby=_spatialQuery(this.tx,this.ty,8,this.id);
+      for(const h of nearby){
+        if(!h.sick)continue;
+        if(this._rng()<this.knowledge/80){
+          h.sick=false;h.immunity.add(h.sickType.name);
+          h.addLog(`Curado por ${this.name.split(' ')[0]}`);h.sickType=null;
+          this.knowledge=Math.min(9999,this.knowledge+2);break;
+        }
+      }
+    }
+  }
+
+  _doWander(){
+    this.action=ACTIONS.WANDER;
+    this._wanderDrift++;
+    if(this._wanderDrift>4){
+      this._wanderAngle+=(this._rng()-0.5)*1.2;
+      this._wanderDrift=0;
+    }
+    const dist=12+Math.floor(this._rng()*18);
+    this._navigateTo(
+      Math.round(this.tx+Math.cos(this._wanderAngle)*dist),
+      Math.round(this.ty+Math.sin(this._wanderAngle)*dist)
+    );
+    this.knowledge=Math.min(9999,this.knowledge+0.5);
+    // Update settle score based on local resources
+    const localFood=this._findNearbyResource(FOOD_TYPES,8);
+    const localWood=this._findNearbyResource(WOOD_TYPES,8);
+    if(localFood&&localWood){
+      this._settleScore++;
+      if(this._settleScore>3){
+        this._settleTx=this.tx;this._settleTy=this.ty;
+        this._settleScore=0;
+      }
+    }
+  }
+
+  // Disperse away from crowd — each human picks a different direction
+  _disperseFrom(nearby){
+    this.action=ACTIONS.WANDER;
+    // Average position of crowd
+    let ax=0,ay=0;
+    for(const h of nearby){ax+=h.tx;ay+=h.ty;}
+    ax/=nearby.length;ay/=nearby.length;
+    // Move away from average
+    const awayAngle=Math.atan2(this.ty-ay,this.tx-ax)+(this._rng()-0.5)*0.8;
+    const dist=10+Math.floor(this._rng()*15);
+    this._navigateTo(
+      Math.round(this.tx+Math.cos(awayAngle)*dist),
+      Math.round(this.ty+Math.sin(awayAngle)*dist)
+    );
+    this._wanderAngle=awayAngle;
+  }
+
+  // ── Social division (post year 1000) ─────────────────────────────────────
+  _doSocialDivision(nearby){
+    if(!nearby.length)return;
+    const myCiv=this.civId!=null?civilizations.get(this.civId):null;
+
+    for(const other of nearby){
+      if(!other.alive||other.id===this.id)continue;
+      const sameCiv=this.civId!=null&&this.civId===other.civId;
+      const ideoDiff=Math.abs(this.ideology-other.ideology);
+      const wealthDiff=this.wealth-other.wealth;
+
+      // Classism: rich humans exploit poor ones in same civ
+      if(sameCiv&&wealthDiff>30&&this._rng()<0.05){
+        const steal=Math.min(other.inventory.food,Math.floor(wealthDiff*0.1));
+        if(steal>0){
+          other.inventory.food-=steal;
+          this.inventory.food+=steal;
+          this.aggression=Math.min(1,this.aggression+0.01);
+          other.aggression=Math.min(1,other.aggression+0.02);
+        }
+      }
+
+      // Racism/xenophobia: distrust different-colored civs
+      if(!sameCiv&&myCiv&&other.civId!=null){
+        const theirCiv=civilizations.get(other.civId);
+        if(theirCiv&&myCiv.enemies.has(other.civId)){
+          // War: attack enemy civ members
+          this._doConflict(other);
+          return;
+        }
+        // Ideological divergence creates new enemies
+        if(ideoDiff>0.6&&this._rng()<0.005&&!myCiv.allies.has(other.civId)){
+          myCiv.enemies.add(other.civId);
+          theirCiv.enemies.add(this.civId);
+          myCiv.allies.delete(other.civId);
+          theirCiv.allies.delete(this.civId);
+          addWorldEvent(`⚔️ Guerra declarada: ${myCiv.name} vs ${theirCiv.name}`);
+        }
+      }
+
+      // Knowledge sharing within same ideology group (even across civs)
+      if(ideoDiff<0.2&&other.knowledge>this.knowledge){
+        this.knowledge+=Math.min(2,(other.knowledge-this.knowledge)*0.1);
+      }
+    }
+  }
+
+  _doConflict(enemy){
+    if(this._warTimer>0||!enemy.alive)return;
+    if(this.health<30||this.hunger<20)return; // too weak to fight
+    const myPower=this.traits.strength*0.6+this.knowledge*0.2+this.aggression*20;
+    const theirPower=enemy.traits.strength*0.6+enemy.knowledge*0.2+enemy.aggression*20;
+    const win=myPower*(0.8+this._rng()*0.4)>theirPower*(0.8+this._rng()*0.4);
+    if(win){
+      const dmg=5+Math.floor(this._rng()*10);
+      enemy.health=Math.max(0,enemy.health-dmg);
+      // Loot
+      const loot=Math.min(enemy.inventory.food,Math.floor(this._rng()*5));
+      enemy.inventory.food-=loot;this.inventory.food+=loot;
+      this.aggression=Math.min(1,this.aggression+0.02);
+      enemy.aggression=Math.min(1,enemy.aggression+0.03);
+      enemy._warFlash=3; // visual flash
+      if(enemy.health<=0)enemy._die('combate');
+    } else {
+      const dmg=3+Math.floor(this._rng()*6);
+      this.health=Math.max(0,this.health-dmg);
+      this._warFlash=3;
+    }
+    this._warTimer=3+Math.floor(this._rng()*4);
+    this.action=ACTIONS.LEAD; // repurpose as "fighting"
+  }
+
+  _modifyTerrain(){
+    // Clear forest near settle point to make room for farms
+    const r=4;
+    for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+      const tx=this._settleTx+dx,ty=this._settleTy+dy;
+      const cell=getCell(tx,ty);
+      if(!cell||!isLand(tx,ty))continue;
+      if(['forest','dense_forest','jungle','rainforest'].includes(cell.biome)){
+        if(this._rng()<0.15){
+          modifyTerrain(tx,ty,'grass');
+          // Clearing forest yields wood
+          this.inventory.wood+=2;
+          this.knowledge=Math.min(this.knowledge+0.3,9999);
+          return; // one tile per action
+        }
+      }
+      // Irrigate dry land near farms
+      if(['dry_grass','desert','savanna'].includes(cell.biome)){
+        const nearFarm=this._findNearbyStructure('farm',6);
+        if(nearFarm&&this._rng()<0.1){
+          modifyTerrain(tx,ty,'grass');
+          this.knowledge=Math.min(this.knowledge+0.2,9999);
+          return;
+        }
+      }
+    }
+  }
+
+  _doBuild(){
+      if(this.hunger<35||this.energy<25){this._seekFoodNow();return;}
+      if(this.inventory.wood<2&&this.inventory.stone<2){this._gatherResources();return;}
+      const k=this.knowledge,w=this.inventory.wood,s=this.inventory.stone;
+      let type='camp';
+      if(_unlockedTypes.has('siege')      &&k>600&&w>=20&&s>=15)type='siege';
+      else if(_unlockedTypes.has('armory')     &&k>500&&w>=15&&s>=20)type='armory';
+      else if(_unlockedTypes.has('citadel')    &&k>420&&w>=25&&s>=35)type='citadel';
+      else if(_unlockedTypes.has('alchemist')  &&k>350&&w>=12&&s>=15)type='alchemist';
+      else if(_unlockedTypes.has('observatory')&&k>280&&w>=15&&s>=25)type='observatory';
+      else if(_unlockedTypes.has('university') &&k>220&&w>=20&&s>=20)type='university';
+      else if(_unlockedTypes.has('palace')     &&k>180&&w>=20&&s>=20)type='palace';
+      else if(_unlockedTypes.has('colosseum')  &&k>160&&w>=15&&s>=20)type='colosseum';
+      else if(_unlockedTypes.has('cathedral')  &&k>140&&w>=15&&s>=15)type='cathedral';
+      else if(_unlockedTypes.has('castle')     &&k>120&&w>=12&&s>=18)type='castle';
+      else if(_unlockedTypes.has('academy')    &&k>100&&w>=10&&s>=10)type='academy';
+      else if(_unlockedTypes.has('harbor')     &&k>90 &&w>=10&&s>=6) type='harbor';
+      else if(_unlockedTypes.has('forge')      &&k>75 &&w>=6 &&s>=8) type='forge';
+      else if(_unlockedTypes.has('library')    &&k>60 &&w>=8 &&s>=6) type='library';
+      else if(_unlockedTypes.has('barracks')   &&k>55 &&w>=8 &&s>=6) type='barracks';
+      else if(_unlockedTypes.has('wall')       &&k>45 &&w>=3 &&s>=8) type='wall';
+      else if(_unlockedTypes.has('blacksmith') &&k>40 &&w>=6 &&s>=5) type='blacksmith';
+      else if(_unlockedTypes.has('workshop')   &&k>28 &&w>=5 &&s>=3) type='workshop';
+      else if(_unlockedTypes.has('watchtower') &&k>22 &&w>=4 &&s>=6) type='watchtower';
+      else if(_unlockedTypes.has('well')       &&k>15 &&w>=2 &&s>=4) type='well';
+      else if(_unlockedTypes.has('granary')    &&k>10 &&w>=5 &&s>=3) type='granary';
+      else if(k>65&&w>=8&&s>=8)type='temple';
+      else if(k>45&&w>=6&&s>=4)type='market';
+      else if(w>=4&&s>=2)type='hut';
+      else if(w>=2&&s>=3)type='mine';
+      else type='camp';
+      const def=STRUCTURE_TYPES[type];
+      if(!def){this._gatherResources();return;}
+      const cost=def.cost;
+      if(w<cost.wood||s<cost.stone){this._gatherResources();return;}
+      const minDist=['wall','watchtower'].includes(type)?2:3;
+      for(let r=2;r<=14;r++){
+        for(let a=0;a<16;a++){
+          const angle=(a/16)*Math.PI*2+this._wanderAngle;
+          const bx=Math.round(this._settleTx+Math.cos(angle)*r);
+          const by=Math.round(this._settleTy+Math.sin(angle)*r);
+          if(!isLand(bx,by)||getStructureAt(bx,by)||getResourceAt(bx,by))continue;
+          let tooClose=false;
+          for(const st of structures){
+            if(st.type===type&&Math.hypot(st.tx-bx,st.ty-by)<minDist){tooClose=true;break;}
+          }
+          if(tooClose)continue;
           if(placeStructure(bx,by,type,this)){
-            this.inventory.wood  -= cost.wood;
-            this.inventory.stone -= cost.stone;
-            this.knowledge = Math.min(100, this.knowledge+3);
-            this.homeBase = {tx:bx,ty:by};
-            this.action = ACTIONS.BUILD;
-            this.addLog(`Construyó ${def[type].label}`);
+            this.inventory.wood-=cost.wood;this.inventory.stone-=cost.stone;
+            this.knowledge=Math.min(9999,this.knowledge+4);
+            this.homeBase={tx:bx,ty:by};
+            this._settleTx=bx;this._settleTy=by;
+            this.action=ACTIONS.BUILD;
+            this.addLog(`Construyó ${def.label}`);
+            _onStructureBuilt(type,this,bx,by);
+            return;
+          }
+        }
+      }
+      this._gatherResources();
+    }
+
+
+  _doFarm(){
+    if(this.hunger<45||this.inventory.wood<1){this._seekFoodNow();return;}
+    for(let r=2;r<=8;r++){
+      for(let a=0;a<12;a++){
+        const angle=(a/12)*Math.PI*2+this._wanderAngle;
+        const bx=Math.round(this._settleTx+Math.cos(angle)*r);
+        const by=Math.round(this._settleTy+Math.sin(angle)*r);
+        const cell=getCell(bx,by);
+        if(!cell||!isLand(bx,by)||getStructureAt(bx,by)||getResourceAt(bx,by))continue;
+        if(['grass','dense_grass','dry_grass','savanna','shrubland','grassland'].includes(cell.biome)){
+          if(placeStructure(bx,by,'farm',this)){
+            this.inventory.wood--;
+            this.knowledge=Math.min(9999,this.knowledge+2);
+            this.action=ACTIONS.FARM;
+            this.addLog('Plantó un cultivo');
             return;
           }
         }
       }
     }
-    this._gatherResources();
+    this._seekFoodNow();
   }
 
-  _doFarm() {
-    // Plant a farm near home or current position
-    const cost = STRUCTURE_TYPES.farm.cost;
-    if(this.inventory.wood>=cost.wood){
-      for(let r=1;r<=4;r++){
-        for(let a=0;a<8;a++){
-          const angle=(a/8)*Math.PI*2;
-          const bx=Math.round(this.tx+Math.cos(angle)*r);
-          const by=Math.round(this.ty+Math.sin(angle)*r);
-          const cell=getCell(bx,by);
-          if(!cell||!isLand(bx,by)||getStructureAt(bx,by)) continue;
-          if(['grass','dense_grass','dry_grass','savanna'].includes(cell.biome)){
-            if(placeStructure(bx,by,'farm',this)){
-              this.inventory.wood -= cost.wood;
-              this.knowledge = Math.min(100, this.knowledge+2);
-              this.action = ACTIONS.FARM;
-              this.addLog('Plantó un cultivo');
-              return;
-            }
-          }
+  _gatherResources(){
+    // Prioritize wood for building
+    if(this.inventory.wood<15){
+      const res=this._findNearbyResource(WOOD_TYPES,30);
+      if(res){
+        if(Math.hypot(res.tx-this.tx,res.ty-this.ty)<=1.5){
+          this._harvestResourceNow(res);
+        } else {
+          this._setDest(res.tx,res.ty);this.action=ACTIONS.GATHER;this.target=res;
         }
+        return;
       }
     }
-    this._seekFood();
-  }
-
-  _doCraft() {
-    if(this.inventory.wood>=2 && this.inventory.stone>=1){
-      this.inventory.wood  -= 2;
-      this.inventory.stone -= 1;
-      this.inventory.food  += 5; // crafted tools → better hunting yield
-      this.knowledge = Math.min(100, this.knowledge+1.5);
-      this.action = ACTIONS.CRAFT;
-      this.addLog('Fabricó herramientas');
-    } else {
-      this._gatherResources();
+    if(this.inventory.stone<12){
+      const res=this._findNearbyResource(STONE_TYPES,30);
+      if(res){
+        if(Math.hypot(res.tx-this.tx,res.ty-this.ty)<=1.5){
+          this._harvestResourceNow(res);
+        } else {
+          this._setDest(res.tx,res.ty);this.action=ACTIONS.MINE;this.target=res;
+        }
+        return;
+      }
     }
+    // If well stocked, try to build
+    if(this.inventory.wood>=4){
+      this._doBuild();return;
+    }
+    this._doWander();
   }
 
-  _tryReproduce() {
-    if(this.age<16||this.age>45||this.reproTimer>0){ this._doSocialize(); return; }
-    if(this.hunger<40||this.energy<30){ this._seekFood(); return; }
+  _tryReproduce(nearby){
+    if(!this._canReproduce||this.age<15||this.age>50||this.reproTimer>0){
+      this._doSocialize(nearby);return;
+    }
+    if(this.hunger<35||this.energy<25||this.sick){this._seekFoodNow();return;}
+    const aliveCount=humans.filter(h=>h.alive).length;
+    if(aliveCount>=POP_SOFT_CAP&&this._rng()<(aliveCount-POP_SOFT_CAP)/(POP_HARD_CAP-POP_SOFT_CAP)){
+      this._doSocialize(nearby);return;
+    }
+    if(aliveCount>=POP_HARD_CAP){this._doSocialize(nearby);return;}
 
-    const partner = this._findReproductionPartner();
+    let partner=null;
+    // Search nearby first, then wider
+    const searchRadius=nearby.length>0?16:80;
+    const candidates=searchRadius===16?nearby:_spatialQuery(this.tx,this.ty,80,this.id);
+    for(const h of candidates){
+      if(h.gender===this.gender||h.age<15||h.age>50||h.reproTimer>0)continue;
+      if(h.hunger<30||h.energy<20||h.sick)continue;
+      if(Math.hypot(h.tx-this.tx,h.ty-this.ty)<=8){partner=h;break;}
+    }
     if(partner){
-      this.action = ACTIONS.REPRODUCE;
-      partner.action = ACTIONS.REPRODUCE;
-      this.reproTimer  = 2+Math.floor(this._rng()*2);
-      partner.reproTimer = 2+Math.floor(partner._rng()*2);
-      this.partner = partner.id; partner.partner = this.id;
-
-      const cRng = mulberry32(WORLD_SEED^(this.id*0x1337)^(year*0x7F)^(partner.id*0x31));
-      const child = new Human(this.tx, this.ty, cRng, cRng()<0.5?'M':'F', this, partner);
-      child.hunger=75; child.energy=90;
-      humans.push(child);
-      this.children++; partner.children++;
-      this.addLog(`Tuvo un hijo: ${child.name.split(' ')[0]}`);
-      partner.addLog(`Tuvo un hijo: ${child.name.split(' ')[0]}`);
+      this.action=ACTIONS.REPRODUCE;partner.action=ACTIONS.REPRODUCE;
+      // Cooldown: 1-3 years (realistic)
+      this.reproTimer=1+Math.floor(this._rng()*3);
+      partner.reproTimer=1+Math.floor(partner._rng()*3);
+      this._reproUrge=0;partner._reproUrge=0;
+      const cRng=mulberry32(WORLD_SEED^(this.id*0x1337)^(year*0x7F)^(partner.id*0x31));
+      const childGender=cRng()<0.5?'F':'M';
+      const child=new Human(this.tx,this.ty,cRng,childGender,this,partner);
+      child.hunger=95;child.energy=98;child.health=100;
+      if(this.civId)child.civId=this.civId;
+      child._settleTx=this._settleTx+Math.round(cRng()*6-3);
+      child._settleTy=this._settleTy+Math.round(cRng()*6-3);
+      child._wanderAngle=cRng()*Math.PI*2;
+      humans.push(child);_spatialAdd(child);
+      if(this.civId){const civ=civilizations.get(this.civId);if(civ)civ.addMember(child);}
+      this.children++;partner.children++;
+      this.addLog(`Tuvo ${childGender==='F'?'una hija':'un hijo'}: ${child.name.split(' ')[0]}`);
+      partner.addLog(`Tuvo ${childGender==='F'?'una hija':'un hijo'}: ${child.name.split(' ')[0]}`);
+      if(this.children===1||partner.children===1)
+        addWorldEvent(`👶 ${child.name.split(' ')[0]} nació (${childGender==='F'?'♀':'♂'})`);
     } else {
-      // Move toward nearest opposite-gender human
-      let closest=null, bestD=Infinity;
-      for(const h of humans){
-        if(h===this||!h.alive||h.gender===this.gender) continue;
+      // Seek partner — look very wide
+      const far=_spatialQuery(this.tx,this.ty,100,this.id);
+      let closest=null,bestD=Infinity;
+      for(const h of far){
+        if(h.gender===this.gender||h.age<15||h.age>50||!h._canReproduce)continue;
         const d=Math.hypot(h.tx-this.tx,h.ty-this.ty);
         if(d<bestD){bestD=d;closest=h;}
       }
-      if(closest) this._stepToward(closest.tx, closest.ty);
-      else this._wander();
+      if(closest)this._setDest(closest.tx,closest.ty);
+      else this._doWander();
     }
   }
 
-  _wander() {
-    this.action = ACTIONS.WANDER;
-    // Bigger steps — move 3-8 tiles at once
-    const dist = 3+Math.floor(this._rng()*6);
-    const angle = this._rng()*Math.PI*2;
-    this._stepToward(this.tx+Math.cos(angle)*dist, this.ty+Math.sin(angle)*dist);
-    this.knowledge = Math.min(100, this.knowledge+0.2);
+  _joinCiv(civId){
+    if(this.civId===civId)return;
+    if(this.civId){const old=civilizations.get(this.civId);if(old)old.removeMember(this.id);}
+    this.civId=civId;
+    const civ=civilizations.get(civId);
+    if(civ){civ.addMember(this);this.addLog(`Se unió a ${civ.name}`);}
   }
 
-  _seekFood() {
-    const res = this._findNearbyResource(['berries','wheat_wild','mushroom','animal','fish','tree_palm','cactus','bush'],20);
-    if(res){
-      this.action = res.type==='animal'?ACTIONS.HUNT:res.type==='fish'?ACTIONS.FISH:ACTIONS.GATHER;
-      this._stepToward(res.tx, res.ty);
-      this.target = res;
-    } else {
-      // Check nearby farms
-      const farm = this._findNearbyStructure('farm', 15);
-      if(farm){ this._stepToward(farm.tx,farm.ty); this.action=ACTIONS.GATHER; }
-      else this._wander();
+  _navigateTo(tx,ty){
+    const ntx=Math.max(0,Math.min(WORLD_W-1,Math.round(tx)));
+    const nty=Math.max(0,Math.min(WORLD_H-1,Math.round(ty)));
+    if(ntx===this.tx&&nty===this.ty)return;
+    // Try direct step
+    const dx=ntx-this.tx,dy=nty-this.ty;
+    const sx=this.tx+(dx>0?1:dx<0?-1:0);
+    const sy=this.ty+(dy>0?1:dy<0?-1:0);
+    if(isLand(sx,sy)){this._setDest(sx,sy);return;}
+    if(isLand(sx,this.ty)){this._setDest(sx,this.ty);return;}
+    if(isLand(this.tx,sy)){this._setDest(this.tx,sy);return;}
+    // Try all 8 directions
+    for(let a=0;a<8;a++){
+      const rx=this.tx+Math.round(Math.cos(a/8*Math.PI*2));
+      const ry=this.ty+Math.round(Math.sin(a/8*Math.PI*2));
+      if(isLand(rx,ry)){this._setDest(rx,ry);return;}
     }
   }
+  _setDest(tx,ty){this.destPx=tx*TILE+TILE/2;this.destPy=ty*TILE+TILE/2;}
 
-  _gatherResources() {
-    if(this.inventory.wood<10){
-      const res=this._findNearbyResource(['tree_oak','tree_pine','tree_palm','tree_jungle'],15);
-      if(res){ this.action=ACTIONS.GATHER; this._stepToward(res.tx,res.ty); this.target=res; return; }
-    }
-    if(this.inventory.stone<8){
-      const res=this._findNearbyResource(['rock','iron_ore','clay'],15);
-      if(res){ this.action=ACTIONS.MINE; this._stepToward(res.tx,res.ty); this.target=res; return; }
-    }
-    this._wander();
-  }
-
-  // Move multiple steps toward target in one tick (faster movement)
-  _stepToward(tx, ty) {
-    const steps = 3; // move up to 3 tiles per year
-    let cx=this.tx, cy=this.ty;
-    for(let s=0;s<steps;s++){
-      const dx=tx-cx, dy=ty-cy;
-      if(Math.abs(dx)<0.5&&Math.abs(dy)<0.5) break;
-      const nx=Math.round(cx+(dx>0?1:dx<0?-1:0));
-      const ny=Math.round(cy+(dy>0?1:dy<0?-1:0));
-      if(isLand(nx,ny)){ cx=nx; cy=ny; }
-      else {
-        // Try diagonal alternatives
-        const alt=[[nx,cy],[cx,ny]];
-        let moved=false;
-        for(const [ax,ay] of alt){ if(isLand(ax,ay)){cx=ax;cy=ay;moved=true;break;} }
-        if(!moved) break;
-      }
-    }
-    this.tx=cx; this.ty=cy;
-  }
-
-  _findNearbyResource(types, radius) {
-    let best=null, bestDist=Infinity;
-    const x0=Math.max(0,Math.floor(this.tx-radius)), x1=Math.min(WORLD_W-1,Math.floor(this.tx+radius));
-    const y0=Math.max(0,Math.floor(this.ty-radius)), y1=Math.min(WORLD_H-1,Math.floor(this.ty+radius));
-    for(let ty=y0;ty<=y1;ty++) for(let tx=x0;tx<=x1;tx++){
+  _findNearbyResource(types,radius){
+    let best=null,bestDist=Infinity;
+    const x0=Math.max(0,this.tx-radius),x1=Math.min(WORLD_W-1,this.tx+radius);
+    const y0=Math.max(0,this.ty-radius),y1=Math.min(WORLD_H-1,this.ty+radius);
+    for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++){
       const res=getResourceAt(tx,ty);
-      if(!res||!types.includes(res.type)) continue;
+      if(!res||!types.includes(res.type))continue;
       const d=Math.hypot(tx-this.tx,ty-this.ty);
       if(d<bestDist){bestDist=d;best=res;}
     }
     return best;
   }
-
-  _findNearbyHuman(radius) {
-    let best=null, bestDist=Infinity;
-    for(const h of humans){
-      if(h===this||!h.alive) continue;
-      const d=Math.hypot(h.tx-this.tx,h.ty-this.ty);
-      if(d<radius&&d<bestDist){bestDist=d;best=h;}
+  _findNearbyStructure(type,radius){
+    let best=null,bestD=Infinity;
+    for(const s of structures){
+      if(type&&s.type!==type)continue;
+      const d=Math.hypot(s.tx-this.tx,s.ty-this.ty);
+      if(d<=radius&&d<bestD){bestD=d;best=s;}
     }
     return best;
   }
 
-  _findNearbyStructure(type, radius) {
-    for(const s of structures){
-      if(type&&s.type!==type) continue;
-      if(Math.hypot(s.tx-this.tx,s.ty-this.ty)<=radius) return s;
-    }
-    return null;
-  }
-
-  _findReproductionPartner() {
-    for(const h of humans){
-      if(h===this||!h.alive||h.gender===this.gender) continue;
-      if(h.age<16||h.age>45||h.reproTimer>0) continue;
-      if(h.hunger<40||h.energy<30) continue;
-      if(Math.hypot(h.tx-this.tx,h.ty-this.ty)<=5) return h;
-    }
-    return null;
-  }
-
-  _harvestTarget() {
-    if(!this.target) return;
-    const res=getResourceAt(this.target.tx,this.target.ty);
-    if(!res){this.target=null;return;}
-    const def=RESOURCE_DEFS[res.type];
-    const harvest=Math.min(res.amount,6);
-    res.amount-=harvest;
-    if(def.food>0){ this.hunger=Math.min(100,this.hunger+def.food*harvest*0.7); this.inventory.food+=Math.floor(harvest*0.5); this.addLog(`Recolectó ${def.label}`); }
-    if(def.wood>0){ this.inventory.wood+=Math.floor(harvest*0.6); this.addLog(`Taló ${def.label}`); }
-    if(def.stone>0){ this.inventory.stone+=Math.floor(harvest*0.6); this.addLog(`Minó ${def.label}`); }
-    this.knowledge=Math.min(100,this.knowledge+0.4);
-    // Modify terrain: remove depleted resource visually
-    if(res.amount<=0) removeResource(res.tx,res.ty);
-    this.target=null;
-  }
-
-  // Harvest from a farm structure
-  _harvestFarm(farm) {
-    this.inventory.food += 8;
-    this.hunger = Math.min(100, this.hunger+20);
-    this.addLog('Cosechó cultivo');
-    farm.hp -= 5;
+  _harvestFarm(farm){
+    this.inventory.food+=20;this.hunger=Math.min(100,this.hunger+40);
+    farm.hp-=2; // farms last longer now
     if(farm.hp<=0){
-      structures.splice(structures.indexOf(farm),1);
+      const idx=structures.indexOf(farm);
+      if(idx>=0)structures.splice(idx,1);
       structureGrid[farm.ty][farm.tx]=null;
     }
   }
 
-  _die(cause) {
-    this.alive=false;
-    this.action=`Murió (${cause})`;
+  _die(cause){
+    this.alive=false;this.action=`Murió (${cause})`;
     this.addLog(`Murió de ${cause} a los ${Math.floor(this.age)} años`);
+    _spatialRemove(this);
+    if(this.civId){
+      const civ=civilizations.get(this.civId);
+      if(civ){civ.removeMember(this.id);if(civ.leaderId===this.id)_electNewLeader(civ);}
+    }
+    // Only log notable deaths
+    if(this.children>0||this.isLeader)
+      addWorldEvent(`💀 ${this.name.split(' ')[0]} murió de ${cause} (${Math.floor(this.age)}a, ${this.children} hijos)`);
   }
 }
 
-// ── Global humans list ────────────────────────────────────────────────────────
-let humans = [];
+// ── Emergent knowledge: unlocks new structure types as civilization advances ──
+const KNOWLEDGE_UNLOCKS=[
+  {avgK:12,  type:'granary',    icon:'🌽',color:'#c8d040',label:'Granero',      cost:{wood:5,stone:3},  hp:120,decay:false,decayRate:0, msg:'🌽 Granero desbloqueado — reservas de alimento'},
+  {avgK:18,  type:'well',       icon:'💧',color:'#60a0ff',label:'Pozo',          cost:{wood:2,stone:4},  hp:120,decay:false,decayRate:0, msg:'💧 Pozo desbloqueado — agua garantizada'},
+  {avgK:28,  type:'watchtower', icon:'🗼',color:'#a0c0e0',label:'Torre Vigía',   cost:{wood:4,stone:6},  hp:130,decay:false,decayRate:0, msg:'� Torre Vigía — vigilancia del territorio'},
+  {avgK:35,  type:'workshop',   icon:'�',color:'#c08040',label:'Taller',        cost:{wood:5,stone:3},  hp:120,decay:false,decayRate:0, msg:'� Taller desbloqueado — producción avanzada'},
+  {avgK:45,  type:'blacksmith', icon:'🔩',color:'#806040',label:'Herrero',       cost:{wood:6,stone:5},  hp:130,decay:false,decayRate:0, msg:'🔩 Herrero desbloqueado — armas de metal'},
+  {avgK:55,  type:'wall',       icon:'🧱',color:'#808060',label:'Muralla',       cost:{wood:3,stone:8},  hp:200,decay:false,decayRate:0, msg:'🧱 Muralla desbloqueada — defensa del territorio'},
+  {avgK:65,  type:'barracks',   icon:'⚔️', color:'#c04040',label:'Cuartel',      cost:{wood:8,stone:6},  hp:160,decay:false,decayRate:0, msg:'⚔️ Cuartel desbloqueado — ejércitos organizados'},
+  {avgK:75,  type:'library',    icon:'📚',color:'#80c0ff',label:'Biblioteca',    cost:{wood:8,stone:6},  hp:150,decay:false,decayRate:0, msg:'📚 Biblioteca desbloqueada — conocimiento compartido'},
+  {avgK:90,  type:'forge',      icon:'⚒️', color:'#ff8040',label:'Forja',         cost:{wood:6,stone:8},  hp:150,decay:false,decayRate:0, msg:'⚒️ Forja desbloqueada — era del metal'},
+  {avgK:105, type:'harbor',     icon:'⚓',color:'#4080c0',label:'Puerto',        cost:{wood:10,stone:6}, hp:150,decay:false,decayRate:0, msg:'⚓ Puerto desbloqueado — comercio marítimo'},
+  {avgK:120, type:'academy',    icon:'🎓',color:'#ffd700',label:'Academia',      cost:{wood:10,stone:10},hp:200,decay:false,decayRate:0, msg:'🎓 Academia desbloqueada — era del conocimiento'},
+  {avgK:140, type:'castle',     icon:'🏰',color:'#8090a0',label:'Castillo',      cost:{wood:12,stone:18},hp:300,decay:false,decayRate:0, msg:'🏰 Castillo desbloqueado — era feudal'},
+  {avgK:165, type:'cathedral',  icon:'⛪',color:'#e0d0ff',label:'Catedral',      cost:{wood:15,stone:15},hp:250,decay:false,decayRate:0, msg:'⛪ Catedral desbloqueada — era de la fe'},
+  {avgK:190, type:'colosseum',  icon:'🏟',color:'#e0a040',label:'Coliseo',       cost:{wood:15,stone:20},hp:300,decay:false,decayRate:0, msg:'🏟 Coliseo desbloqueado — era de los espectáculos'},
+  {avgK:220, type:'palace',     icon:'🏯',color:'#ffd700',label:'Palacio',       cost:{wood:20,stone:20},hp:350,decay:false,decayRate:0, msg:'🏯 Palacio desbloqueado — era imperial'},
+  {avgK:260, type:'university', icon:'🏫',color:'#a0d0ff',label:'Universidad',   cost:{wood:20,stone:20},hp:300,decay:false,decayRate:0, msg:'🏫 Universidad desbloqueada — ciencia avanzada'},
+  {avgK:310, type:'observatory',icon:'🔭',color:'#c0a0ff',label:'Observatorio',  cost:{wood:15,stone:25},hp:300,decay:false,decayRate:0, msg:'🔭 Observatorio desbloqueado — era de la ciencia'},
+  {avgK:380, type:'alchemist',  icon:'⚗️', color:'#80ffc0',label:'Alquimista',   cost:{wood:12,stone:15},hp:200,decay:false,decayRate:0, msg:'⚗️ Alquimista desbloqueado — era de la alquimia'},
+  {avgK:460, type:'citadel',    icon:'🗺️', color:'#c0a080',label:'Ciudadela',    cost:{wood:25,stone:35},hp:500,decay:false,decayRate:0, msg:'🗺️ Ciudadela desbloqueada — era de los grandes imperios'},
+  {avgK:550, type:'armory',     icon:'🛡️', color:'#a0b0c0',label:'Armería',      cost:{wood:15,stone:20},hp:250,decay:false,decayRate:0, msg:'🛡️ Armería desbloqueada — armamento avanzado'},
+  {avgK:650, type:'siege',      icon:'💣',color:'#804020',label:'Taller de Asedio',cost:{wood:20,stone:15},hp:200,decay:false,decayRate:0, msg:'💣 Taller de Asedio — armas de destrucción'},
+];
+const _unlockedTypes=new Set(['camp','hut','farm','mine','market','temple','granary','watchtower','barracks','wall','blacksmith','harbor','castle','cathedral','palace']);
 
-function spawnInitialHumans() {
-  humans = [];
-  humanIdCounter = 0;
-  initStructureGrid();
-  structures = [];
-
-  const cx=Math.floor(WORLD_W/2), cy=Math.floor(WORLD_H/2);
-  let placed=0;
-  const genders=['M','F'];
-
-  for(let r=0;r<80&&placed<2;r++){
-    for(let a=0;a<20&&placed<2;a++){
-      const angle=(a/20)*Math.PI*2;
-      const tx=Math.round(cx+Math.cos(angle)*r);
-      const ty=Math.round(cy+Math.sin(angle)*r);
-      if(!isLand(tx,ty)) continue;
-      const cell=getCell(tx,ty);
-      if(!cell||cell.h>T.MOUNTAIN) continue;
-      const rng=mulberry32(WORLD_SEED^(placed*0x1234)^0xBEEF);
-      const h=new Human(tx,ty,rng,genders[placed]);
-      h.age=20+Math.floor(rng()*5);
-      h.inventory={food:15,wood:4,stone:2}; // start with more resources
-      humans.push(h);
-      placed++;
+function _checkKnowledgeUnlocks(){
+  const alive=humans.filter(h=>h.alive);
+  if(alive.length===0)return;
+  const avgK=alive.reduce((s,h)=>s+h.knowledge,0)/alive.length;
+  for(const u of KNOWLEDGE_UNLOCKS){
+    if(avgK>=u.avgK&&!_unlockedTypes.has(u.type)){
+      _unlockedTypes.add(u.type);
+      STRUCTURE_TYPES[u.type]={icon:u.icon,color:u.color,label:u.label,cost:u.cost,hp:u.hp,decay:u.decay,decayRate:u.decayRate};
+      addWorldEvent(u.msg);
+      // Boost all humans' knowledge slightly on unlock
+      for(const h of alive)h.knowledge=Math.min(9999,h.knowledge+3);
     }
   }
 }
 
-function tickHumans(yearsElapsed, speedMult) {
+// ── Leader election ───────────────────────────────────────────────────────────
+function _electNewLeader(civ){
+  let best=null,bestScore=-1;
+  for(const id of civ.members){
+    const h=humans.find(x=>x.id===id&&x.alive);
+    if(!h)continue;
+    if(h.leaderScore>bestScore){bestScore=h.leaderScore;best=h;}
+  }
+  if(best){
+    const old=humans.find(x=>x.id===civ.leaderId);
+    if(old)old.isLeader=false;
+    civ.leaderId=best.id;best.isLeader=true;
+    best.addLog(`Elegido líder de ${civ.name}`);
+    addWorldEvent(`👑 ${best.name.split(' ')[0]} elegido líder de ${civ.name}`);
+  }
+}
+
+// ── Civ splitting: ideological divergence creates new civilizations ───────────
+function _checkCivSplits(){
+  for(const [civId,civ] of civilizations){
+    if(civ.population<15)continue;
+    const members=[];
+    for(const id of civ.members){
+      const h=humans.find(x=>x.id===id&&x.alive);
+      if(h)members.push(h);
+    }
+    if(members.length<15)continue;
+    // Find ideological outliers
+    const avgIdeology=members.reduce((s,h)=>s+h.ideology,0)/members.length;
+    const splinters=members.filter(h=>Math.abs(h.ideology-avgIdeology)>0.45);
+    if(splinters.length<4)continue;
+    // Form new civ from splinters
+    const founder=splinters[0];
+    const newCiv=new Civilization(founder);
+    newCiv.color=`hsl(${Math.floor(founder._rng()*360)},70%,65%)`;
+    civilizations.set(newCiv.id,newCiv);
+    for(const h of splinters){
+      civ.removeMember(h.id);
+      h.civId=newCiv.id;
+      h.color=newCiv.color; // adopt new civ color
+      newCiv.addMember(h);
+    }
+    // New civ starts as enemy of parent
+    newCiv.enemies.add(civId);
+    civ.enemies.add(newCiv.id);
+    addWorldEvent(`✊ Escisión: ${newCiv.name} se separó de ${civ.name} (${splinters.length} disidentes)`);
+  }
+}
+
+// ── Spawn ─────────────────────────────────────────────────────────────────────
+let humans=[];
+
+function spawnInitialHumans(){
+  initStructureGrid();
+  initSpatialGrid();
+  // Find a good land tile near center with food nearby
+  const cx=Math.floor(WORLD_W/2),cy=Math.floor(WORLD_H/2);
+  let sx=cx,sy=cy;
+  outer:for(let r=0;r<60;r++)for(let a=0;a<20;a++){
+    const tx=cx+Math.round(Math.cos(a/20*Math.PI*2)*r);
+    const ty=cy+Math.round(Math.sin(a/20*Math.PI*2)*r);
+    if(!isLand(tx,ty))continue;
+    // Prefer tiles with food nearby
+    const cell=getCell(tx,ty);
+    if(cell&&['grass','dense_grass','forest','savanna'].includes(cell.biome)){sx=tx;sy=ty;break outer;}
+  }
+  if(!isLand(sx,sy)){
+    outer2:for(let r=0;r<60;r++)for(let a=0;a<20;a++){
+      const tx=cx+Math.round(Math.cos(a/20*Math.PI*2)*r);
+      const ty=cy+Math.round(Math.sin(a/20*Math.PI*2)*r);
+      if(isLand(tx,ty)){sx=tx;sy=ty;break outer2;}
+    }
+  }
+
+  const rngA=mulberry32(WORLD_SEED^0xABCD1234);
+  const rngB=mulberry32(WORLD_SEED^0xDEADBEEF);
+
+  const adam=new Human(sx,sy,rngA,'M',null,null);
+  adam.knowledge=30;adam.inventory={food:40,wood:15,stone:8};
+  adam.hunger=98;adam.energy=100;
+  adam._wanderAngle=Math.PI*0.2;
+  adam._settleTx=sx;adam._settleTy=sy;
+
+  const ex=Math.max(0,Math.min(WORLD_W-1,sx+4));
+  const ey=Math.max(0,Math.min(WORLD_H-1,sy+2));
+  const spawnX=isLand(ex,ey)?ex:sx;
+  const spawnY=isLand(ex,ey)?ey:sy;
+  const eve=new Human(spawnX,spawnY,rngB,'F',null,null);
+  eve.knowledge=30;eve.inventory={food:40,wood:15,stone:8};
+  eve.hunger=98;eve.energy=100;
+  eve._wanderAngle=Math.PI*1.2;
+  eve._settleTx=spawnX;eve._settleTy=spawnY;
+
+  const civ=getOrCreateCiv(adam);
+  civ.addMember(eve);eve.civId=civ.id;
+  adam.isLeader=true;
+
+  humans.push(adam,eve);
+  _spatialAdd(adam);_spatialAdd(eve);
+}
+
+// ── Global movement (every frame) ────────────────────────────────────────────
+function updateHumanMovement(dtSec,speedMult){
+  for(const h of humans)h.updateMovement(dtSec,speedMult);
+}
+
+// ── Annual tick ───────────────────────────────────────────────────────────────
+let _leaderElectTimer=0;
+
+function tickHumans(yearsElapsed){
+  tickDiseases(yearsElapsed);
+  tickStructures(yearsElapsed);
+
   for(const h of humans){
-    if(!h.alive) continue;
-    h.tick(yearsElapsed, speedMult);
-    // Harvest if at target resource
-    if(h.target&&h.tx===h.target.tx&&h.ty===h.target.ty) h._harvestTarget();
-    // Harvest nearby farm
-    const farm=h._findNearbyStructure('farm',1);
-    if(farm&&h.hunger<70) h._harvestFarm(farm);
+    if(!h.alive)continue;
+    h.tick(yearsElapsed);
+    if(h.target){
+      const d=Math.hypot(h.tx-h.target.tx,h.ty-h.target.ty);
+      if(d<=1.5)h._harvestResourceNow(h.target);
+    }
+  }
+
+  // Passive structure effects every tick
+  for(const s of structures){
+    if(s.type==='well'){
+      // Well: nearby humans regenerate health faster
+      const near=_spatialQuery(s.tx,s.ty,8,-1);
+      for(const h of near)h.health=Math.min(100,h.health+yearsElapsed*2);
+    } else if(s.type==='library'||s.type==='academy'){
+      // Knowledge spreads passively from libraries
+      const near=_spatialQuery(s.tx,s.ty,s.type==='academy'?25:15,-1);
+      for(const h of near)h.knowledge=Math.min(9999,h.knowledge+yearsElapsed*(s.type==='academy'?1.5:0.8));
+    } else if(s.type==='workshop'||s.type==='forge'){
+      // Workshops boost resource gathering nearby
+      const near=_spatialQuery(s.tx,s.ty,10,-1);
+      for(const h of near){
+        if(h.inventory.wood<20)h.inventory.wood+=Math.floor(yearsElapsed*0.5);
+        if(h.inventory.stone<15)h.inventory.stone+=Math.floor(yearsElapsed*0.5);
+      }
+    } else if(s.type==='colosseum'){
+      // Colosseum boosts aggression and social
+      const near=_spatialQuery(s.tx,s.ty,20,-1);
+      for(const h of near){h.social=Math.min(100,h.social+yearsElapsed*2);h.aggression=Math.min(1,h.aggression+yearsElapsed*0.01);}
+    } else if(s.type==='university'||s.type==='observatory'){
+      // University/Observatory: massive knowledge boost
+      const near=_spatialQuery(s.tx,s.ty,30,-1);
+      for(const h of near)h.knowledge=Math.min(9999,h.knowledge+yearsElapsed*(s.type==='observatory'?3:2));
+    }
+  }
+
+  // Check for new knowledge unlocks
+  _checkKnowledgeUnlocks();
+
+  // Civ splitting: after year 1000, large civs with ideological divergence split
+  if(year>=1000&&year%20===0){
+    _checkCivSplits();
+  }
+  // Announce social division era
+  if(year===1000){
+    addWorldEvent('⚔️ Año 1000: Las sociedades comienzan a dividirse');
+  }
+
+  // Leader election every 5 years
+  _leaderElectTimer+=yearsElapsed;
+  if(_leaderElectTimer>=5){
+    _leaderElectTimer=0;
+    for(const [,civ] of civilizations){
+      const leader=humans.find(x=>x.id===civ.leaderId&&x.alive);
+      if(!leader)_electNewLeader(civ);
+      let totalK=0,count=0;
+      for(const id of civ.members){
+        const h=humans.find(x=>x.id===id&&x.alive);
+        if(h){totalK+=h.knowledge;count++;}
+      }
+      if(count>0){
+        const avg=totalK/count;
+        civ.era=avg>80?'moderna':avg>60?'industrial':avg>40?'medieval':avg>25?'antigua':'primitiva';
+      }
+    }
+  }
+
+  // Prune dead — keep last 20
+  const dead=humans.filter(h=>!h.alive);
+  if(dead.length>20){
+    const keep=new Set(dead.slice(dead.length-20));
+    humans=humans.filter(h=>h.alive||keep.has(h));
   }
 }

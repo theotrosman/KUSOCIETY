@@ -1,21 +1,22 @@
 // ── Resource definitions ──────────────────────────────────────────────────────
 const RESOURCE_DEFS = {
-  tree_oak   :{biomes:['grass','dense_grass','dry_grass'],      density:0.20, icon:'🌳', label:'Roble',    food:0, wood:8,  stone:0},
-  tree_pine  :{biomes:['forest','highland'],                    density:0.24, icon:'🌲', label:'Pino',     food:0, wood:10, stone:0},
-  tree_palm  :{biomes:['shore','savanna'],                      density:0.10, icon:'🌴', label:'Palma',    food:2, wood:5,  stone:0},
-  tree_jungle:{biomes:['rainforest'],                           density:0.28, icon:'🌿', label:'Selva',    food:1, wood:7,  stone:0},
-  bush       :{biomes:['shrubland','savanna','dry_grass'],      density:0.13, icon:'🌿', label:'Arbusto',  food:1, wood:2,  stone:0},
-  cactus     :{biomes:['desert'],                               density:0.07, icon:'🌵', label:'Cactus',   food:1, wood:1,  stone:0},
-  rock       :{biomes:['mountain','highland','shore'],          density:0.15, icon:'🪨', label:'Roca',     food:0, wood:0,  stone:10},
-  iron_ore   :{biomes:['mountain','highland'],                  density:0.06, icon:'⛏',  label:'Hierro',   food:0, wood:0,  stone:5, metal:8},
-  gold_ore   :{biomes:['mountain'],                             density:0.02, icon:'✦',  label:'Oro',      food:0, wood:0,  stone:0, gold:5},
-  coal       :{biomes:['highland','mountain'],                  density:0.05, icon:'◆',  label:'Carbón',   food:0, wood:0,  stone:0, fuel:8},
-  fish       :{biomes:['sea','shore'],                          density:0.09, icon:'🐟', label:'Peces',    food:10,wood:0,  stone:0},
-  wheat_wild :{biomes:['grassland','dry_grass','savanna'],      density:0.10, icon:'🌾', label:'Trigo',    food:6, wood:0,  stone:0},
-  berries    :{biomes:['forest','dense_grass','rainforest'],    density:0.08, icon:'🍒', label:'Bayas',    food:4, wood:0,  stone:0},
-  mushroom   :{biomes:['swamp','forest'],                       density:0.07, icon:'🍄', label:'Hongos',   food:3, wood:0,  stone:0},
-  clay       :{biomes:['swamp','shore'],                        density:0.09, icon:'◉',  label:'Arcilla',  food:0, wood:0,  stone:3},
-  animal     :{biomes:['grass','savanna','dry_grass','forest'], density:0.06, icon:'🐗', label:'Animal',   food:12,wood:0,  stone:0},
+  tree_oak   :{biomes:['grass','dense_grass','dry_grass'],           density:0.28, icon:'🌳', label:'Roble',    food:0, wood:8,  stone:0},
+  tree_pine  :{biomes:['forest','highland'],                         density:0.30, icon:'🌲', label:'Pino',     food:0, wood:10, stone:0},
+  tree_palm  :{biomes:['shore','savanna'],                           density:0.16, icon:'🌴', label:'Palma',    food:3, wood:5,  stone:0},
+  tree_jungle:{biomes:['rainforest'],                                density:0.32, icon:'🌿', label:'Selva',    food:2, wood:7,  stone:0},
+  bush       :{biomes:['shrubland','savanna','dry_grass'],           density:0.18, icon:'🌿', label:'Arbusto',  food:2, wood:2,  stone:0},
+  cactus     :{biomes:['desert'],                                    density:0.10, icon:'🌵', label:'Cactus',   food:2, wood:1,  stone:0},
+  rock       :{biomes:['mountain','highland','shore'],               density:0.20, icon:'🪨', label:'Roca',     food:0, wood:0,  stone:10},
+  iron_ore   :{biomes:['mountain','highland'],                       density:0.10, icon:'⛏',  label:'Hierro',   food:0, wood:0,  stone:5},
+  gold_ore   :{biomes:['mountain'],                                  density:0.04, icon:'✦',  label:'Oro',      food:0, wood:0,  stone:0},
+  coal       :{biomes:['highland','mountain'],                       density:0.08, icon:'◆',  label:'Carbón',   food:0, wood:0,  stone:0},
+  fish       :{biomes:['sea','shore'],                               density:0.14, icon:'🐟', label:'Peces',    food:12,wood:0,  stone:0},
+  wheat_wild :{biomes:['grassland','dry_grass','savanna','grass'],   density:0.18, icon:'🌾', label:'Trigo',    food:8, wood:0,  stone:0},
+  berries    :{biomes:['forest','dense_grass','rainforest','grass'], density:0.14, icon:'🍒', label:'Bayas',    food:5, wood:0,  stone:0},
+  mushroom   :{biomes:['swamp','forest'],                            density:0.10, icon:'🍄', label:'Hongos',   food:4, wood:0,  stone:0},
+  clay       :{biomes:['swamp','shore'],                             density:0.12, icon:'◉',  label:'Arcilla',  food:0, wood:0,  stone:3},
+  animal     :{biomes:['grass','savanna','dry_grass','forest'],      density:0.10, icon:'🐗', label:'Animal',   food:15,wood:0,  stone:0},
+  herb       :{biomes:['grass','dense_grass','forest','shrubland'],  density:0.10, icon:'🌿', label:'Hierba',   food:3, wood:0,  stone:0},
 };
 
 let resources    = [];
@@ -102,14 +103,14 @@ function tickResourceGrowth(yearsElapsed) {
       if(res){
         // Regrow amount slowly
         if(res.amount < res.maxAmount){
-          res.amount = Math.min(res.maxAmount, res.amount + yearsElapsed*0.5);
+          res.amount = Math.min(res.maxAmount, res.amount + yearsElapsed*1.5);
         }
         continue;
       }
       // Chance to spawn new resource on empty land tile
       const cell = getCell(tx,ty);
       if(!cell || cell.h < T.SHORE) continue;
-      if(rng() > 0.0002 * yearsElapsed) continue;
+      if(rng() > 0.0006 * yearsElapsed) continue;
 
       for(const [type,def] of Object.entries(RESOURCE_DEFS)){
         if(!def.biomes.includes(cell.biome)) continue;

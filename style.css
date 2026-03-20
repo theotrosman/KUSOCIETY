@@ -19,6 +19,7 @@ body{background:#0f2a4a;overflow:hidden;font-family:'Courier New',monospace;}
 #year-label{font-size:1.25rem;font-weight:bold;letter-spacing:2px;}
 #era-label{font-size:0.7rem;color:#a89060;letter-spacing:1px;text-transform:uppercase;}
 #pop-label{font-size:0.85rem;color:#8cf;background:rgba(100,160,255,0.12);padding:2px 8px;border-radius:6px;}
+#civ-label{font-size:0.85rem;color:#fda;background:rgba(255,200,100,0.12);padding:2px 8px;border-radius:6px;}
 #speed-controls{display:flex;gap:5px;}
 #speed-controls button{
   background:rgba(0,0,0,0.65);border:1px solid rgba(255,255,255,0.18);
@@ -28,6 +29,7 @@ body{background:#0f2a4a;overflow:hidden;font-family:'Courier New',monospace;}
 }
 #speed-controls button:hover{background:rgba(255,255,255,0.1);color:#fff;}
 #speed-controls button.active{background:rgba(232,213,163,0.18);border-color:#e8d5a3;color:#e8d5a3;}
+#btn-history{padding:4px 10px !important;}
 
 /* ── Right panel: human list ── */
 #panel{

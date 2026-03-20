@@ -71,6 +71,7 @@ function renderFrame(dt){
 
   // UI overlays (screen-space)
   _drawLegend();
+  _drawWorldEvents();
 }
 
 // ── Structures ────────────────────────────────────────────────────────────────
@@ -98,13 +99,31 @@ function _drawHumans(){
   _ctx.textAlign='center';
   for(const h of humans){
     if(!h.alive) continue;
-    const px=h.tx*TILE+TILE/2, py=h.ty*TILE+TILE/2;
+    const px=h.px, py=h.py;
+
+    // Civ color ring
+    if(h.civId!==null&&h.civId!==undefined){
+      const civ=typeof civilizations!=='undefined'?civilizations.get(h.civId):null;
+      if(civ){
+        _ctx.beginPath();
+        _ctx.arc(px,py,r+3,0,Math.PI*2);
+        _ctx.strokeStyle=civ.color;
+        _ctx.lineWidth=2;
+        _ctx.stroke();
+      }
+    }
+
+    // Leader crown indicator
+    if(h.isLeader&&cam.zoom>1){
+      _ctx.font=`${Math.round(r*1.2)}px serif`;
+      _ctx.fillText('👑',px,py-r-4);
+    }
 
     // Outer glow for selected
     if(h.selected){
       _ctx.beginPath();
-      _ctx.arc(px,py,r+3,0,Math.PI*2);
-      _ctx.fillStyle='rgba(255,255,255,0.3)';
+      _ctx.arc(px,py,r+5,0,Math.PI*2);
+      _ctx.fillStyle='rgba(255,255,255,0.25)';
       _ctx.fill();
     }
 
@@ -120,14 +139,29 @@ function _drawHumans(){
     _ctx.fillStyle=h.gender==='F'?'#ffaacc':'#aaccff';
     _ctx.fill();
 
+    // Disease indicator
+    if(h.sick&&cam.zoom>0.7){
+      _ctx.font=`${Math.round(r*1.1)}px serif`;
+      _ctx.fillText('🦠',px+r,py-r);
+    }
+
+    // War flash (attacked)
+    if(h._warFlash>0){
+      h._warFlash--;
+      _ctx.beginPath();
+      _ctx.arc(px,py,r+4,0,Math.PI*2);
+      _ctx.strokeStyle='rgba(255,50,50,0.85)';
+      _ctx.lineWidth=3;
+      _ctx.stroke();
+    }
+
     // Health bar
     if(cam.zoom>0.9){
-      const bw=TILE*1.5, bx=px-bw/2, by=py-r-5;
+      const bw=TILE*1.5, bx=px-bw/2, by=py-r-6;
       _ctx.fillStyle='#111';
       _ctx.fillRect(bx,by,bw,3);
       _ctx.fillStyle=h.health>60?'#4f4':h.health>30?'#fa0':'#f44';
       _ctx.fillRect(bx,by,bw*(h.health/100),3);
-      // Hunger bar
       _ctx.fillStyle='#111';
       _ctx.fillRect(bx,by+4,bw,2);
       _ctx.fillStyle='#f90';
@@ -138,7 +172,7 @@ function _drawHumans(){
     if(cam.zoom>2){
       _ctx.font='8px sans-serif';
       _ctx.fillStyle='rgba(255,255,255,0.95)';
-      _ctx.fillText(h.name.split(' ')[0],px,py-r-8);
+      _ctx.fillText(h.name.split(' ')[0],px,py-r-10);
     }
   }
 }
@@ -151,18 +185,28 @@ function _drawLegend(){
   if(!_legendVisible) return;
   const ctx=_ctx;
   const x=14, y=_canvas.height-14;
-  const items=[
-    ['🟢','Humano vivo'],
-    ['🏠','Cabaña construida'],
-    ['🌾','Cultivo'],
-    ['🔥','Campamento'],
-    ['⛏','Cantera'],
-    ['🌳','Bosque / recursos'],
-    ['🟦','Agua / océano'],
+  const baseItems=[
+    ['⚪','Humano (anillo = civilización)'],
+    ['👑','Líder'],['🦠','Enfermo'],
+    ['🏠','Cabaña'],['🌾','Cultivo'],['🔥','Campamento'],
+    ['⛏','Mina'],['🏪','Mercado'],['🏛','Templo'],
   ];
-  const lh=18, pad=10;
+  // Add unlocked structures dynamically
+  const extraItems=[];
+  if(typeof _unlockedTypes!=='undefined'){
+    if(_unlockedTypes.has('well'))        extraItems.push(['💧','Pozo']);
+    if(_unlockedTypes.has('workshop'))    extraItems.push(['🔨','Taller']);
+    if(_unlockedTypes.has('library'))     extraItems.push(['📚','Biblioteca']);
+    if(_unlockedTypes.has('forge'))       extraItems.push(['⚒️','Forja']);
+    if(_unlockedTypes.has('academy'))     extraItems.push(['🎓','Academia']);
+    if(_unlockedTypes.has('colosseum'))   extraItems.push(['🏟','Coliseo']);
+    if(_unlockedTypes.has('university'))  extraItems.push(['🏫','Universidad']);
+    if(_unlockedTypes.has('observatory')) extraItems.push(['🔭','Observatorio']);
+  }
+  const items=[...baseItems,...extraItems];
+  const lh=17, pad=10;
   const bh=items.length*lh+pad*2;
-  const bw=160;
+  const bw=220;
   ctx.save();
   ctx.fillStyle='rgba(0,0,0,0.65)';
   _roundRect(ctx,x,y-bh,bw,bh,8);
@@ -172,6 +216,28 @@ function _drawLegend(){
     const ly=y-bh+pad+(i+0.75)*lh;
     ctx.fillStyle='#ddd';
     ctx.fillText(`${icon} ${label}`,x+pad,ly);
+  });
+  ctx.restore();
+}
+
+// ── World events ticker ───────────────────────────────────────────────────────
+function _drawWorldEvents(){
+  if(typeof worldEvents==='undefined'||worldEvents.length===0) return;
+  const ctx=_ctx;
+  const maxShow=6;
+  const events=worldEvents.slice(0,maxShow);
+  const lh=18, pad=10, bw=280;
+  const bh=events.length*lh+pad*2;
+  const x=_canvas.width-bw-14, y=_canvas.height-14;
+  ctx.save();
+  ctx.fillStyle='rgba(0,0,0,0.65)';
+  _roundRect(ctx,x,y-bh,bw,bh,8);
+  ctx.fill();
+  ctx.font='11px sans-serif';
+  events.forEach((ev,i)=>{
+    const ly=y-bh+pad+(i+0.75)*lh;
+    ctx.fillStyle='#adf';
+    ctx.fillText(`Año ${ev.year}: ${ev.text}`,x+pad,ly);
   });
   ctx.restore();
 }
