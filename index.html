@@ -17,6 +17,7 @@
       <span id="pop-label">👥 2</span>
       <span id="civ-label">🏛 0</span>
       <span id="phase-label" style="color:#8f8">🤝 Unidad</span>
+      <span id="intel-label" style="color:#adf">🧠 100%</span>
     </div>
     <div id="speed-controls">
       <button id="btn-pause">⏸</button>
@@ -24,6 +25,7 @@
       <button id="btn-5x">5x</button>
       <button id="btn-20x">20x</button>
       <button id="btn-100x">100x</button>
+      <button id="btn-follow" title="Seguir humano automáticamente">👁 Seguir</button>
       <button id="btn-history" title="Crónica del mundo">📜</button>
     </div>
   </div>
@@ -42,14 +44,16 @@
     </div>
     <div id="history-content" style="line-height:1.7"></div>
   </div>
+
   <div id="intro-tip">
     <h2>🌍 Simulación de Civilización</h2>
     <div>Dos humanos aparecen en el mundo.<br>
     Tienen una <b>red neuronal</b> que aprende a sobrevivir.<br><br>
     🖱️ <b>Rueda</b> para hacer zoom · <b>Arrastrar</b> para mover<br>
     👆 <b>Click</b> en un humano para ver sus stats<br>
-    📋 <b>Lista derecha</b> para seguir a cualquier humano<br>
-    ⏩ A mayor velocidad, aprenden más rápido</div>
+    👁 <b>Seguir</b> para seguir automáticamente a un humano<br>
+    🏛 Los territorios se muestran con colores por civilización<br>
+    🧠 La curva de inteligencia sube y baja creando eras doradas</div>
     <button onclick="document.getElementById('intro-tip').style.display='none'">Comenzar →</button>
   </div>
 

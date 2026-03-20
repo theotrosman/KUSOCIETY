@@ -30,6 +30,9 @@ body{background:#0f2a4a;overflow:hidden;font-family:'Courier New',monospace;}
 #speed-controls button:hover{background:rgba(255,255,255,0.1);color:#fff;}
 #speed-controls button.active{background:rgba(232,213,163,0.18);border-color:#e8d5a3;color:#e8d5a3;}
 #btn-history{padding:4px 10px !important;}
+#btn-follow{padding:4px 10px !important;}
+#btn-follow.active{background:rgba(100,255,180,0.2) !important;border-color:#4fa !important;color:#4fa !important;}
+#intel-label{font-size:0.8rem;background:rgba(100,160,255,0.1);padding:2px 8px;border-radius:6px;}
 
 /* ── Right panel: human list ── */
 #panel{
