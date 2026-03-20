@@ -91,36 +91,35 @@ function getResourceAt(tx, ty) {
   return resourceGrid[ty][tx];
 }
 
-// Regrow resources over time
+// Regrow resources over time — only sample random tiles instead of full scan
 function tickResourceGrowth(yearsElapsed) {
   if(yearsElapsed<=0) return;
   const rng = mulberry32(WORLD_SEED ^ year ^ 0x5555);
   const ctx = resourceCanvas.getContext('2d');
 
-  for(let ty=0;ty<WORLD_H;ty++){
-    for(let tx=0;tx<WORLD_W;tx++){
-      const res = resourceGrid[ty][tx];
-      if(res){
-        // Regrow amount slowly
-        if(res.amount < res.maxAmount){
-          res.amount = Math.min(res.maxAmount, res.amount + yearsElapsed*1.5);
-        }
-        continue;
-      }
-      // Chance to spawn new resource on empty land tile
-      const cell = getCell(tx,ty);
-      if(!cell || cell.h < T.SHORE) continue;
-      if(rng() > 0.0006 * yearsElapsed) continue;
+  // Regrow existing resources
+  for(const res of resources){
+    if(res.amount < res.maxAmount){
+      res.amount = Math.min(res.maxAmount, res.amount + yearsElapsed*1.5);
+    }
+  }
 
-      for(const [type,def] of Object.entries(RESOURCE_DEFS)){
-        if(!def.biomes.includes(cell.biome)) continue;
-        if(rng()>def.density) continue;
-        const res2 = {type, tx, ty, amount:20, maxAmount:100};
-        resources.push(res2);
-        resourceGrid[ty][tx] = res2;
-        _drawResource(ctx, res2);
-        break;
-      }
+  // Spawn new resources — sample random tiles instead of full world scan
+  const attempts=Math.ceil(yearsElapsed*8);
+  for(let i=0;i<attempts;i++){
+    const tx=Math.floor(rng()*WORLD_W);
+    const ty=Math.floor(rng()*WORLD_H);
+    if(resourceGrid[ty][tx])continue;
+    const cell=getCell(tx,ty);
+    if(!cell||cell.h<T.SHORE)continue;
+    for(const [type,def] of Object.entries(RESOURCE_DEFS)){
+      if(!def.biomes.includes(cell.biome))continue;
+      if(rng()>def.density)continue;
+      const res2={type,tx,ty,amount:20,maxAmount:100};
+      resources.push(res2);
+      resourceGrid[ty][tx]=res2;
+      _drawResource(ctx,res2);
+      break;
     }
   }
 }

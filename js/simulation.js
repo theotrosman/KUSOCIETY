@@ -2,13 +2,15 @@
 
 const ERAS = [
   { name:'Era Primitiva',        start:1      },
-  { name:'Era de Piedra',        start:200    },
-  { name:'Era del Bronce',       start:800    },
-  { name:'Era del Hierro',       start:2000   },
+  { name:'Era de Piedra',        start:100    },
+  { name:'Era del Bronce',       start:400    },
+  { name:'Era del Hierro',       start:1000   },
+  { name:'Era Clásica',          start:2500   },
   { name:'Era Medieval',         start:5000   },
-  { name:'Renacimiento',         start:10000  },
-  { name:'Era Industrial',       start:20000  },
-  { name:'Era Moderna',          start:50000  },
+  { name:'Renacimiento',         start:8000   },
+  { name:'Era Industrial',       start:12000  },
+  { name:'Era Moderna',          start:25000  },
+  { name:'Era Espacial',         start:60000  },
 ];
 
 const SPEED_VALUES = [0, 1, 5, 20, 100];
@@ -17,7 +19,7 @@ let paused     = false;
 
 let year      = 1;
 let tickAccum = 0;
-const BASE_MS_PER_YEAR = 3000; // ms per year at 1x — slow enough to watch society develop
+const BASE_MS_PER_YEAR = 2000; // ms per year at 1x — faster base pace
 
 function getEra(y) {
   let era = ERAS[0];
@@ -29,6 +31,9 @@ function tickTime(deltaMs) {
   if (paused) return 0;
   const speed = SPEED_VALUES[speedIndex];
   tickAccum += deltaMs * speed;
+  // Cap accumulator to prevent spiral of death — max 8 years per frame
+  const maxAccum = BASE_MS_PER_YEAR * 8;
+  if(tickAccum > maxAccum) tickAccum = maxAccum;
   let elapsed = 0;
   while (tickAccum >= BASE_MS_PER_YEAR) {
     tickAccum -= BASE_MS_PER_YEAR;
