@@ -17,21 +17,12 @@ const ACTIONS={
 
 // ── Structures ────────────────────────────────────────────────────────────────
 const STRUCTURE_TYPES={
-  camp:     {icon:'🔥',color:'#ff8030',label:'Campamento', cost:{wood:2,stone:0},  hp:25,  decay:true, decayRate:2},
-  hut:      {icon:'🏠',color:'#c8a060',label:'Cabaña',     cost:{wood:4,stone:2},  hp:100, decay:false,decayRate:0},
-  farm:     {icon:'🌾',color:'#90c040',label:'Cultivo',    cost:{wood:1,stone:0},  hp:80,  decay:false,decayRate:0},
-  mine:     {icon:'⛏', color:'#a09080',label:'Mina',       cost:{wood:2,stone:3},  hp:100, decay:false,decayRate:0},
-  market:   {icon:'🏪',color:'#f0c040',label:'Mercado',    cost:{wood:6,stone:4},  hp:120, decay:false,decayRate:0},
-  temple:   {icon:'🛕',color:'#d0a0ff',label:'Templo',     cost:{wood:8,stone:8},  hp:150, decay:false,decayRate:0},
-  granary:  {icon:'🌽',color:'#c8d040',label:'Granero',    cost:{wood:5,stone:3},  hp:120, decay:false,decayRate:0},
-  watchtower:{icon:'🗼',color:'#a0c0e0',label:'Torre Vigía',cost:{wood:4,stone:6}, hp:130, decay:false,decayRate:0},
-  barracks: {icon:'⚔️', color:'#c04040',label:'Cuartel',   cost:{wood:8,stone:6},  hp:160, decay:false,decayRate:0},
-  wall:     {icon:'🧱',color:'#808060',label:'Muralla',    cost:{wood:3,stone:8},  hp:200, decay:false,decayRate:0},
-  blacksmith:{icon:'🔩',color:'#806040',label:'Herrero',   cost:{wood:6,stone:5},  hp:130, decay:false,decayRate:0},
-  harbor:   {icon:'⚓',color:'#4080c0',label:'Puerto',     cost:{wood:10,stone:6}, hp:150, decay:false,decayRate:0},
-  castle:   {icon:'🏰',color:'#8090a0',label:'Castillo',   cost:{wood:12,stone:18},hp:300, decay:false,decayRate:0},
-  cathedral:{icon:'⛪',color:'#e0d0ff',label:'Catedral',   cost:{wood:15,stone:15},hp:250, decay:false,decayRate:0},
-  palace:   {icon:'🏯',color:'#ffd700',label:'Palacio',    cost:{wood:20,stone:20},hp:350, decay:false,decayRate:0},
+  camp:  {icon:'🔥',color:'#ff8030',label:'Campamento',cost:{wood:2,stone:0}, hp:25, decay:true,  decayRate:2},
+  hut:   {icon:'🏠',color:'#c8a060',label:'Cabaña',    cost:{wood:4,stone:2}, hp:100,decay:false, decayRate:0},
+  farm:  {icon:'🌾',color:'#90c040',label:'Cultivo',   cost:{wood:1,stone:0}, hp:80, decay:false, decayRate:0},
+  mine:  {icon:'⛏', color:'#a09080',label:'Mina',      cost:{wood:2,stone:3}, hp:100,decay:false, decayRate:0},
+  market:{icon:'�',color:'#f0c040',label:'Mercado',   cost:{wood:6,stone:4}, hp:120,decay:false, decayRate:0},
+  temple:{icon:'�', color:'#d0a0ff',label:'Templo',   cost:{wood:8,stone:8}, hp:150,decay:false, decayRate:0},
 };
 let structures=[],structureGrid=null;
 function initStructureGrid(){structureGrid=Array.from({length:WORLD_H},()=>new Array(WORLD_W).fill(null));}
@@ -735,67 +726,77 @@ class Human{
   }
 
   _doBuild(){
-      if(this.hunger<35||this.energy<25){this._seekFoodNow();return;}
-      if(this.inventory.wood<2&&this.inventory.stone<2){this._gatherResources();return;}
-      const k=this.knowledge,w=this.inventory.wood,s=this.inventory.stone;
-      let type='camp';
-      if(_unlockedTypes.has('siege')      &&k>600&&w>=20&&s>=15)type='siege';
-      else if(_unlockedTypes.has('armory')     &&k>500&&w>=15&&s>=20)type='armory';
-      else if(_unlockedTypes.has('citadel')    &&k>420&&w>=25&&s>=35)type='citadel';
-      else if(_unlockedTypes.has('alchemist')  &&k>350&&w>=12&&s>=15)type='alchemist';
-      else if(_unlockedTypes.has('observatory')&&k>280&&w>=15&&s>=25)type='observatory';
-      else if(_unlockedTypes.has('university') &&k>220&&w>=20&&s>=20)type='university';
-      else if(_unlockedTypes.has('palace')     &&k>180&&w>=20&&s>=20)type='palace';
-      else if(_unlockedTypes.has('colosseum')  &&k>160&&w>=15&&s>=20)type='colosseum';
-      else if(_unlockedTypes.has('cathedral')  &&k>140&&w>=15&&s>=15)type='cathedral';
-      else if(_unlockedTypes.has('castle')     &&k>120&&w>=12&&s>=18)type='castle';
-      else if(_unlockedTypes.has('academy')    &&k>100&&w>=10&&s>=10)type='academy';
-      else if(_unlockedTypes.has('harbor')     &&k>90 &&w>=10&&s>=6) type='harbor';
-      else if(_unlockedTypes.has('forge')      &&k>75 &&w>=6 &&s>=8) type='forge';
-      else if(_unlockedTypes.has('library')    &&k>60 &&w>=8 &&s>=6) type='library';
-      else if(_unlockedTypes.has('barracks')   &&k>55 &&w>=8 &&s>=6) type='barracks';
-      else if(_unlockedTypes.has('wall')       &&k>45 &&w>=3 &&s>=8) type='wall';
-      else if(_unlockedTypes.has('blacksmith') &&k>40 &&w>=6 &&s>=5) type='blacksmith';
-      else if(_unlockedTypes.has('workshop')   &&k>28 &&w>=5 &&s>=3) type='workshop';
-      else if(_unlockedTypes.has('watchtower') &&k>22 &&w>=4 &&s>=6) type='watchtower';
-      else if(_unlockedTypes.has('well')       &&k>15 &&w>=2 &&s>=4) type='well';
-      else if(_unlockedTypes.has('granary')    &&k>10 &&w>=5 &&s>=3) type='granary';
-      else if(k>65&&w>=8&&s>=8)type='temple';
-      else if(k>45&&w>=6&&s>=4)type='market';
-      else if(w>=4&&s>=2)type='hut';
-      else if(w>=2&&s>=3)type='mine';
-      else type='camp';
-      const def=STRUCTURE_TYPES[type];
-      if(!def){this._gatherResources();return;}
-      const cost=def.cost;
-      if(w<cost.wood||s<cost.stone){this._gatherResources();return;}
-      const minDist=['wall','watchtower'].includes(type)?2:3;
-      for(let r=2;r<=14;r++){
-        for(let a=0;a<16;a++){
-          const angle=(a/16)*Math.PI*2+this._wanderAngle;
-          const bx=Math.round(this._settleTx+Math.cos(angle)*r);
-          const by=Math.round(this._settleTy+Math.sin(angle)*r);
-          if(!isLand(bx,by)||getStructureAt(bx,by)||getResourceAt(bx,by))continue;
-          let tooClose=false;
-          for(const st of structures){
-            if(st.type===type&&Math.hypot(st.tx-bx,st.ty-by)<minDist){tooClose=true;break;}
+    if(this.hunger<35||this.energy<25){this._seekFoodNow();return;}
+    // Gather resources first if needed
+    const needsWood=this.inventory.wood<2;
+    const needsStone=this.inventory.stone<2;
+    if(needsWood&&needsStone){this._gatherResources();return;}
+
+    // Pick best structure available based on knowledge and unlocks
+    let type='camp';
+    if(_unlockedTypes.has('observatory')&&this.knowledge>280&&this.inventory.wood>=15&&this.inventory.stone>=25)type='observatory';
+    else if(_unlockedTypes.has('university')&&this.knowledge>200&&this.inventory.wood>=20&&this.inventory.stone>=20)type='university';
+    else if(_unlockedTypes.has('colosseum')&&this.knowledge>150&&this.inventory.wood>=15&&this.inventory.stone>=20)type='colosseum';
+    else if(_unlockedTypes.has('academy')&&this.knowledge>100&&this.inventory.wood>=10&&this.inventory.stone>=10)type='academy';
+    else if(_unlockedTypes.has('forge')&&this.knowledge>75&&this.inventory.wood>=6&&this.inventory.stone>=8)type='forge';
+    else if(_unlockedTypes.has('library')&&this.knowledge>50&&this.inventory.wood>=8&&this.inventory.stone>=6)type='library';
+    else if(_unlockedTypes.has('workshop')&&this.knowledge>28&&this.inventory.wood>=5&&this.inventory.stone>=3)type='workshop';
+    else if(_unlockedTypes.has('well')&&this.knowledge>12&&this.inventory.wood>=2&&this.inventory.stone>=4)type='well';
+    else if(this.knowledge>65&&this.inventory.wood>=8&&this.inventory.stone>=8)type='temple';
+    else if(this.knowledge>45&&this.inventory.wood>=6&&this.inventory.stone>=4)type='market';
+    else if(this.inventory.wood>=4&&this.inventory.stone>=2)type='hut';
+    else if(this.inventory.wood>=2&&this.inventory.stone>=3)type='mine';
+    else if(this.inventory.wood>=2)type='camp'; // always can build a camp
+    const def=STRUCTURE_TYPES[type];
+    if(!def){this._gatherResources();return;}
+    const cost=def.cost;
+    if(this.inventory.wood<cost.wood||this.inventory.stone<cost.stone){
+      this._gatherResources();return;
+    }
+    for(let r=2;r<=12;r++){
+      for(let a=0;a<16;a++){
+        const angle=(a/16)*Math.PI*2+this._wanderAngle;
+        const bx=Math.round(this._settleTx+Math.cos(angle)*r);
+        const by=Math.round(this._settleTy+Math.sin(angle)*r);
+        if(!isLand(bx,by)||getStructureAt(bx,by)||getResourceAt(bx,by))continue;
+        let tooClose=false;
+        for(const s of structures){
+          if(s.type===type&&Math.hypot(s.tx-bx,s.ty-by)<3){tooClose=true;break;}
+        }
+        if(tooClose)continue;
+        if(placeStructure(bx,by,type,this)){
+          this.inventory.wood-=cost.wood;this.inventory.stone-=cost.stone;
+          this.knowledge=Math.min(9999,this.knowledge+4);
+          this.homeBase={tx:bx,ty:by};
+          this._settleTx=bx;this._settleTy=by;
+          this.action=ACTIONS.BUILD;
+          this.addLog(`Construyó ${def.label}`);
+          // Special effects per building type
+          if(type==='library'){
+            const near=_spatialQuery(bx,by,20,-1);
+            for(const h of near)h.knowledge=Math.min(9999,h.knowledge+5);
+            addWorldEvent(`📚 ${this.name.split(' ')[0]} construyó Biblioteca — conocimiento compartido`);
+          } else if(type==='academy'){
+            const near=_spatialQuery(bx,by,30,-1);
+            for(const h of near)h.knowledge=Math.min(9999,h.knowledge+10);
+            addWorldEvent(`� ${this.name.split(' ')[0]} fundó una Academia`);
+          } else if(type==='forge'){
+            addWorldEvent(`⚒️ ${this.name.split(' ')[0]} construyó una Forja — era del metal`);
+          } else if(type==='colosseum'){
+            addWorldEvent(`🏟 ${this.name.split(' ')[0]} construyó un Coliseo`);
+          } else if(type==='university'){
+            addWorldEvent(`🏫 ${this.name.split(' ')[0]} fundó una Universidad`);
+          } else if(type==='observatory'){
+            addWorldEvent(`🔭 ${this.name.split(' ')[0]} construyó un Observatorio`);
+          } else if(type==='temple'||type==='market'){
+            addWorldEvent(`🏛 ${this.name.split(' ')[0]} construyó ${def.label}`);
           }
-          if(tooClose)continue;
-          if(placeStructure(bx,by,type,this)){
-            this.inventory.wood-=cost.wood;this.inventory.stone-=cost.stone;
-            this.knowledge=Math.min(9999,this.knowledge+4);
-            this.homeBase={tx:bx,ty:by};
-            this._settleTx=bx;this._settleTy=by;
-            this.action=ACTIONS.BUILD;
-            this.addLog(`Construyó ${def.label}`);
-            _onStructureBuilt(type,this,bx,by);
-            return;
-          }
+          return;
         }
       }
-      this._gatherResources();
     }
-
+    this._gatherResources();
+  }
 
   _doFarm(){
     if(this.hunger<45||this.inventory.wood<1){this._seekFoodNow();return;}
@@ -981,30 +982,18 @@ class Human{
 }
 
 // ── Emergent knowledge: unlocks new structure types as civilization advances ──
+// This is the "evolving code" — the simulation expands its own possibility space
 const KNOWLEDGE_UNLOCKS=[
-  {avgK:12,  type:'granary',    icon:'🌽',color:'#c8d040',label:'Granero',      cost:{wood:5,stone:3},  hp:120,decay:false,decayRate:0, msg:'🌽 Granero desbloqueado — reservas de alimento'},
-  {avgK:18,  type:'well',       icon:'💧',color:'#60a0ff',label:'Pozo',          cost:{wood:2,stone:4},  hp:120,decay:false,decayRate:0, msg:'💧 Pozo desbloqueado — agua garantizada'},
-  {avgK:28,  type:'watchtower', icon:'🗼',color:'#a0c0e0',label:'Torre Vigía',   cost:{wood:4,stone:6},  hp:130,decay:false,decayRate:0, msg:'� Torre Vigía — vigilancia del territorio'},
-  {avgK:35,  type:'workshop',   icon:'�',color:'#c08040',label:'Taller',        cost:{wood:5,stone:3},  hp:120,decay:false,decayRate:0, msg:'� Taller desbloqueado — producción avanzada'},
-  {avgK:45,  type:'blacksmith', icon:'🔩',color:'#806040',label:'Herrero',       cost:{wood:6,stone:5},  hp:130,decay:false,decayRate:0, msg:'🔩 Herrero desbloqueado — armas de metal'},
-  {avgK:55,  type:'wall',       icon:'🧱',color:'#808060',label:'Muralla',       cost:{wood:3,stone:8},  hp:200,decay:false,decayRate:0, msg:'🧱 Muralla desbloqueada — defensa del territorio'},
-  {avgK:65,  type:'barracks',   icon:'⚔️', color:'#c04040',label:'Cuartel',      cost:{wood:8,stone:6},  hp:160,decay:false,decayRate:0, msg:'⚔️ Cuartel desbloqueado — ejércitos organizados'},
-  {avgK:75,  type:'library',    icon:'📚',color:'#80c0ff',label:'Biblioteca',    cost:{wood:8,stone:6},  hp:150,decay:false,decayRate:0, msg:'📚 Biblioteca desbloqueada — conocimiento compartido'},
-  {avgK:90,  type:'forge',      icon:'⚒️', color:'#ff8040',label:'Forja',         cost:{wood:6,stone:8},  hp:150,decay:false,decayRate:0, msg:'⚒️ Forja desbloqueada — era del metal'},
-  {avgK:105, type:'harbor',     icon:'⚓',color:'#4080c0',label:'Puerto',        cost:{wood:10,stone:6}, hp:150,decay:false,decayRate:0, msg:'⚓ Puerto desbloqueado — comercio marítimo'},
-  {avgK:120, type:'academy',    icon:'🎓',color:'#ffd700',label:'Academia',      cost:{wood:10,stone:10},hp:200,decay:false,decayRate:0, msg:'🎓 Academia desbloqueada — era del conocimiento'},
-  {avgK:140, type:'castle',     icon:'🏰',color:'#8090a0',label:'Castillo',      cost:{wood:12,stone:18},hp:300,decay:false,decayRate:0, msg:'🏰 Castillo desbloqueado — era feudal'},
-  {avgK:165, type:'cathedral',  icon:'⛪',color:'#e0d0ff',label:'Catedral',      cost:{wood:15,stone:15},hp:250,decay:false,decayRate:0, msg:'⛪ Catedral desbloqueada — era de la fe'},
-  {avgK:190, type:'colosseum',  icon:'🏟',color:'#e0a040',label:'Coliseo',       cost:{wood:15,stone:20},hp:300,decay:false,decayRate:0, msg:'🏟 Coliseo desbloqueado — era de los espectáculos'},
-  {avgK:220, type:'palace',     icon:'🏯',color:'#ffd700',label:'Palacio',       cost:{wood:20,stone:20},hp:350,decay:false,decayRate:0, msg:'🏯 Palacio desbloqueado — era imperial'},
-  {avgK:260, type:'university', icon:'🏫',color:'#a0d0ff',label:'Universidad',   cost:{wood:20,stone:20},hp:300,decay:false,decayRate:0, msg:'🏫 Universidad desbloqueada — ciencia avanzada'},
-  {avgK:310, type:'observatory',icon:'🔭',color:'#c0a0ff',label:'Observatorio',  cost:{wood:15,stone:25},hp:300,decay:false,decayRate:0, msg:'🔭 Observatorio desbloqueado — era de la ciencia'},
-  {avgK:380, type:'alchemist',  icon:'⚗️', color:'#80ffc0',label:'Alquimista',   cost:{wood:12,stone:15},hp:200,decay:false,decayRate:0, msg:'⚗️ Alquimista desbloqueado — era de la alquimia'},
-  {avgK:460, type:'citadel',    icon:'🗺️', color:'#c0a080',label:'Ciudadela',    cost:{wood:25,stone:35},hp:500,decay:false,decayRate:0, msg:'🗺️ Ciudadela desbloqueada — era de los grandes imperios'},
-  {avgK:550, type:'armory',     icon:'🛡️', color:'#a0b0c0',label:'Armería',      cost:{wood:15,stone:20},hp:250,decay:false,decayRate:0, msg:'🛡️ Armería desbloqueada — armamento avanzado'},
-  {avgK:650, type:'siege',      icon:'💣',color:'#804020',label:'Taller de Asedio',cost:{wood:20,stone:15},hp:200,decay:false,decayRate:0, msg:'💣 Taller de Asedio — armas de destrucción'},
+  {avgK:15,  type:'well',    icon:'💧',color:'#60a0ff',label:'Pozo',     cost:{wood:2,stone:4}, hp:120,decay:false,decayRate:0, msg:'💧 Primer pozo construido — agua garantizada'},
+  {avgK:30,  type:'workshop',icon:'🔨',color:'#c08040',label:'Taller',   cost:{wood:5,stone:3}, hp:120,decay:false,decayRate:0, msg:'🔨 Taller desbloqueado — producción avanzada'},
+  {avgK:55,  type:'library', icon:'📚',color:'#80c0ff',label:'Biblioteca',cost:{wood:8,stone:6}, hp:150,decay:false,decayRate:0, msg:'📚 Biblioteca desbloqueada — conocimiento compartido'},
+  {avgK:80,  type:'forge',   icon:'⚒️', color:'#ff8040',label:'Forja',    cost:{wood:6,stone:8}, hp:150,decay:false,decayRate:0, msg:'⚒️ Forja desbloqueada — era del metal'},
+  {avgK:110, type:'academy', icon:'🎓',color:'#ffd700',label:'Academia',  cost:{wood:10,stone:10},hp:200,decay:false,decayRate:0, msg:'🎓 Academia desbloqueada — era del conocimiento'},
+  {avgK:160, type:'colosseum',icon:'🏟',color:'#e0a040',label:'Coliseo',  cost:{wood:15,stone:20},hp:300,decay:false,decayRate:0, msg:'🏟 Coliseo desbloqueado — era de los espectáculos'},
+  {avgK:220, type:'university',icon:'🏫',color:'#a0d0ff',label:'Universidad',cost:{wood:20,stone:20},hp:300,decay:false,decayRate:0, msg:'🏫 Universidad desbloqueada — ciencia avanzada'},
+  {avgK:300, type:'observatory',icon:'🔭',color:'#c0a0ff',label:'Observatorio',cost:{wood:15,stone:25},hp:300,decay:false,decayRate:0, msg:'🔭 Observatorio desbloqueado — era de la ciencia'},
 ];
-const _unlockedTypes=new Set(['camp','hut','farm','mine','market','temple','granary','watchtower','barracks','wall','blacksmith','harbor','castle','cathedral','palace']);
+const _unlockedTypes=new Set(['camp','hut','farm','mine','market','temple']);
 
 function _checkKnowledgeUnlocks(){
   const alive=humans.filter(h=>h.alive);
