@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Civilización</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <canvas id="world"></canvas>
+
+  <div id="hud">
+    <div id="time-display">
+      <span id="year-label">Año 1</span>
+      <span id="era-label">Era Primitiva</span>
+    </div>
+    <div id="speed-controls">
+      <button id="btn-pause">⏸</button>
+      <button id="btn-1x" class="active">1x</button>
+      <button id="btn-5x">5x</button>
+      <button id="btn-20x">20x</button>
+      <button id="btn-100x">100x</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/simplex-noise@4.0.1/dist/cjs/simplex-noise.js"></script>
+  <script src="terrain.js"></script>
+  <script src="simulation.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
