@@ -14,6 +14,7 @@
     <div id="time-display">
       <span id="year-label">Año 1</span>
       <span id="era-label">Era Primitiva</span>
+      <span id="pop-label">👥 2</span>
     </div>
     <div id="speed-controls">
       <button id="btn-pause">⏸</button>
@@ -26,8 +27,20 @@
 
   <!-- Right panel: human tracker -->
   <div id="panel">
-    <div id="panel-title">👥 Humanos</div>
+    <div id="panel-title">👥 Humanos vivos</div>
     <div id="human-list"></div>
+  </div>
+
+  <!-- Intro tooltip -->
+  <div id="intro-tip">
+    <h2>🌍 Simulación de Civilización</h2>
+    <div>Dos humanos aparecen en el mundo.<br>
+    Tienen una <b>red neuronal</b> que aprende a sobrevivir.<br><br>
+    🖱️ <b>Rueda</b> para hacer zoom · <b>Arrastrar</b> para mover<br>
+    👆 <b>Click</b> en un humano para ver sus stats<br>
+    📋 <b>Lista derecha</b> para seguir a cualquier humano<br>
+    ⏩ A mayor velocidad, aprenden más rápido</div>
+    <button onclick="document.getElementById('intro-tip').style.display='none'">Comenzar →</button>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/simplex-noise@4.0.1/dist/cjs/simplex-noise.js"></script>

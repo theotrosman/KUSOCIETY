@@ -17,7 +17,7 @@ let paused     = false;
 
 let year      = 1;
 let tickAccum = 0;
-const BASE_MS_PER_YEAR = 700; // ms per year at 1x
+const BASE_MS_PER_YEAR = 3000; // ms per year at 1x — slow enough to watch society develop
 
 function getEra(y) {
   let era = ERAS[0];

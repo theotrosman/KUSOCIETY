@@ -1,3 +1,3 @@
-hace que los años no pasen tan rapido en x1 asi se puede ver bien el desarrollo de las sociedades, ademas crea un sistema neuronal de supervivencia y avance para cada criatura existente para que tenga sentido como se manifiestan 
+# KUSOCIETY
 
-hace la creacion del terreno y que haya varios recursos y que sea muy realista, hacelo en archivos separados para q no consuma mucho pero todo siempre en el index, que sea lo mas realista con fisicas y todo lo mas posible que sea ocn una vista periferica desde arriba y 2d pero que simule un poquito el 3d como worldbox o algo asi me entendes
+pensa que se estan moviendo una vez por año jaja, hace que exploren y q sea mas realista el tiempo pq sino no avanzan mas y q no piensen siempre igual pq sino van a ir uno encima de otro hasta morir los dos  
