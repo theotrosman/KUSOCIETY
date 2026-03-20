@@ -1,14 +1,15 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Civilización</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
   <canvas id="world"></canvas>
 
+  <!-- HUD top-center -->
   <div id="hud">
     <div id="time-display">
       <span id="year-label">Año 1</span>
@@ -23,9 +24,19 @@
     </div>
   </div>
 
+  <!-- Right panel: human tracker -->
+  <div id="panel">
+    <div id="panel-title">👥 Humanos</div>
+    <div id="human-list"></div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/simplex-noise@4.0.1/dist/cjs/simplex-noise.js"></script>
-  <script src="terrain.js"></script>
-  <script src="simulation.js"></script>
-  <script src="main.js"></script>
+  <script src="js/noise.js"></script>
+  <script src="js/terrain.js"></script>
+  <script src="js/resources.js"></script>
+  <script src="js/humans.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/simulation.js"></script>
+  <script src="js/main.js"></script>
 </body>
 </html>
