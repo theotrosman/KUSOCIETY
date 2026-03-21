@@ -117,6 +117,7 @@ function tickResourceGrowth(yearsElapsed) {
   }
 
   // Spawn new resources — sample random tiles instead of full world scan
+  if(resources.length < (typeof MAX_RESOURCES !== 'undefined' ? MAX_RESOURCES : 8000)){
   const attempts=Math.ceil(yearsElapsed*8);
   for(let i=0;i<attempts;i++){
     const tx=Math.floor(rng()*WORLD_W);
@@ -133,5 +134,6 @@ function tickResourceGrowth(yearsElapsed) {
       _drawResource(ctx,res2);
       break;
     }
+  }
   }
 }

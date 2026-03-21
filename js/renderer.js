@@ -47,9 +47,12 @@ const _battleFX = [];
 const _floatingTexts = [];
 
 function spawnBattleFX(wx, wy, type){
+  // Hard cap — at high speed these pile up faster than they expire
+  if(_battleFX.length >= 30) return;
   // Clash burst
   _battleFX.push({wx, wy, timer:0, maxTimer:0.8, type});
   // Floating text
+  if(_floatingTexts.length >= 40) return;
   const texts = {
     clash:  ['⚔️','💥','🗡️'],
     death:  ['☠️','💀','🩸'],

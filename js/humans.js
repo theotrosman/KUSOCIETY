@@ -194,15 +194,17 @@ function _tickHousingUpgrades(yearsElapsed){
 }
 
 // ── Replanting tick — tree nurseries plant trees when wood is scarce ──────────
+const MAX_RESOURCES = 8000; // hard cap to prevent memory growth
 let _replantTimer=0;
 function _tickReplanting(yearsElapsed){
   _replantTimer+=yearsElapsed;
   if(_replantTimer<20)return;
   _replantTimer=0;
-  const nurseries=structures.filter(s=>s.type==='tree_nursery'||s.type==='greenhouse');
-  if(nurseries.length===0)return;
+  if(resources.length>=MAX_RESOURCES)return; // don't grow unbounded
+  // Iterate structures directly — avoid filter() allocation
   const ctx=resourceCanvas?resourceCanvas.getContext('2d'):null;
-  for(const n of nurseries){
+  for(const n of structures){
+    if(n.type!=='tree_nursery'&&n.type!=='greenhouse')continue;
     // Check if wood is scarce nearby
     const WOOD_TYPES=['tree_oak','tree_pine','tree_palm','tree_jungle','bush'];
     let woodCount=0;
@@ -247,11 +249,12 @@ function _tickExcavation(yearsElapsed){
   _excavationTimer+=yearsElapsed;
   if(_excavationTimer<25)return;
   _excavationTimer=0;
+  if(resources.length>=MAX_RESOURCES)return; // don't grow unbounded
   const excavTypes=new Set(['excavator','mining_complex','drill_rig','ore_processor']);
-  const excavStructs=structures.filter(s=>excavTypes.has(s.type));
-  if(excavStructs.length===0)return;
+  // Iterate structures directly — avoid filter() allocation
   const ctx=resourceCanvas?resourceCanvas.getContext('2d'):null;
-  for(const e of excavStructs){
+  for(const e of structures){
+    if(!excavTypes.has(e.type))continue;
     // Check if stone is scarce nearby
     const STONE_TYPES=['rock','iron_ore','gold_ore','coal','clay'];
     let stoneCount=0;
@@ -3163,8 +3166,8 @@ let _territoryTimer=0;
 let _cachedAlive=[];
 
 function tickHumans(yearsElapsed){
-  // Rebuild alive cache once per tick — don't clear _humanById (it's kept in sync)
-  _cachedAlive=[];
+  // Rebuild alive cache — reuse array to avoid GC pressure
+  _cachedAlive.length=0;
   for(const h of humans){
     if(h.alive)_cachedAlive.push(h);
   }
@@ -3175,15 +3178,18 @@ function tickHumans(yearsElapsed){
   if(_cachedAliveCount > HARD_MAX){
     // Kill weakest humans (lowest health + hunger) until under cap
     const excess = _cachedAliveCount - HARD_MAX;
-    const sorted = [..._cachedAlive].sort((a,b)=>(a.health+a.hunger)-(b.health+b.hunger));
-    for(let i=0;i<excess;i++) sorted[i]._die('superpoblación');
-    _cachedAlive=_cachedAlive.filter(h=>h.alive);
-    _cachedAliveCount=_cachedAlive.length;
+    _cachedAlive.sort((a,b)=>(a.health+a.hunger)-(b.health+b.hunger));
+    for(let i=0;i<excess;i++) _cachedAlive[i]._die('superpoblación');
+    // Rebuild alive cache in-place
+    let w=0;
+    for(let i=0;i<_cachedAlive.length;i++){if(_cachedAlive[i].alive)_cachedAlive[w++]=_cachedAlive[i];}
+    _cachedAlive.length=w;
+    _cachedAliveCount=w;
   }
 
   // Build civStructureMap once per tick — civId → Set of structure types present
-  // Used by tickTrade, tickReligion, tickInventions to avoid O(n) structures.some() per civ
-  _civStructureTypes.clear();
+  // Reuse existing Sets to avoid GC pressure
+  for(const st of _civStructureTypes.values()) st.clear();
   for(const s of structures){
     if(s.civId==null)continue;
     let st=_civStructureTypes.get(s.civId);
@@ -3381,15 +3387,12 @@ function tickHumans(yearsElapsed){
     }
   }
 
-  // Prune dead humans aggressively — keep only last 8 for history
-  if(humans.length>_cachedAliveCount+8){
-    let pruned=0;
-    for(let i=humans.length-1;i>=0&&humans.length>_cachedAliveCount+8;i--){
+  // Prune dead humans aggressively — no cap, clear all dead each tick
+  if(humans.length>_cachedAliveCount){
+    for(let i=humans.length-1;i>=0;i--){
       if(!humans[i].alive){
         _humanById.delete(humans[i].id);
         humans.splice(i,1);
-        pruned++;
-        if(pruned>=100)break; // max 100 per tick
       }
     }
   }

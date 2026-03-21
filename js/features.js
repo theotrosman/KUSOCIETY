@@ -12,19 +12,23 @@ function tickSeasonalEpidemics(yearsElapsed) {
   _seasonalEpidemicTimer = 0;
   // Invierno (_season===3): alta probabilidad de brote
   if (_season === 3 && _cachedAlive.length > 10 && Math.random() < 0.35) {
+    if(activeOutbreaks.length < 12){ // cap outbreaks
     const host = _cachedAlive[Math.floor(Math.random() * _cachedAlive.length)];
     const coldDiseases = DISEASE_TYPES.filter(d => ['Fiebre','Tifus','Pestilencia'].includes(d.name));
     const dtype = coldDiseases[Math.floor(Math.random() * coldDiseases.length)];
     activeOutbreaks.push({ type: dtype, tx: host.tx, ty: host.ty, radius: 6 + Math.floor(Math.random() * 5), yearsLeft: dtype.duration });
     addWorldEvent(`❄️🦠 Epidemia invernal de ${dtype.name} — el frío debilita a la población`);
+    }
   }
   // Verano (_season===1): brotes de cólera/malaria en zonas húmedas
   if (_season === 1 && _cachedAlive.length > 15 && Math.random() < 0.18) {
+    if(activeOutbreaks.length < 12){ // cap outbreaks
     const host = _cachedAlive[Math.floor(Math.random() * _cachedAlive.length)];
     const summerDiseases = DISEASE_TYPES.filter(d => ['Cólera','Malaria'].includes(d.name));
     const dtype = summerDiseases[Math.floor(Math.random() * summerDiseases.length)];
     activeOutbreaks.push({ type: dtype, tx: host.tx, ty: host.ty, radius: 5 + Math.floor(Math.random() * 4), yearsLeft: dtype.duration });
     addWorldEvent(`☀️🦠 Brote de ${dtype.name} en el calor del verano`);
+    }
   }
 }
 
