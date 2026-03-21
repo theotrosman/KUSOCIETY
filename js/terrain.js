@@ -1,7 +1,7 @@
 // ── World dimensions ──────────────────────────────────────────────────────────
 const TILE    = 8;
-const WORLD_W = 512;   // wider than tall → horizontal feel
-const WORLD_H = 288;
+const WORLD_W = 1024;  // large world — room for many islands and civilizations
+const WORLD_H = 576;
 
 // Height thresholds
 const T = {
@@ -57,12 +57,27 @@ let terrainData   = null;
 let terrainCanvas = null;
 
 function generateTerrain() {
-  // Each noise layer gets a different seed offset for variety
   const n1 = makeNoise2D(WORLD_SEED);
   const n2 = makeNoise2D(WORLD_SEED + 1111);
   const n3 = makeNoise2D(WORLD_SEED + 2222);
+  const n4 = makeNoise2D(WORLD_SEED + 3333); // island mask noise
 
   terrainData = new Array(WORLD_W * WORLD_H);
+
+  // Pre-generate island centers for archipelago layout
+  const islandRng = mulberry32(WORLD_SEED ^ 0xABCD);
+  const NUM_ISLANDS = 9 + Math.floor(islandRng() * 5); // 9-13 islands
+  const islands = [];
+  // First island always near center — guaranteed large spawn area
+  islands.push({ cx:0.5, cy:0.5, r:0.18, strength:1.0 });
+  for(let i = 1; i < NUM_ISLANDS; i++){
+    islands.push({
+      cx: 0.06 + islandRng() * 0.88,
+      cy: 0.06 + islandRng() * 0.88,
+      r:  0.08 + islandRng() * 0.16,  // bigger islands
+      strength: 0.65 + islandRng() * 0.45,
+    });
+  }
 
   for(let y=0;y<WORLD_H;y++){
     for(let x=0;x<WORLD_W;x++){
@@ -70,15 +85,24 @@ function generateTerrain() {
       const ny = y/WORLD_H;
 
       // Domain-warped height
-      const wx = fbm(n1, nx+0.1, ny+0.1, 3, 2.0, 0.5) * 0.35;
-      const wy = fbm(n2, nx+5.2, ny+1.3, 3, 2.0, 0.5) * 0.35;
+      const wx = fbm(n1, nx+0.1, ny+0.1, 3, 2.0, 0.5) * 0.3;
+      const wy = fbm(n2, nx+5.2, ny+1.3, 3, 2.0, 0.5) * 0.3;
       let h = fbm(n1, nx+wx, ny+wy, 7, 2.1, 0.48);
       h = (h+1)/2;
 
-      // Horizontal-biased falloff: strong on left/right edges, gentle top/bottom
-      const dx = (nx-0.5)*2.2;
-      const dy = (ny-0.5)*1.4;
-      h -= (dx*dx*0.5 + dy*dy*0.2);
+      // Island mask — sum of gaussian bumps at island centers
+      let islandMask = 0;
+      for(const isl of islands){
+        const dx = (nx - isl.cx) * (WORLD_W / WORLD_H); // aspect-correct
+        const dy = ny - isl.cy;
+        const d2 = dx*dx + dy*dy;
+        const falloff = Math.exp(-d2 / (isl.r * isl.r * 2));
+        islandMask = Math.max(islandMask, falloff * isl.strength);
+      }
+
+      // Blend: base noise shaped by island mask
+      // Higher land ratio — more land, less ocean
+      h = h * 0.35 + islandMask * 0.85 - 0.12;
       h = Math.max(0, Math.min(1, h));
 
       // Moisture

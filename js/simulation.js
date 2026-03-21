@@ -13,7 +13,7 @@ const ERAS = [
   { name:'Era Espacial',         start:60000  },
 ];
 
-const SPEED_VALUES = [0, 1, 5, 20, 100];
+const SPEED_VALUES = [0, 1, 5, 20, 100, 500];
 let speedIndex = 1;
 let paused     = false;
 

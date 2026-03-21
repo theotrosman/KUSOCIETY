@@ -10,6 +10,7 @@ console.log('[world] spawning resources…');
 spawnResources();
 buildResourceCanvas();
 buildWaterTileList();
+spawnNaturalMonuments();
 console.log('[world] spawning humans…');
 spawnInitialHumans();
 console.log('[world] ready.');
@@ -81,8 +82,10 @@ function _tickAutoFollow(){
 
 // ── HUD ───────────────────────────────────────────────────────────────────────
 function updateHUD(){
-  document.getElementById('year-label').textContent=formatYear(year);
-  document.getElementById('era-label').textContent=getEra(year).name;
+  const yearEl=document.getElementById('year-label');
+  if(yearEl) yearEl.textContent=formatYear(year);
+  const eraEl=document.getElementById('era-label');
+  if(eraEl) eraEl.textContent=getEra(year).name;
   const alive=getAlive();
   const popEl=document.getElementById('pop-label');
   if(popEl) popEl.textContent=`👥 ${alive.length}`;
@@ -102,14 +105,30 @@ function updateHUD(){
     intelEl.textContent=`🧠 ${pct}%`;
     intelEl.style.color=_intelModifier>1.2?'#4ff':_intelModifier>0.8?'#adf':'#f84';
   }
+  // Sync slider label to live _intelModifier value
+  const sliderVal=document.getElementById('intel-slider-val');
+  if(sliderVal&&typeof _intelModifier!=='undefined'){
+    sliderVal.textContent=Math.round(_intelModifier*100)+'%';
+    sliderVal.style.color=_intelModifier>1.4?'#4ff':_intelModifier>1.0?'#a8f':'#f84';
+  }
+  // Season label
+  const seasonEl=document.getElementById('season-label');
+  if(seasonEl&&typeof _seasonName!=='undefined'){
+    const icons=['🌸','☀️','🍂','❄️'];
+    seasonEl.textContent=`${icons[_season]||'🌸'} ${_seasonName}`;
+    seasonEl.style.color=_season===3?'#88ccff':_season===1?'#ffdd44':'#aaffaa';
+  }
 }
 
 function setSpeedUI(){
-  const ids=['btn-pause','btn-1x','btn-5x','btn-20x','btn-100x'];
+  const ids=['btn-pause','btn-1x','btn-5x','btn-20x','btn-100x','btn-500x'];
   ids.forEach((id,i)=>document.getElementById(id).classList.toggle('active',paused?i===0:i===speedIndex));
+  // Modo 500x — botón especial con glow
+  const btn500=document.getElementById('btn-500x');
+  if(btn500) btn500.style.boxShadow = speedIndex===5&&!paused ? '0 0 10px #ff0,0 0 20px #f80' : '';
 }
 document.getElementById('btn-pause').addEventListener('click',()=>{ paused=!paused; setSpeedUI(); });
-[['btn-1x',1],['btn-5x',2],['btn-20x',3],['btn-100x',4]].forEach(([id,idx])=>{
+[['btn-1x',1],['btn-5x',2],['btn-20x',3],['btn-100x',4],['btn-500x',5]].forEach(([id,idx])=>{
   document.getElementById(id).addEventListener('click',()=>{ speedIndex=idx; paused=false; setSpeedUI(); });
 });
 setSpeedUI();
@@ -134,37 +153,218 @@ document.getElementById('btn-history').addEventListener('click',()=>{
   const panel=document.getElementById('history-panel');
   const content=document.getElementById('history-content');
   if(panel.style.display==='none'){
-    const alive=getAlive();
-    const civList=[...civilizations.values()].filter(c=>c.population>0);
-    let html=`<div style="color:#8ac;margin-bottom:10px">`;
-    html+=`👥 Vivos: <b>${alive.length}</b> · ☠️ Fallecidos: <b>${humans.length-alive.length}</b> · 🏛 Civs: <b>${civList.length}</b><br>`;
-    html+=`🌍 <b>${formatYear(year)}</b> · Era: <b>${getEra(year).name}</b> · 🧠 Intel: <b>${Math.round(_intelModifier*100)}%</b>`;
-    html+=`</div>`;
-    if(civList.length>0){
-      html+=`<div style="color:#fda;margin-bottom:8px;font-weight:bold">Civilizaciones activas:</div>`;
-      for(const civ of civList){
-        const leader=getHuman(civ.leaderId);
-        const soldiers=alive.filter(x=>x.civId===civ.id&&x.isSoldier).length;
-        html+=`<div style="margin-bottom:4px;padding:4px 6px;background:rgba(255,255,255,0.04);border-radius:4px">`;
-        html+=`<span style="color:${civ.color}">●</span> <b>${civ.name}</b> · ${civ.population} miembros · ${civ.era} · ⚔️${soldiers}`;
-        if(leader&&leader.alive)html+=` · 👑${leader.name.split(' ')[0]}`;
-        html+=`</div>`;
-      }
-    }
-    html+=`<div style="color:#fda;margin:10px 0 6px;font-weight:bold">Eventos recientes:</div>`;
-    if(worldEvents.length===0){html+='<div style="color:#666">Ningún evento aún.</div>';}
-    else for(const ev of worldEvents)
-      html+=`<div style="margin-bottom:3px"><span style="color:#668;font-size:10px">Año ${ev.year}</span> ${ev.text}</div>`;
-    content.innerHTML=html;
+    _renderChronicleEpic(content);
     panel.style.display='block';
   } else {
     panel.style.display='none';
   }
 });
 
+function _renderChronicle(content){
+    const alive=getAlive();
+    const civList=[...civilizations.values()].filter(c=>c.population>0).sort((a,b)=>b.population-a.population);
+    const totalDead=humans.length-alive.length;
+    const totalStructures=typeof structures!=='undefined'?structures.length:0;
+    const intelPct=typeof _intelModifier!=='undefined'?Math.round(_intelModifier*100):100;
+    const eraName=typeof getEra!=='undefined'?getEra(year).name:'?';
+
+    // ── Compute world stats ──
+    let totalWars=0,totalAlliances=0,totalInventions=0,totalReligions=new Set(),totalTerritories=0;
+    let maxPop=0,dominantCiv=null;
+    for(const [,civ] of civilizations){
+      totalWars+=civ.atWarWith?civ.atWarWith.size:0;
+      totalAlliances+=civ.allies?civ.allies.size:0;
+      totalInventions+=civ.inventions?civ.inventions.size:0;
+      if(civ.religion) totalReligions.add(civ.religion);
+      totalTerritories+=civ.territory?civ.territory.size:0;
+      if(civ.population>maxPop){maxPop=civ.population;dominantCiv=civ;}
+    }
+    totalWars=Math.floor(totalWars/2);
+    totalAlliances=Math.floor(totalAlliances/2);
+    let avgK=0;
+    if(alive.length>0){let s=0;for(const h of alive)s+=h.knowledge;avgK=Math.floor(s/alive.length);}
+    let oldest=null,topKiller=null;
+    for(const h of alive){
+      if(!oldest||h.age>oldest.age)oldest=h;
+      if(!topKiller||h.kills>topKiller.kills)topKiller=h;
+    }
+    const intelColor=intelPct>120?'#4ff':intelPct>90?'#8f8':intelPct>70?'#fda':'#f84';
+    const intelLabel=intelPct>130?'Edad Dorada ✨':intelPct>100?'Floreciente':intelPct>80?'Estable':'Edad Oscura 🌑';
+
+    let html='';
+
+    // ══ HEADER ══
+    html+=`<div style="text-align:center;padding:6px 0 12px;border-bottom:1px solid rgba(255,215,0,0.12);margin-bottom:12px">`;
+    html+=`<div style="font-size:20px;letter-spacing:3px;color:#e8d5a3;font-weight:bold;text-shadow:0 0 18px rgba(232,213,163,0.35)">${eraName.toUpperCase()}</div>`;
+    html+=`<div style="font-size:12px;color:#ffd700;margin-top:3px;letter-spacing:2px">${formatYear(year)}</div>`;
+    html+=`<div style="font-size:9px;color:#445;margin-top:3px;letter-spacing:2px">CRÓNICA DEL MUNDO</div>`;
+    html+=`</div>`;
+
+    // ══ STATS GRID ══
+    const stat=(icon,val,label,color='#adf')=>
+      `<div style="background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.06);border-radius:7px;padding:7px 4px;text-align:center">
+        <div style="font-size:15px">${icon}</div>
+        <div style="font-size:13px;font-weight:bold;color:${color}">${val}</div>
+        <div style="font-size:7px;color:#445;letter-spacing:1px;margin-top:1px;text-transform:uppercase">${label}</div>
+      </div>`;
+    html+=`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:10px">`;
+    html+=stat('👥',alive.length,'Vivos','#8f8');
+    html+=stat('☠️',totalDead,'Caídos','#f88');
+    html+=stat('🏛',civList.length,'Civs','#fda');
+    html+=stat('🏗',totalStructures,'Estructuras','#adf');
+    html+=stat('🧠',avgK,'Saber Medio',intelColor);
+    html+=stat('⚔️',totalWars>0?totalWars:'Paz','Guerras',totalWars>0?'#f44':'#8f8');
+    html+=`</div>`;
+
+    // ══ BARRA INTELIGENCIA ══
+    const intelBarW=Math.round(Math.min(100,Math.max(0,(intelPct-50)/130*100)));
+    html+=`<div style="background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.06);border-radius:7px;padding:8px 10px;margin-bottom:10px">`;
+    html+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">`;
+    html+=`<span style="font-size:9px;color:#a8f;letter-spacing:1px;text-transform:uppercase">🧠 Inteligencia Global</span>`;
+    html+=`<span style="font-size:11px;color:${intelColor};font-weight:bold">${intelPct}% — ${intelLabel}</span>`;
+    html+=`</div>`;
+    html+=`<div style="background:#111;border-radius:4px;height:5px"><div style="width:${intelBarW}%;height:100%;background:linear-gradient(90deg,${intelColor}66,${intelColor});border-radius:4px"></div></div>`;
+    html+=`</div>`;
+
+    // ══ POTENCIA DOMINANTE ══
+    if(dominantCiv){
+      const leader=getHuman(dominantCiv.leaderId);
+      const techNames=['Piedra','Bronce','Hierro','Acero','Pólvora','Avanzado'];
+      html+=`<div style="background:linear-gradient(135deg,rgba(0,0,0,0.5),rgba(255,215,0,0.04));border:1px solid ${dominantCiv.color}55;border-radius:8px;padding:10px 12px;margin-bottom:8px">`;
+      html+=`<div style="font-size:8px;color:#556;letter-spacing:2px;margin-bottom:5px;text-transform:uppercase">Potencia Dominante</div>`;
+      html+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">`;
+      html+=`<div style="width:11px;height:11px;border-radius:50%;background:${dominantCiv.color};box-shadow:0 0 8px ${dominantCiv.color}88;flex-shrink:0"></div>`;
+      html+=`<span style="color:${dominantCiv.color};font-size:14px;font-weight:bold">${dominantCiv.name}</span>`;
+      if(dominantCiv.dynastyName) html+=`<span style="color:#ffd700;font-size:8px;background:rgba(255,215,0,0.1);padding:1px 5px;border-radius:3px">${dominantCiv.dynastyName}</span>`;
+      html+=`</div>`;
+      html+=`<div style="display:flex;gap:8px;font-size:9px;color:#8ac;flex-wrap:wrap">`;
+      html+=`<span>👥 ${dominantCiv.population} almas</span>`;
+      html+=`<span>🔧 ${techNames[Math.min(dominantCiv.techLevel,5)]}</span>`;
+      if(leader&&leader.alive) html+=`<span>👑 ${leader.name}</span>`;
+      if(dominantCiv.religion) html+=`<span style="color:#d0a0ff">🛕 ${dominantCiv.religion}</span>`;
+      html+=`<span>🏅 Honor ${Math.round(dominantCiv.honor)}</span>`;
+      html+=`<span>🤝 ${dominantCiv.allies.size} aliados</span>`;
+      if(dominantCiv.atWarWith&&dominantCiv.atWarWith.size>0) html+=`<span style="color:#f44">⚔️ En guerra</span>`;
+      html+=`</div>`;
+      if(dominantCiv.inventions&&dominantCiv.inventions.size>0){
+        const invIcons={'escritura':'📝','rueda':'⚙️','imprenta':'📖','brujula':'🧭','telescopio':'🔭','vapor':'♨️','electricidad':'⚡','radio':'📡'};
+        html+=`<div style="margin-top:5px;font-size:12px">${[...dominantCiv.inventions].map(id=>invIcons[id]||'💡').join(' ')}</div>`;
+      }
+      html+=`</div>`;
+    }
+
+    // ══ RESTO DE CIVS ══
+    const otherCivs=civList.filter(c=>c!==dominantCiv);
+    if(otherCivs.length>0){
+      html+=`<div style="font-size:8px;color:#445;letter-spacing:2px;margin-bottom:5px;text-transform:uppercase">Otras Civilizaciones</div>`;
+      for(const civ of otherCivs){
+        const leader=getHuman(civ.leaderId);
+        const techNames=['Piedra','Bronce','Hierro','Acero','Pólvora','Avanzado'];
+        const atWar=civ.atWarWith?civ.atWarWith.size:0;
+        const honorColor=civ.honor>70?'#8f8':civ.honor>40?'#fda':'#f88';
+        html+=`<div style="margin-bottom:4px;padding:5px 8px;background:rgba(0,0,0,0.28);border-radius:5px;border-left:2px solid ${civ.color}77">`;
+        html+=`<div style="display:flex;align-items:center;gap:5px;margin-bottom:2px">`;
+        html+=`<div style="width:7px;height:7px;border-radius:50%;background:${civ.color};flex-shrink:0"></div>`;
+        html+=`<span style="color:${civ.color};font-weight:bold;font-size:11px">${civ.name}</span>`;
+        if(civ.dynastyName) html+=`<span style="color:#ffd700;font-size:8px;margin-left:2px">${civ.dynastyName}</span>`;
+        html+=`<span style="margin-left:auto;font-size:8px;color:#445">${civ.era}</span>`;
+        html+=`</div>`;
+        html+=`<div style="font-size:9px;color:#8ac;display:flex;gap:6px;flex-wrap:wrap">`;
+        html+=`<span>👥${civ.population}</span>`;
+        html+=`<span>🔧${techNames[Math.min(civ.techLevel,5)]}</span>`;
+        if(leader&&leader.alive) html+=`<span>👑${leader.name.split(' ')[0]}</span>`;
+        if(civ.allies.size>0) html+=`<span style="color:#8f8">🤝${civ.allies.size}</span>`;
+        if(atWar>0) html+=`<span style="color:#f44">⚔️${atWar}</span>`;
+        else if(civ.enemies.size>0) html+=`<span style="color:#f88">😠${civ.enemies.size}</span>`;
+        if(civ.religion) html+=`<span style="color:#d0a0ff">🛕</span>`;
+        html+=`<span style="color:${honorColor}">🏅${Math.round(civ.honor)}</span>`;
+        if(civ.inventions&&civ.inventions.size>0){const invIcons={'escritura':'📝','rueda':'⚙️','imprenta':'📖','brujula':'🧭','telescopio':'🔭','vapor':'♨️','electricidad':'⚡','radio':'📡'};html+=`<span>${[...civ.inventions].map(id=>invIcons[id]||'💡').join('')}</span>`;}
+        html+=`</div></div>`;
+      }
+    }
+
+    // ══ PERSONAJES NOTABLES ══
+    _computeNotables();
+    const n=_notables;
+    const notableEntries=[
+      n.smartest&&n.smartest.knowledge>0?{h:n.smartest,icon:'🧠',role:'El Más Sabio',detail:`${Math.floor(n.smartest.knowledge)} de saber`}:null,
+      n.oldest&&n.oldest.age>0?{h:n.oldest,icon:'🧓',role:'El Más Anciano',detail:`${Math.floor(n.oldest.age)} años`}:null,
+      n.mostKills&&n.mostKills.kills>0?{h:n.mostKills,icon:'⚔️',role:'Gran Guerrero',detail:`${n.mostKills.kills} victorias`}:null,
+      n.mostKids&&n.mostKids.children>0?{h:n.mostKids,icon:'👨‍👩‍👧‍👦',role:'Más Prolífico',detail:`${n.mostKids.children} hijos`}:null,
+      n.richest&&n.richest.wealth>0?{h:n.richest,icon:'💰',role:'El Más Rico',detail:`${Math.floor(n.richest.wealth)} riqueza`}:null,
+    ].filter(Boolean);
+    if(notableEntries.length>0){
+      html+=`<div style="font-size:8px;color:#445;letter-spacing:2px;margin:10px 0 6px;text-transform:uppercase">Personajes Notables</div>`;
+      html+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:10px">`;
+      for(const {h,icon,role,detail} of notableEntries){
+        const civ=h.civId!=null?civilizations.get(h.civId):null;
+        html+=`<div style="background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.05);border-radius:6px;padding:6px 8px;cursor:pointer" onclick="focusHuman(${h.id});document.getElementById('history-panel').style.display='none'">`;
+        html+=`<div style="font-size:14px">${icon}</div>`;
+        html+=`<div style="font-size:8px;color:#556;letter-spacing:1px;text-transform:uppercase">${role}</div>`;
+        html+=`<div style="font-size:11px;color:#ddd;font-weight:bold;margin-top:1px">${h.name.split(' ')[0]}</div>`;
+        html+=`<div style="font-size:9px;color:#6a9;margin-top:1px">${detail}</div>`;
+        if(civ) html+=`<div style="font-size:8px;color:${civ.color};margin-top:2px">${civ.name}</div>`;
+        html+=`</div>`;
+      }
+      html+=`</div>`;
+    }
+
+    // ══ MONUMENTOS ══
+    const monuments=typeof naturalMonuments!=='undefined'?naturalMonuments:[];
+    if(monuments.length>0){
+      html+=`<div style="font-size:8px;color:#445;letter-spacing:2px;margin-bottom:5px;text-transform:uppercase">Maravillas Naturales</div>`;
+      html+=`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">`;
+      for(const m of monuments){
+        html+=`<span style="font-size:10px;background:rgba(0,0,0,0.4);border:1px solid ${m.color}44;color:${m.color};border-radius:4px;padding:3px 6px">${m.icon} ${m.label}</span>`;
+      }
+      html+=`</div>`;
+    }
+
+    // ══ LEGADOS ══
+    const legacies=typeof prodigyLegacies!=='undefined'?prodigyLegacies:[];
+    if(legacies.length>0){
+      html+=`<div style="font-size:8px;color:#445;letter-spacing:2px;margin-bottom:5px;text-transform:uppercase">Legados Legendarios</div>`;
+      for(const leg of legacies){
+        html+=`<div style="margin-bottom:4px;padding:6px 8px;background:rgba(255,215,0,0.04);border-radius:5px;border-left:2px solid #ffd70044;display:flex;align-items:center;gap:8px">`;
+        html+=`<span style="font-size:18px">${leg.prodigyIcon}</span>`;
+        html+=`<div><div style="font-size:10px;color:#ffd700;font-weight:bold">${leg.prodigyName.split(' ')[0]}</div>`;
+        html+=`<div style="font-size:9px;color:#aaa">${leg.icon} ${leg.name}</div>`;
+        html+=`<div style="font-size:8px;color:#445">${leg.civName} · ${formatYear(leg.year)}</div></div>`;
+        html+=`</div>`;
+      }
+      html+=`<div style="margin-bottom:8px"></div>`;
+    }
+
+    // ══ CRÓNICA ══
+    const events=typeof majorEvents!=='undefined'?majorEvents:[];
+    html+=`<div style="font-size:8px;color:#445;letter-spacing:2px;margin-bottom:6px;text-transform:uppercase">Crónica — Grandes Eventos</div>`;
+    if(events.length===0){
+      html+=`<div style="color:#333;font-size:10px;text-align:center;padding:14px">Los anales de la historia están vacíos aún…</div>`;
+    } else {
+      for(const ev of events){
+        const t=ev.text;
+        let borderColor='#2a3040';
+        if(t.includes('⚔️')||t.includes('guerra')||t.includes('Guerra')||t.includes('GUERRA')) borderColor='#622';
+        else if(t.includes('✨')||t.includes('nació')&&t.includes('Prodigio')) borderColor='#554';
+        else if(t.includes('🦠')||t.includes('Plaga')||t.includes('Epidemia')||t.includes('mutó')) borderColor='#343';
+        else if(t.includes('🌋')||t.includes('Terremoto')||t.includes('TERREMOTO')) borderColor='#532';
+        else if(t.includes('💍')||t.includes('Matrimonio')) borderColor='#446';
+        else if(t.includes('📜')||t.includes('inventó')||t.includes('Invención')) borderColor='#244';
+        else if(t.includes('🏛')||t.includes('fundó')||t.includes('Imperio')) borderColor='#442';
+        else if(t.includes('☄️')||t.includes('Eclipse')||t.includes('Cometa')) borderColor='#335';
+        else if(t.includes('✊')||t.includes('Rebelión')||t.includes('REBELIÓN')) borderColor='#533';
+        html+=`<div style="margin-bottom:4px;padding:5px 8px 5px 10px;background:rgba(0,0,0,0.22);border-radius:4px;border-left:2px solid ${borderColor};font-size:10px;line-height:1.5">`;
+        html+=`<span style="color:#334;font-size:8px;letter-spacing:1px">${formatYear(ev.year)}</span><br>${ev.text}`;
+        html+=`</div>`;
+      }
+    }
+
+    content.innerHTML=html;
+}
+
 // ── Input ─────────────────────────────────────────────────────────────────────
 let drag={on:false,sx:0,sy:0,cx:0,cy:0};
-canvas.addEventListener('mousedown',e=>{ drag={on:true,sx:e.clientX,sy:e.clientY,cx:cam.x,cy:cam.y}; });
+canvas.addEventListener('mousedown',e=>{ lastTs=null; drag={on:true,sx:e.clientX,sy:e.clientY,cx:cam.x,cy:cam.y}; });
 canvas.addEventListener('mousemove',e=>{
   if(!drag.on)return;
   cam.x=drag.cx+(e.clientX-drag.sx);
@@ -181,7 +381,7 @@ canvas.addEventListener('mousemove',e=>{
 });
 canvas.addEventListener('mouseup',()=>drag.on=false);
 canvas.addEventListener('mouseleave',()=>drag.on=false);
-canvas.addEventListener('wheel',e=>{ e.preventDefault(); zoomAt(e.clientX,e.clientY,e.deltaY<0?1.12:0.89); },{passive:false});
+canvas.addEventListener('wheel',e=>{ e.preventDefault(); lastTs=null; zoomAt(e.clientX,e.clientY,e.deltaY<0?1.12:0.89); },{passive:false});
 
 let lastPinch=null;
 canvas.addEventListener('touchstart',e=>{ if(e.touches.length===1) drag={on:true,sx:e.touches[0].clientX,sy:e.touches[0].clientY,cx:cam.x,cy:cam.y}; });
@@ -199,9 +399,21 @@ canvas.addEventListener('touchend',()=>{ drag.on=false; lastPinch=null; });
 canvas.addEventListener('click',e=>{
   if(Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)>5) return;
   const wx=(e.clientX-cam.x)/cam.zoom/TILE, wy=(e.clientY-cam.y)/cam.zoom/TILE;
+
+  // Check structures first (click radius slightly larger for usability)
+  if(typeof structures!=='undefined'){
+    for(const s of structures){
+      if(Math.hypot(s.tx-wx,s.ty-wy)<1.2){
+        _showStructurePanel(s);
+        return;
+      }
+    }
+  }
+
   let found=null;
   for(const h of getAlive()){ if(Math.hypot(h.tx-wx,h.ty-wy)<1.5){found=h;break;} }
   for(const h of getAlive()) h.selected=false;
+  _hideStructurePanel();
   if(found){
     found.selected=true;
     _selectedHumanId=found.id;
@@ -440,21 +652,27 @@ function _showExtinctionDialog(){
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
 let lastTs=null;
+let _interacting=false; // true briefly after mouse/wheel events
+
 function loop(ts){
-  const dt=lastTs?Math.min(ts-lastTs,100):16;
+  const dt=lastTs?Math.min(ts-lastTs,50):16; // cap at 50ms max (was 100)
   lastTs=ts;
   const dtSec=dt/1000;
   const speedMult=SPEED_VALUES[speedIndex]||1;
 
-  // Cap yearsElapsed per frame to prevent single-frame freezes at 100x
+  // Cap yearsElapsed tighter — at 500x, 50ms = 12.5 raw years, cap to 4
+  // At 100x, 50ms = 2.5 raw years, cap to 4 — safe
   const rawYears=tickTime(dt);
-  const yearsElapsed=Math.min(rawYears, 8); // never process more than 8 years per frame
+  const yearsElapsed=Math.min(rawYears, 4); // tighter cap prevents mass death on lag spikes
 
   updateHumanMovement(dtSec, speedMult);
 
   if(yearsElapsed>0){
     const prevCount=getAlive().length;
     tickHumans(yearsElapsed);
+    // ── Modo 500x: superinteligencia y colonización máxima ──────────────────
+    if(speedIndex===5&&!paused) _tickSuperIntelligence(yearsElapsed);
+    tickAllFeatures(yearsElapsed);
     tickResourceGrowth(yearsElapsed);
     // Invalidate alive cache after tick
     _aliveDirty=true;
@@ -488,3 +706,167 @@ function loop(ts){
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+
+// ── Structure panel — click any building to see its story ─────────────────────
+let _structurePanelEl = null;
+
+function _ensureStructurePanel(){
+  if(_structurePanelEl) return _structurePanelEl;
+  const p = document.createElement('div');
+  p.id = 'structure-panel';
+  p.style.cssText = [
+    'position:fixed','bottom:14px','left:50%','transform:translateX(-50%)',
+    'width:320px','max-width:90vw',
+    'background:rgba(6,12,24,0.96)',
+    'color:#dde','border-radius:12px','padding:14px 16px',
+    'font-size:12px','font-family:monospace',
+    'border:1px solid rgba(255,215,0,0.2)',
+    'z-index:200','display:none',
+    'box-shadow:0 4px 32px rgba(0,0,0,0.7)',
+  ].join(';');
+  document.body.appendChild(p);
+  _structurePanelEl = p;
+  return p;
+}
+
+function _hideStructurePanel(){
+  if(_structurePanelEl) _structurePanelEl.style.display='none';
+}
+
+function _showStructurePanel(s){
+  const p = _ensureStructurePanel();
+  const civ = s.civId!=null && typeof civilizations!=='undefined' ? civilizations.get(s.civId) : null;
+  const civColor = civ ? civ.color : '#888';
+  const age = s.builtYear ? year - s.builtYear : '?';
+  const hpPct = Math.round((s.hp/s.maxHp)*100);
+  const hpColor = hpPct>60?'#4f4':hpPct>30?'#fa0':'#f44';
+
+  // Find chronicle entries related to this structure's civ
+  const relatedChron = typeof chronicle!=='undefined'
+    ? chronicle.filter(e=>civ&&(e.title.includes(civ.name)||e.body.includes(civ.name))).slice(0,2)
+    : [];
+
+  // Flavor descriptions per structure type
+  const FLAVOR = {
+    palace:    'Símbolo del poder absoluto. Desde aquí se dictan las leyes que gobiernan el destino de miles.',
+    citadel:   'Fortaleza inexpugnable. Sus muros han resistido asedios que habrían doblegado a cualquier otro.',
+    cathedral: 'La fe hecha piedra. Generaciones han rezado bajo estas bóvedas buscando respuestas eternas.',
+    temple:    'Un lugar sagrado donde los vivos hablan con los muertos y los dioses escuchan.',
+    colosseum: 'El pueblo se reúne aquí para olvidar sus penas en el espectáculo del combate.',
+    library:   'Cada pergamino guarda una vida de conocimiento. El saber acumulado de generaciones.',
+    academy:   'Los mejores cerebros de la civilización se forman entre estas paredes.',
+    university:'Centro del pensamiento avanzado. Aquí nacen las ideas que cambian el mundo.',
+    observatory:'Desde aquí, los sabios leen el destino en las estrellas y miden el tiempo.',
+    market:    'El corazón económico de la ciudad. Aquí se intercambian bienes, rumores y alianzas.',
+    granary:   'Las reservas de comida que separan la prosperidad del hambre.',
+    barracks:  'Donde los guerreros se forjan. El acero y la disciplina son las únicas leyes aquí.',
+    watchtower:'Ojos que nunca duermen. Desde aquí se ve venir el peligro antes de que llegue.',
+    palisade:  'La primera línea de defensa. Madera y determinación contra el mundo exterior.',
+    forge:     'El fuego que transforma el metal en herramientas, armas y civilización.',
+    workshop:  'Manos hábiles convierten madera y piedra en los objetos que sostienen la vida diaria.',
+    harbor:    'La puerta al mundo. Desde aquí parten y llegan las riquezas del mar.',
+    shipyard:  'Donde nacen los barcos que llevarán a esta gente más allá del horizonte.',
+    aqueduct:  'Agua limpia para todos. Una obra de ingeniería que salva más vidas que cualquier ejército.',
+    farm:      'La base de todo. Sin estas cosechas, no hay ciudad, no hay civilización.',
+    mine:      'Las entrañas de la tierra revelan sus secretos a quienes se atreven a cavar.',
+    well:      'Agua de vida. Simple, esencial, irremplazable.',
+    hut:       'Un hogar. Pequeño, humilde, pero suficiente para soñar.',
+    camp:      'El primer paso. Donde todo comenzó.',
+    factory:   'La revolución industrial en un edificio. Produce más en un día que cien artesanos en un mes.',
+    railway:   'El tiempo y la distancia se doblegaron ante el poder del vapor y el acero.',
+    powerplant:'La electricidad fluye desde aquí hacia cada rincón de la civilización.',
+    airport:   'El cielo ya no es el límite. La humanidad conquistó el aire.',
+    road:      'Cada camino es una promesa de conexión entre pueblos.',
+    carriage:  'Caballos y ruedas. La velocidad al servicio de la civilización.',
+    animal_pen:'Los animales domesticados son el primer gran pacto entre la humanidad y la naturaleza.',
+  };
+
+  const flavor = FLAVOR[s.type] || 'Una estructura que da forma al mundo que la rodea.';
+
+  let html = '';
+  // Header
+  html += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(255,215,0,0.12)">`;
+  html += `<span style="font-size:28px">${s.icon}</span>`;
+  html += `<div style="flex:1">`;
+  html += `<div style="font-size:15px;font-weight:bold;color:#e8d5a3">${s.label}</div>`;
+  if(civ) html += `<div style="font-size:10px;color:${civColor};margin-top:2px">● ${civ.name}</div>`;
+  html += `</div>`;
+  html += `<button onclick="_hideStructurePanel()" style="background:none;border:none;color:#666;font-size:18px;cursor:pointer;padding:0 4px">✕</button>`;
+  html += `</div>`;
+
+  // Stats row
+  html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px">`;
+  const statBox=(icon,val,label)=>`<div style="background:rgba(0,0,0,0.4);border-radius:6px;padding:5px;text-align:center">
+    <div style="font-size:11px">${icon}</div>
+    <div style="font-size:12px;font-weight:bold;color:#adf">${val}</div>
+    <div style="font-size:8px;color:#445;text-transform:uppercase">${label}</div>
+  </div>`;
+  html += statBox('📅', age==='?' ? '?' : `${age} años`, 'Edad');
+  html += statBox('🏗', s.builtBy ? s.builtBy.split(' ')[0] : '?', 'Constructor');
+  html += statBox('📍', `${s.tx},${s.ty}`, 'Posición');
+  html += `</div>`;
+
+  // HP bar
+  html += `<div style="margin-bottom:10px">`;
+  html += `<div style="display:flex;justify-content:space-between;font-size:9px;color:#556;margin-bottom:3px"><span>Integridad estructural</span><span style="color:${hpColor}">${hpPct}%</span></div>`;
+  html += `<div style="background:#111;border-radius:4px;height:6px"><div style="width:${hpPct}%;height:100%;background:${hpColor};border-radius:4px;transition:width 0.3s"></div></div>`;
+  html += `</div>`;
+
+  // Flavor text
+  html += `<div style="font-size:11px;color:#9ab;line-height:1.6;font-style:italic;margin-bottom:10px;padding:8px;background:rgba(255,255,255,0.03);border-radius:6px;border-left:2px solid rgba(255,215,0,0.2)">"${flavor}"</div>`;
+
+  // Related chronicle entries
+  if(relatedChron.length>0){
+    html += `<div style="font-size:8px;color:#445;letter-spacing:1px;text-transform:uppercase;margin-bottom:5px">Eventos relacionados</div>`;
+    for(const e of relatedChron){
+      html += `<div style="margin-bottom:4px;padding:5px 8px;background:rgba(0,0,0,0.3);border-radius:5px;border-left:2px solid ${e.color}55">`;
+      html += `<div style="font-size:9px;color:#556">${formatYear(e.year)}</div>`;
+      html += `<div style="font-size:10px;color:#ccc;margin-top:1px">${e.icon} ${e.title}</div>`;
+      html += `</div>`;
+    }
+  }
+
+  p.innerHTML = html;
+  p.style.display = 'block';
+}
+
+// ── Chronicle panel ───────────────────────────────────────────────────────────
+function _renderChronicleEpic(content){
+  // Build full chronicle HTML (stats + epic narrative)
+  _renderChronicle(content);
+
+  const chronicleData = typeof chronicle !== 'undefined' ? chronicle : [];
+  const majorData = typeof majorEvents !== 'undefined' ? majorEvents : [];
+
+  // Remove the old plain events section appended by _renderChronicle
+  let html = content.innerHTML;
+  const SENTINEL = 'Crónica — Grandes Eventos';
+  const idx = html.lastIndexOf(SENTINEL);
+  if(idx !== -1){
+    const divStart = html.lastIndexOf('<div', idx);
+    if(divStart !== -1) html = html.slice(0, divStart);
+  }
+
+  html += `<div style="font-size:8px;color:#445;letter-spacing:2px;margin-bottom:8px;text-transform:uppercase">📜 Crónica del Mundo</div>`;
+
+  if(chronicleData.length === 0 && majorData.length === 0){
+    html += `<div style="color:#333;font-size:10px;text-align:center;padding:14px">Los anales de la historia están vacíos aún…</div>`;
+  } else {
+    for(const e of chronicleData.slice(0, 30)){
+      html += `<div style="margin-bottom:8px;padding:8px 10px;background:rgba(0,0,0,0.28);border-radius:6px;border-left:3px solid ${e.color}88">`;
+      html += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:16px">${e.icon}</span><div style="flex:1">`;
+      html += `<div style="font-size:11px;font-weight:bold;color:#e8d5a3">${e.title}</div>`;
+      html += `<div style="font-size:8px;color:#445;letter-spacing:1px">${formatYear(e.year)}</div>`;
+      html += `</div></div><div style="font-size:10px;color:#9ab;line-height:1.6;font-style:italic">${e.body}</div></div>`;
+    }
+    const chronicleYears = new Set(chronicleData.map(e => e.year));
+    const remaining = majorData.filter(e => !chronicleYears.has(e.year)).slice(0, 20);
+    if(remaining.length > 0){
+      html += `<div style="font-size:8px;color:#334;letter-spacing:1px;margin:8px 0 5px;text-transform:uppercase">Otros eventos</div>`;
+      for(const ev of remaining){
+        html += `<div style="margin-bottom:3px;padding:4px 8px;background:rgba(0,0,0,0.18);border-radius:4px;font-size:10px;color:#778"><span style="color:#334;font-size:8px">${formatYear(ev.year)}</span> ${ev.text}</div>`;
+      }
+    }
+  }
+  content.innerHTML = html;
+}
