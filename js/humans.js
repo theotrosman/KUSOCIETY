@@ -53,6 +53,8 @@ const STRUCTURE_TYPES={
   neon_district:{icon:'🌃',color:'#ff44aa',label:'Distrito Neón',     cost:{wood:15,stone:50},hp:600,  decay:true, decayRate:0.06},
   neural_hub:   {icon:'🧠',color:'#aa44ff',label:'Hub Neural',        cost:{wood:20,stone:60},hp:800,  decay:true, decayRate:0.04},
   spaceport:    {icon:'🚀',color:'#aaddff',label:'Puerto Espacial',   cost:{wood:30,stone:80},hp:1000, decay:true, decayRate:0.02},
+  // Nuclear
+  nuclear_silo: {icon:'☢️', color:'#ff4400',label:'Silo Nuclear',       cost:{wood:20,stone:60},hp:800,  decay:true, decayRate:0.02},
   // Mega structures
   stadium:      {icon:'🏟',color:'#e8c840',label:'Estadio',           cost:{wood:20,stone:40},hp:800,  decay:true, decayRate:0.05},
   pyramid:      {icon:'△', color:'#d4a820',label:'Pirámide',          cost:{wood:10,stone:60},hp:2000, decay:true, decayRate:0.01},
@@ -1957,6 +1959,7 @@ class Human{
 
     // ── Infrastructure: roads connect the city — build proportionally ─────
     else if(_unlockedTypes.has('neural_hub')&&this.knowledge>90000&&this.inventory.wood>=20&&this.inventory.stone>=60&&!atCap('neural_hub',0.05,3))type='neural_hub';
+    else if(_unlockedTypes.has('nuclear_silo')&&this.knowledge>70000&&this.inventory.wood>=20&&this.inventory.stone>=60&&this.isLeader&&civCount('nuclear_silo')<2)type='nuclear_silo';
     else if(_unlockedTypes.has('neon_district')&&this.knowledge>65000&&this.inventory.wood>=15&&this.inventory.stone>=50&&!atCap('neon_district',0.08,6))type='neon_district';
     else if(_unlockedTypes.has('skyscraper')&&this.knowledge>35000&&this.inventory.wood>=10&&this.inventory.stone>=40&&!atCap('skyscraper',0.15,12))type='skyscraper';
     else if(_unlockedTypes.has('powerplant')&&this.knowledge>28000&&this.inventory.wood>=10&&this.inventory.stone>=30&&!atCap('powerplant',0.05,2))type='powerplant';
@@ -2714,6 +2717,7 @@ const KNOWLEDGE_UNLOCKS=[
   {avgK:75000,type:'arcology',   icon:'🏗️', color:'#44aa88',label:'Arcología',   cost:{wood:30,stone:80},hp:1500,decay:false,decayRate:0,msg:'🏗️ Arcologías desbloqueadas — ciudades autosuficientes'},
   // ── Era Espacial (avgK 90000+) ────────────────────────────────────────────
   {avgK:90000,type:'neural_hub', icon:'🧠',color:'#aa44ff',label:'Hub Neural',  cost:{wood:20,stone:60},hp:800,decay:false,decayRate:0, msg:'🧠 Hub Neural desbloqueado — la IA despierta'},
+  {avgK:70000,type:'nuclear_silo',icon:'☢️',color:'#ff4400',label:'Silo Nuclear',cost:{wood:20,stone:60},hp:800,decay:false,decayRate:0, msg:'☢️ Silos Nucleares desbloqueados — el poder de destrucción total'},
   {avgK:110000,type:'spaceport', icon:'🚀',color:'#aaddff',label:'Puerto Espacial',cost:{wood:30,stone:80},hp:1000,decay:false,decayRate:0,msg:'🚀 Puerto Espacial desbloqueado — la humanidad mira las estrellas'},
 ];
 const _unlockedTypes=new Set(['camp','hut','farm','mine','market','temple']);

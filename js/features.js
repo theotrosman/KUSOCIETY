@@ -950,6 +950,7 @@ function tickAllFeatures(yearsElapsed) {
   tickGlobalization(yearsElapsed);
   tickCivDiversity(yearsElapsed);
   tickRandomChronicles(yearsElapsed);
+  tickNuclearWar(yearsElapsed);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1255,6 +1256,7 @@ function tickFamine(yearsElapsed) {
       _famineState.set(civ.id, { yearsLeft: 30 + severity * 20, severity });
       addMajorEvent(`🍂 ¡HAMBRUNA en ${civ.name}! Severidad ${severity}/3 — ${civ.population} bocas, solo ${foodStructures} fuentes de comida`);
       addChronicle('famine',`Hambruna en ${civ.name}`,`Con ${civ.population} bocas que alimentar y apenas ${foodStructures} fuentes de comida, ${civ.name} entró en una espiral de desesperación. Los más débiles cayeron primero. Los demás miraron al horizonte buscando salvación.`,'🍂');
+      if(typeof _setExtinctionCause!=='undefined') _setExtinctionCause('famine',`Hambruna catastrófica en ${civ.name}`);
       continue;
     }
     if (!inFamine) continue;
@@ -1531,6 +1533,7 @@ function tickGlobalPandemic(yearsElapsed) {
   _activePandemics.push(pandemic);
   addMajorEvent(`☠️ ¡PANDEMIA! "${name}" surge en ${originCiv.name} — la enfermedad comienza a propagarse`);
   addChronicle('plague', `Nace la pandemia "${name}"`, `Nadie supo de dónde vino. Primero fueron unos pocos enfermos, luego docenas, luego cientos. "${name}" se extendió por las rutas comerciales como veneno en el agua. El mundo contuvo la respiración.`, '☠️');
+  if(typeof _setExtinctionCause!=='undefined') _setExtinctionCause('plague',`La pandemia "${name}" arrasó con la humanidad`);
 }
 
 // ── 22. MARAVILLAS DEL MUNDO ──────────────────────────────────────────────────
@@ -2799,6 +2802,155 @@ function tickRandomChronicles(yearsElapsed) {
   const pool = [..._RANDOM_CHRONICLE_POOL].sort(() => Math.random() - 0.5);
   for (const fn of pool) {
     try { if (fn(civs)) break; } catch(e) {}
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GUERRA NUCLEAR — silos, lanzamientos, explosiones visibles, extinción
+// ═══════════════════════════════════════════════════════════════════════════════
+let _nuclearTimer = 0;
+// Active nuclear explosions for renderer: [{tx, ty, radius, maxRadius, age, maxAge, civName}]
+const _nuclearExplosions = [];
+// Radiation tiles: Set of "tx,ty" — humans here take damage
+const _radiationTiles = new Set();
+
+function getNuclearExplosions() { return _nuclearExplosions; }
+function getRadiationTiles() { return _radiationTiles; }
+
+function _launchNuke(attackerCiv, targetCiv) {
+  // Find a target tile — enemy city center or random enemy human
+  let tx, ty;
+  const enemyMembers = _cachedAlive.filter(h => h.civId === targetCiv.id);
+  if (enemyMembers.length > 0) {
+    const target = enemyMembers[Math.floor(Math.random() * enemyMembers.length)];
+    tx = target.tx; ty = target.ty;
+  } else if (targetCiv.cityCenter) {
+    tx = targetCiv.cityCenter.tx; ty = targetCiv.cityCenter.ty;
+  } else {
+    return;
+  }
+
+  const blastRadius = 12 + Math.floor(Math.random() * 8); // 12-20 tiles
+  const r2 = blastRadius * blastRadius;
+
+  // Kill humans in blast zone
+  let killed = 0;
+  for (const h of _cachedAlive) {
+    const dx = h.tx - tx, dy = h.ty - ty;
+    if (dx*dx + dy*dy <= r2) {
+      h._die('bomba nuclear');
+      killed++;
+    }
+  }
+
+  // Destroy structures in blast zone
+  let destroyed = 0;
+  for (let i = structures.length - 1; i >= 0; i--) {
+    const s = structures[i];
+    const dx = s.tx - tx, dy = s.ty - ty;
+    if (dx*dx + dy*dy <= r2) {
+      if (structureGrid) structureGrid[s.ty * WORLD_W + s.tx] = null;
+      structures.splice(i, 1);
+      destroyed++;
+    }
+  }
+  if (typeof markCityGlowDirty !== 'undefined') markCityGlowDirty();
+
+  // Leave radiation tiles
+  for (let dy = -blastRadius; dy <= blastRadius; dy++) {
+    for (let dx = -blastRadius; dx <= blastRadius; dx++) {
+      if (dx*dx + dy*dy <= r2) {
+        const rtx = tx + dx, rty = ty + dy;
+        if (rtx >= 0 && rtx < WORLD_W && rty >= 0 && rty < WORLD_H) {
+          _radiationTiles.add(`${rtx},${rty}`);
+        }
+      }
+    }
+  }
+
+  // Add visual explosion
+  _nuclearExplosions.push({ tx, ty, radius: 0, maxRadius: blastRadius * TILE, age: 0, maxAge: 4.0, civName: attackerCiv.name });
+
+  // Chronicle + events
+  addMajorEvent(`☢️ ¡BOMBA NUCLEAR! ${attackerCiv.name} lanzó un misil sobre ${targetCiv.name} — ${killed} muertos, ${destroyed} estructuras destruidas`);
+  addChronicle('war', `Guerra Nuclear: ${attackerCiv.name} vs ${targetCiv.name}`,
+    `El hongo de fuego se alzó sobre las ruinas de lo que fue una ciudad. ${killed} almas desaparecieron en un instante. ${destroyed} estructuras que tardaron generaciones en construirse se convirtieron en polvo. El mundo nunca volvería a ser el mismo. La humanidad había cruzado el umbral del que no hay retorno.`, '☢️');
+
+  // Set extinction cause if this wipes out humanity
+  if (typeof _setExtinctionCause !== 'undefined') {
+    _setExtinctionCause('nuclear', `${attackerCiv.name} lanzó bombas nucleares sobre ${targetCiv.name}`);
+  }
+}
+
+function tickNuclearWar(yearsElapsed) {
+  // Tick visual explosions
+  for (let i = _nuclearExplosions.length - 1; i >= 0; i--) {
+    const e = _nuclearExplosions[i];
+    e.age += yearsElapsed * 0.08; // slow visual fade
+    e.radius = Math.min(e.maxRadius, e.maxRadius * (e.age / (e.maxAge * 0.3)));
+    if (e.age >= e.maxAge) _nuclearExplosions.splice(i, 1);
+  }
+
+  // Radiation damage — humans on radiation tiles take slow damage
+  if (_radiationTiles.size > 0 && Math.floor(year) % 5 === 0) {
+    for (const h of _cachedAlive) {
+      if (_radiationTiles.has(`${h.tx},${h.ty}`)) {
+        h.health = Math.max(0, h.health - 8);
+        h.sick = true;
+        if (!h.sickType) h.sickType = { name: 'Radiación', cure: 0.001, spread: 0, duration: 999 };
+        if (h.health <= 0) h._die('radiación nuclear');
+      }
+    }
+  }
+
+  // Radiation decay — tiles slowly become safe
+  if (_radiationTiles.size > 0 && Math.floor(year) % 200 === 0) {
+    const keys = [..._radiationTiles];
+    const toRemove = Math.ceil(keys.length * 0.1);
+    for (let i = 0; i < toRemove; i++) _radiationTiles.delete(keys[i]);
+  }
+
+  // Nuclear launch logic — warring civs with silos
+  _nuclearTimer += yearsElapsed;
+  if (_nuclearTimer < 80) return;
+  _nuclearTimer = 0;
+
+  // Find civs with nuclear silos
+  const nukeCapable = [];
+  for (const [, civ] of civilizations) {
+    if (civ.population < 3) continue;
+    const hasSilo = structures.some(s => s.civId === civ.id && s.type === 'nuclear_silo');
+    if (hasSilo) nukeCapable.push(civ);
+  }
+  if (nukeCapable.length < 2) return;
+
+  for (const civ of nukeCapable) {
+    if (civ.enemies.size === 0) continue;
+    // Only launch if at war and has enemies with population
+    const enemyIds = [...civ.enemies].filter(id => {
+      const e = civilizations.get(id);
+      return e && e.population > 0;
+    });
+    if (enemyIds.length === 0) continue;
+
+    // Low probability — nuclear war is rare but possible
+    // ~0.5% chance per 80-year interval per civ = roughly once every 16000 years if conditions met
+    if (Math.random() > 0.005) continue;
+
+    const targetId = enemyIds[Math.floor(Math.random() * enemyIds.length)];
+    const targetCiv = civilizations.get(targetId);
+    if (!targetCiv) continue;
+
+    _launchNuke(civ, targetCiv);
+
+    // Retaliation — target launches back if they also have silos
+    const targetHasSilo = structures.some(s => s.civId === targetId && s.type === 'nuclear_silo');
+    if (targetHasSilo && Math.random() < 0.7) {
+      setTimeout(() => {
+        try { _launchNuke(targetCiv, civ); } catch(e) {}
+      }, 800);
+    }
+    break; // one launch per tick
   }
 }
 

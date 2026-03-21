@@ -237,6 +237,94 @@ function _tickVehicles(dtSec){
   }
 }
 
+function _drawNuclearExplosions(){
+  if(typeof getNuclearExplosions==='undefined') return;
+  const explosions = getNuclearExplosions();
+  if(explosions.length===0) return;
+  const ctx = _ctx;
+  const radiationTiles = typeof getRadiationTiles!=='undefined' ? getRadiationTiles() : null;
+
+  // Draw radiation tiles first (persistent glow)
+  if(radiationTiles && radiationTiles.size > 0 && cam.zoom > 0.3){
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = '#88ff00';
+    for(const key of radiationTiles){
+      const [rtx, rty] = key.split(',').map(Number);
+      const px = rtx * TILE, py = rty * TILE;
+      ctx.fillRect(px, py, TILE, TILE);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // Draw active explosions
+  for(const e of explosions){
+    const px = e.tx * TILE + TILE/2;
+    const py = e.ty * TILE + TILE/2;
+    const progress = e.age / e.maxAge; // 0→1
+    const alpha = progress < 0.3 ? progress/0.3 : 1 - (progress-0.3)/0.7;
+
+    ctx.save();
+
+    // Outer shockwave ring
+    const shockR = e.radius * (1 + progress * 0.5);
+    const shockGrad = ctx.createRadialGradient(px, py, shockR*0.7, px, py, shockR);
+    shockGrad.addColorStop(0, `rgba(255,200,50,${alpha*0.3})`);
+    shockGrad.addColorStop(1, `rgba(255,100,0,0)`);
+    ctx.beginPath();
+    ctx.arc(px, py, shockR, 0, Math.PI*2);
+    ctx.fillStyle = shockGrad;
+    ctx.fill();
+
+    // Main fireball
+    const fireR = e.radius * Math.min(1, progress * 3);
+    const fireGrad = ctx.createRadialGradient(px, py, 0, px, py, fireR);
+    fireGrad.addColorStop(0, `rgba(255,255,200,${alpha})`);
+    fireGrad.addColorStop(0.3, `rgba(255,180,0,${alpha*0.9})`);
+    fireGrad.addColorStop(0.7, `rgba(255,60,0,${alpha*0.6})`);
+    fireGrad.addColorStop(1, `rgba(80,0,0,0)`);
+    ctx.beginPath();
+    ctx.arc(px, py, fireR, 0, Math.PI*2);
+    ctx.fillStyle = fireGrad;
+    ctx.fill();
+
+    // Mushroom cloud stem (vertical rectangle)
+    if(progress > 0.15 && progress < 0.8){
+      const stemH = e.radius * progress * 1.5;
+      const stemW = e.radius * 0.15;
+      ctx.globalAlpha = alpha * 0.5;
+      ctx.fillStyle = `rgba(180,120,60,${alpha*0.4})`;
+      ctx.fillRect(px - stemW/2, py - stemH, stemW, stemH);
+    }
+
+    // Mushroom cap
+    if(progress > 0.2){
+      const capR = e.radius * Math.min(0.8, (progress-0.2) * 2);
+      const capY = py - e.radius * progress * 1.2;
+      const capGrad = ctx.createRadialGradient(px, capY, 0, px, capY, capR);
+      capGrad.addColorStop(0, `rgba(200,150,80,${alpha*0.7})`);
+      capGrad.addColorStop(0.6, `rgba(120,80,40,${alpha*0.5})`);
+      capGrad.addColorStop(1, `rgba(60,40,20,0)`);
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.arc(px, capY, capR, 0, Math.PI*2);
+      ctx.fillStyle = capGrad;
+      ctx.fill();
+    }
+
+    // ☢️ label
+    if(cam.zoom > 0.5 && progress < 0.6){
+      ctx.globalAlpha = alpha;
+      ctx.font = `${Math.round(14/cam.zoom)}px serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('☢️', px, py - e.radius - 8/cam.zoom);
+    }
+
+    ctx.restore();
+  }
+}
+
 function _drawMetropolisEffects(dtSec){
   if(typeof structures === 'undefined' || cam.zoom < 0.6) return;
   const ctx = _ctx;
@@ -517,6 +605,9 @@ function renderFrame(dt){
   // Epic battle effects (world-space, drawn on top of humans)
   _drawBattleFX(dtSec);
 
+  // Nuclear explosions (world-space)
+  if(typeof getNuclearExplosions!=='undefined') _drawNuclearExplosions();
+
   // Metropolis effects (smoke, vehicles, screens)
   _drawMetropolisEffects(dtSec);
 
@@ -539,6 +630,7 @@ function renderFrame(dt){
   _drawClimateHUD();
   _drawAIPlagueHUD();
   _drawGlobalizationHUD();
+  _drawNuclearHUD();
 }
 
 // ── Trade Routes ─────────────────────────────────────────────────────────────
@@ -871,6 +963,17 @@ function _drawStructures(){
       const civ=s.civId!=null&&typeof civilizations!=='undefined'?civilizations.get(s.civId):null;
 
       if(isMega){ _drawMegaStructure(s,px,py,civ,t,showShadow); continue; }
+
+      // Nuclear silo — special pulsing red glow
+      if(s.type==='nuclear_silo'){
+        const pulse = 0.5 + Math.sin(_waterPhase*3 + s.tx)*0.5;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(px, py, TILE*1.2, 0, Math.PI*2);
+        ctx.fillStyle = `rgba(255,60,0,${0.15*pulse})`;
+        ctx.fill();
+        ctx.restore();
+      }
 
       const tier=s.type==='hut'||s.type==='camp'?(s.housingLevel||0):(STRUCTURE_HEIGHT[s.type]||0);
       const k = civ ? Math.min(99999, (civ.knowledge||0)) : 0;
@@ -2154,6 +2257,27 @@ function _drawGlobalizationHUD(){
   const txt = `🌐 Globalización: ${phases[phaseIdx]} — ${pct}%`;
   ctx.strokeText(txt, x, y);
   ctx.fillStyle = color;
+  ctx.fillText(txt, x, y);
+  ctx.restore();
+}
+
+// ── Nuclear HUD indicator ─────────────────────────────────────────────────────
+function _drawNuclearHUD(){
+  if(typeof structures === 'undefined') return;
+  const silos = structures.filter(s => s.type === 'nuclear_silo');
+  if(silos.length === 0) return;
+  const ctx = _ctx;
+  const x = _canvas.width/2, y = 188;
+  const pulse = 0.7 + Math.sin(_waterPhase * 4) * 0.3;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.font = 'bold 12px monospace';
+  ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+  ctx.lineWidth = 3;
+  const txt = `☢️ ${silos.length} Silo${silos.length>1?'s':''} Nuclear${silos.length>1?'es':''} activo${silos.length>1?'s':''}`;
+  ctx.strokeText(txt, x, y);
+  ctx.fillStyle = `rgba(255,${Math.floor(80*pulse)},0,${0.7+pulse*0.3})`;
   ctx.fillText(txt, x, y);
   ctx.restore();
 }

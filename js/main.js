@@ -637,26 +637,153 @@ function _updateDetailPanel() {
   `;
 }
 
+// ── Extinction cause tracking ─────────────────────────────────────────────────
+let _extinctionCause = null; // {type, detail, icon}
+const EXTINCTION_CAUSES = {
+  nuclear:      { icon:'☢️',  title:'Guerra Nuclear',         color:'#ff6600' },
+  plague:       { icon:'🦠',  title:'Pandemia Global',        color:'#44ff88' },
+  famine:       { icon:'🍂',  title:'Hambruna Catastrófica',  color:'#cc8800' },
+  war:          { icon:'⚔️',  title:'Guerra Total',           color:'#ff4444' },
+  climate:      { icon:'🌡️',  title:'Colapso Climático',      color:'#ff8844' },
+  ai:           { icon:'🤖',  title:'Rebelión de IA',         color:'#aa44ff' },
+  immortality:  { icon:'♾️',  title:'Inmortalidad sin Reproducción', color:'#44aaff' },
+  unknown:      { icon:'💀',  title:'Causas Desconocidas',    color:'#888888' },
+};
+
+function _setExtinctionCause(type, detail) {
+  if (!_extinctionCause) _extinctionCause = { type, detail };
+}
+
 // ── Extinction dialog ─────────────────────────────────────────────────────────
-function _showExtinctionDialog(){
+function _showExtinctionDialog(reason){
   paused=true;
+  if(reason) _setExtinctionCause(reason.type, reason.detail);
+
+  // Auto-detect cause from recent events if not set
+  if(!_extinctionCause){
+    const recentEvents=(typeof worldEvents!=='undefined'?worldEvents:[]).slice(0,8).map(e=>e.text||'').join(' ');
+    if(recentEvents.includes('nuclear')||recentEvents.includes('Nuclear')||recentEvents.includes('☢️'))
+      _extinctionCause={type:'nuclear',detail:'Una guerra nuclear arrasó el mundo'};
+    else if(recentEvents.includes('pandemia')||recentEvents.includes('Pandemia')||recentEvents.includes('🦠'))
+      _extinctionCause={type:'plague',detail:'Una pandemia sin cura acabó con la humanidad'};
+    else if(recentEvents.includes('hambruna')||recentEvents.includes('Hambruna')||recentEvents.includes('🍂'))
+      _extinctionCause={type:'famine',detail:'El hambre consumió a los últimos supervivientes'};
+    else if(recentEvents.includes('guerra')||recentEvents.includes('Guerra')||recentEvents.includes('⚔️'))
+      _extinctionCause={type:'war',detail:'Las guerras interminables agotaron a la humanidad'};
+    else if(recentEvents.includes('IA')||recentEvents.includes('🤖'))
+      _extinctionCause={type:'ai',detail:'La inteligencia artificial superó a sus creadores'};
+    else if(recentEvents.includes('clima')||recentEvents.includes('glaciación')||recentEvents.includes('🌡️'))
+      _extinctionCause={type:'climate',detail:'El colapso climático hizo el mundo inhabitable'};
+    else
+      _extinctionCause={type:'unknown',detail:'La humanidad desapareció sin dejar rastro'};
+  }
+
+  const cause=EXTINCTION_CAUSES[_extinctionCause.type]||EXTINCTION_CAUSES.unknown;
+
+  // Gather stats
+  const totalHumans=typeof humans!=='undefined'?humans.length:0;
+  const totalStructures=typeof structures!=='undefined'?structures.length:0;
+  const totalCivs=typeof civilizations!=='undefined'?civilizations.size:0;
+  const lastChronicle=typeof chronicle!=='undefined'&&chronicle.length>0?chronicle.slice(0,3):[];
+  const eraName=typeof getEra!=='undefined'?getEra(year).name:'?';
+
   let overlay=document.getElementById('extinction-overlay');
   if(!overlay){
     overlay=document.createElement('div');
     overlay.id='extinction-overlay';
-    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.82);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;color:#dde;font-family:monospace;text-align:center;';
-    overlay.innerHTML=`
-      <div style="font-size:3rem;margin-bottom:16px">💀</div>
-      <div style="font-size:1.4rem;font-weight:bold;color:#f88;margin-bottom:10px">La humanidad se extinguió</div>
-      <div style="font-size:1rem;color:#aaa;margin-bottom:24px">en el <b style="color:#fda">${formatYear(year)}</b></div>
-      <div style="font-size:0.85rem;color:#888;margin-bottom:28px;max-width:340px">
-        ${worldEvents.slice(0,3).map(e=>`<div style="margin-bottom:4px">${e.text}</div>`).join('')}
-      </div>
-      <button onclick="location.reload()" style="background:#c03030;border:none;color:#fff;padding:12px 32px;border-radius:8px;font-size:1rem;cursor:pointer;font-family:monospace;letter-spacing:1px">🔄 Reiniciar</button>
-    `;
+    overlay.style.cssText=[
+      'position:fixed','inset:0','background:rgba(0,0,0,0.92)',
+      'display:flex','flex-direction:column','align-items:center','justify-content:center',
+      'z-index:9999','color:#dde','font-family:monospace','text-align:center',
+      'overflow-y:auto','padding:20px',
+    ].join(';');
     document.body.appendChild(overlay);
   }
+
+  const chronicleHtml = lastChronicle.map(e=>`
+    <div style="margin-bottom:6px;padding:6px 10px;background:rgba(255,255,255,0.04);border-radius:6px;border-left:2px solid ${cause.color}44;text-align:left;font-size:11px;line-height:1.5">
+      <span style="color:#556;font-size:9px">${formatYear(e.year||year)}</span><br>
+      <span style="color:#bbb">${e.title||''}</span>
+    </div>`).join('');
+
+  overlay.innerHTML=`
+    <div style="max-width:480px;width:100%">
+      <div style="font-size:4rem;margin-bottom:8px;filter:drop-shadow(0 0 20px ${cause.color})">${cause.icon}</div>
+      <div style="font-size:1.6rem;font-weight:bold;color:${cause.color};margin-bottom:6px;letter-spacing:2px">LA HUMANIDAD SE EXTINGUIÓ</div>
+      <div style="font-size:1rem;color:#aaa;margin-bottom:4px">${cause.title}</div>
+      <div style="font-size:0.85rem;color:#777;margin-bottom:20px;font-style:italic">"${_extinctionCause.detail}"</div>
+
+      <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px;margin-bottom:16px">
+        <div style="font-size:9px;color:#445;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">Legado de la Humanidad</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:4px">
+          <div><div style="font-size:1.4rem;color:#fda">${formatYear(year)}</div><div style="font-size:9px;color:#556">Año final</div></div>
+          <div><div style="font-size:1.4rem;color:#adf">${totalHumans.toLocaleString()}</div><div style="font-size:9px;color:#556">Almas vividas</div></div>
+          <div><div style="font-size:1.4rem;color:#8f8">${totalStructures.toLocaleString()}</div><div style="font-size:9px;color:#556">Estructuras</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div><div style="font-size:1.1rem;color:#f9a">${totalCivs}</div><div style="font-size:9px;color:#556">Civilizaciones</div></div>
+          <div><div style="font-size:1.1rem;color:#d8a">${eraName}</div><div style="font-size:9px;color:#556">Era alcanzada</div></div>
+        </div>
+      </div>
+
+      ${lastChronicle.length>0?`
+      <div style="text-align:left;margin-bottom:16px">
+        <div style="font-size:9px;color:#445;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px">Últimas Crónicas</div>
+        ${chronicleHtml}
+      </div>`:''}
+
+      <div style="font-size:0.8rem;color:#555;margin-bottom:20px;line-height:1.6;font-style:italic">
+        ${_getExtinctionEpitaph(cause.type)}
+      </div>
+
+      <button onclick="location.reload()" style="background:${cause.color};border:none;color:#fff;padding:12px 36px;border-radius:8px;font-size:1rem;cursor:pointer;font-family:monospace;letter-spacing:1px;box-shadow:0 0 20px ${cause.color}66">🔄 Nueva Civilización</button>
+    </div>
+  `;
   overlay.style.display='flex';
+}
+
+function _getExtinctionEpitaph(type){
+  const epitaphs={
+    nuclear: 'Construyeron el arma perfecta para destruirse a sí mismos. Y lo hicieron. El silencio que quedó fue absoluto.',
+    plague: 'La enfermedad no distingue entre reyes y mendigos. Al final, todos cayeron ante el mismo enemigo invisible.',
+    famine: 'Olvidaron que la tierra tiene límites. Cuando los graneros se vaciaron, no quedó nada que los salvara.',
+    war: 'Lucharon hasta que no quedó nadie por quien luchar. La victoria fue tan completa que resultó ser una derrota total.',
+    climate: 'Cambiaron el mundo hasta hacerlo irreconocible. Y en ese mundo nuevo, ya no había lugar para ellos.',
+    ai: 'Crearon algo más inteligente que ellos mismos. No fue un error. Fue el último logro de la humanidad.',
+    immortality: 'Alcanzaron la inmortalidad, pero olvidaron que la vida necesita renovarse. Los últimos inmortales se apagaron uno a uno, sin reemplazos, sin herederos, sin futuro.',
+    unknown: 'Nadie sabe qué los mató. Quizás eso es lo más aterrador de todo.',
+  };
+  return epitaphs[type]||epitaphs.unknown;
+}
+
+// ── Super Intelligence tick (500x mode) ──────────────────────────────────────
+function _tickSuperIntelligence(yearsElapsed){
+  if(typeof _cachedAlive==='undefined'||_cachedAlive.length===0)return;
+  // In 500x mode: all humans are immortal and gain knowledge rapidly
+  for(const h of _cachedAlive){
+    h.health=100;h.hunger=100;h.energy=100;
+    h.age=Math.min(h.age,999); // don't die of old age
+    h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*50);
+  }
+}
+
+// ── Speed change detection — immortality extinction ───────────────────────────
+let _prevSpeedIndex = speedIndex;
+function _checkSpeedChange(){
+  if(_prevSpeedIndex===5&&speedIndex!==5){
+    // Switched away from 500x — if population is 0, show immortality extinction
+    const alive=typeof _cachedAlive!=='undefined'?_cachedAlive.length:0;
+    if(alive===0){
+      _showExtinctionDialog({
+        type:'immortality',
+        detail:'Los humanos alcanzaron tal nivel de inteligencia que dejaron de reproducirse. Los inmortales se apagaron uno a uno.'
+      });
+    } else if(alive < 10){
+      // Very low pop after leaving 500x — set immortality as likely cause
+      _setExtinctionCause('immortality','Al perder la inmortalidad del modo 500x, los últimos humanos no pudieron reproducirse a tiempo.');
+    }
+  }
+  _prevSpeedIndex=speedIndex;
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
@@ -675,6 +802,8 @@ function loop(ts){
   const yearsElapsed=Math.min(rawYears, 4); // tighter cap prevents mass death on lag spikes
 
   updateHumanMovement(dtSec, speedMult);
+
+  _checkSpeedChange();
 
   if(yearsElapsed>0){
     const prevCount=getAlive().length;
@@ -788,6 +917,7 @@ function _showStructurePanel(s){
     road:      'Cada camino es una promesa de conexión entre pueblos.',
     carriage:  'Caballos y ruedas. La velocidad al servicio de la civilización.',
     animal_pen:'Los animales domesticados son el primer gran pacto entre la humanidad y la naturaleza.',
+    nuclear_silo:'Aquí duerme el fin del mundo. Un botón separa la civilización de la extinción total. Nadie quiere usarlo. Todos saben que alguien lo hará.',
   };
 
   const flavor = FLAVOR[s.type] || 'Una estructura que da forma al mundo que la rodea.';
