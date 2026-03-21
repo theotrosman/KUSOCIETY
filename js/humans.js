@@ -108,23 +108,25 @@ const TRANSPORT_TIERS=[
   {tier:8, icon:'🛸',label:'Nave Orbital',  speed:180, minK:110000},
   {tier:9, icon:'🌌',label:'Teletransporte',speed:300, minK:130000},
 ];
-function initStructureGrid(){structureGrid=Array.from({length:WORLD_H},()=>new Array(WORLD_W).fill(null));}
-const MAX_STRUCTURES=3500; // larger world needs more structures
+// structureGrid: flat array [ty*WORLD_W+tx] → structure|null (faster than nested arrays)
+function initStructureGrid(){structureGrid=new Array(WORLD_W*WORLD_H).fill(null);}
+const MAX_STRUCTURES=3500;
 function placeStructure(tx,ty,type,builder){
   if(structures.length>=MAX_STRUCTURES)return false;
-  if(!structureGrid||structureGrid[ty]?.[tx])return false;
+  if(!structureGrid||structureGrid[ty*WORLD_W+tx])return false;
   const def=STRUCTURE_TYPES[type];
   if(!def)return false;
   const s={tx,ty,type,hp:def.hp,maxHp:def.hp,builtBy:builder.name,civId:builder.civId,
            icon:def.icon,color:def.color,label:def.label,decay:def.decay,decayRate:def.decayRate};
-  structures.push(s);structureGrid[ty][tx]=s;return true;
+  structures.push(s);structureGrid[ty*WORLD_W+tx]=s;return true;
 }
 function getStructureAt(tx,ty){
-  if(tx<0||ty<0||tx>=WORLD_W||ty>=WORLD_H)return null;
-  return structureGrid[ty][tx];
+  if(!structureGrid||tx<0||ty<0||tx>=WORLD_W||ty>=WORLD_H)return null;
+  return structureGrid[ty*WORLD_W+tx]||null;
 }
 let _structureDecayTimer = 0;
 function tickStructures(yearsElapsed){
+  if(!structureGrid) return;
   // Throttle: run every 5 sim-years to reduce per-frame cost
   _structureDecayTimer += yearsElapsed;
   if(_structureDecayTimer < 5) return;
@@ -145,7 +147,7 @@ function tickStructures(yearsElapsed){
     if(!s.decay||s.decayRate<=0)continue;
     s.hp -= dt * s.decayRate * seasonMult * maintainMod;
     if(s.hp<=0){
-      structureGrid[s.ty][s.tx]=null;
+      structureGrid[s.ty*WORLD_W+s.tx]=null;
       structures.splice(i,1);
       if(typeof markCityGlowDirty!=='undefined')markCityGlowDirty();
     }
@@ -737,7 +739,7 @@ function modifyTerrain(tx,ty,newBiome){
 function flattenTerrain(tx,ty){
   const cell=getCell(tx,ty);
   if(!cell||!isLand(tx,ty))return false;
-  if(['highland','mountain','snow'].includes(cell.biome)){
+  if(['highland','mountain','snow','tundra','glacier','volcanic'].includes(cell.biome)){
     modifyTerrain(tx,ty,'grass');
     return true;
   }
@@ -954,10 +956,10 @@ function _spatialQuery(tx,ty,radius,excludeId){
 // ── Neural Brain ──────────────────────────────────────────────────────────────
 class NeuralBrain{
   constructor(rng){
-    this.iSize=12;this.hSize=8;this.oSize=10; // reduced hSize 10→8
+    this.iSize=12;this.hSize=6;this.oSize=10; // hSize 8→6 saves 20% weights
     // Outputs: 0=seekFood 1=sleep 2=wander 3=socialize 4=gather 5=build 6=reproduce 7=farm 8=fight 9=raze
-    this.wIH=Array.from({length:this.iSize*this.hSize},()=>rng()*2-1);
-    this.wHO=Array.from({length:this.hSize*this.oSize},()=>rng()*2-1);
+    this.wIH=new Float32Array(this.iSize*this.hSize).map(()=>rng()*2-1);
+    this.wHO=new Float32Array(this.hSize*this.oSize).map(()=>rng()*2-1);
     this.bH=new Float32Array(this.hSize);
     this.bO=new Float32Array(this.oSize);
     this.lr=0.10;
@@ -994,9 +996,9 @@ class NeuralBrain{
     // Skip trivial updates — saves CPU on large populations
     if(Math.abs(reward)<0.002)return;
     this.memory.push({inp:Float32Array.from(inp),actionIdx,reward});
-    if(this.memory.length>8)this.memory.shift();
-    // Only replay last 3 memories for speed
-    const start=Math.max(0,this.memory.length-3);
+    if(this.memory.length>4)this.memory.shift(); // 8→4 saves RAM
+    // Only replay last 2 memories for speed
+    const start=Math.max(0,this.memory.length-2);
     for(let m=start;m<this.memory.length;m++){
       const e=this.memory[m];
       const p=this.forward(e.inp);
@@ -1011,12 +1013,16 @@ class NeuralBrain{
 function _inheritBrain(bA,bB,rng){
   const c=new NeuralBrain(rng);
   const mutR=0.08,mutS=0.15;
-  const mix=(a,b)=>Array.from(a,(v,i)=>{
-    const base=bB?(rng()<0.5?v:b[i]):v;
-    return rng()<mutR?base+(rng()*2-1)*mutS:base;
-  });
+  const mix=(a,b)=>{
+    const out=new Float32Array(a.length);
+    for(let i=0;i<a.length;i++){
+      const base=bB?(rng()<0.5?a[i]:b[i]):a[i];
+      out[i]=rng()<mutR?base+(rng()*2-1)*mutS:base;
+    }
+    return out;
+  };
   c.wIH=mix(bA.wIH,bB?.wIH);c.wHO=mix(bA.wHO,bB?.wHO);
-  c.bH=Array.from(mix(bA.bH,bB?.bH));c.bO=Array.from(mix(bA.bO,bB?.bO));
+  c.bH=mix(bA.bH,bB?.bH);c.bO=mix(bA.bO,bB?.bO);
   c.epsilon=Math.max(0.04,Math.min(0.40,(bA.epsilon+(bB?.epsilon||bA.epsilon))/2+(rng()*0.04-0.02)));
   return c;
 }
@@ -1073,8 +1079,14 @@ function _getPopCaps(){
     'Era Clásica':7,'Era Medieval':12,'Renacimiento':20,'Era Industrial':40,
     'Era Moderna':80,'Era Espacial':160,
   }[eraName]||1;
-  const soft=Math.min(3000, Math.floor((80+infraBonus)*eraMult));
-  const hard=Math.min(4500, Math.floor(soft*1.6));
+  // Cap duro por era — permite crecimiento natural sin explotar
+  const eraHardCap={
+    'Era Primitiva':60,'Era de Piedra':120,'Era del Bronce':220,'Era del Hierro':400,
+    'Era Clásica':700,'Era Medieval':1100,'Renacimiento':1600,'Era Industrial':2500,
+    'Era Moderna':3800,'Era Espacial':4500,
+  }[eraName]||60;
+  const soft=Math.min(eraHardCap, Math.floor((40+infraBonus)*eraMult));
+  const hard=Math.min(4500, Math.min(eraHardCap, Math.floor(soft*1.5)));
   _popCapsCache={soft,hard};
   return _popCapsCache;
 }
@@ -1157,7 +1169,7 @@ class Human{
     this.parentIds=parentA?[parentA.id,parentB?parentB.id:parentA.id]:null;
   }
 
-  addLog(msg){this.log.unshift(`Año ${year}: ${msg}`);if(this.log.length>8)this.log.pop();}
+  addLog(msg){this.log.unshift(`Año ${year}: ${msg}`);if(this.log.length>4)this.log.pop();}
 
   // ── Frame movement ────────────────────────────────────────────────────────
   updateMovement(dtSec,speedMult){
@@ -1232,12 +1244,18 @@ class Human{
       this.health=Math.min(100,this.health+yearsElapsed*6);
     }
 
-    // Build up drives — faster with more knowledge
+    // Build up drives — tasa de reproducción calibrada
+    // Objetivo: ~1 hijo cada 3-4 años en era primitiva (mortalidad alta compensa)
+    // Sube a ~1 cada 2 años en eras avanzadas (más recursos, medicina)
     if(this._canReproduce&&this.age>=16&&this.age<=50&&this.reproTimer<=0){
-      // En modo 500x: no reproducirse si ya hay 3000+ humanos
       const popCap = typeof speedIndex!=='undefined'&&speedIndex===5&&_cachedAlive.length>=4500;
-      if(!popCap)
-        this._reproUrge=Math.min(1,this._reproUrge+yearsElapsed*0.5);
+      if(!popCap){
+        const kFactor = Math.min(1, this.knowledge / 5000);
+        const baseRate = 0.18 + kFactor * 0.22; // 0.18/año primitivo → 0.40/año avanzado
+        // Bonus si la población está muy baja (instinto de supervivencia)
+        const popBonus = _cachedAlive.length < 20 ? 0.15 : 0;
+        this._reproUrge=Math.min(1,this._reproUrge+yearsElapsed*(baseRate+popBonus));
+      }
     }
     this._exploreUrge=Math.min(1,this._exploreUrge+yearsElapsed*0.10);
     // Build urge scales with knowledge — advanced civs build constantly
@@ -1312,14 +1330,14 @@ class Human{
         const hasFarm=structures.some(s=>s.civId===this.civId&&(s.type==='farm'||s.type==='granary'));
         if(!hasFarm){this._buildUrge=0;this._doBuild();return;}
       }
-      // Reproducirse agresivamente si hay pareja disponible
-      if(this._reproUrge>0.3&&this.hunger>45&&this.energy>25&&!this.sick){
+      // Reproducirse si hay pareja disponible (en crisis se relaja un poco el umbral)
+      if(this._reproUrge>0.5&&this.hunger>45&&this.energy>25&&!this.sick){
         this._tryReproduce(nearby);return;
       }
     }
 
-    // Biological imperatives
-    if(this._reproUrge>0.65&&this.hunger>40&&this.energy>35&&!this.sick){
+    // Biological imperatives — umbral más alto: necesitan estar bien alimentados
+    if(this._reproUrge>(_cachedAlive.length<15?0.55:0.75)&&this.hunger>55&&this.energy>45&&!this.sick){
       this._tryReproduce(nearby);return;
     }
     // Repair crumbling structures — highest priority after survival
@@ -1613,7 +1631,7 @@ class Human{
       for(let ay=-1;ay<=1;ay++)for(let ax=-1;ax<=1;ax++){
         if(ax===0&&ay===0)continue;
         if(isLand(tx+ax,ty+ay))score+=2;
-        if(structureGrid[Math.max(0,Math.min(WORLD_H-1,ty+ay))]?.[Math.max(0,Math.min(WORLD_W-1,tx+ax))])score+=3;
+        if(structureGrid&&structureGrid[Math.max(0,Math.min(WORLD_H-1,ty+ay))*WORLD_W+Math.max(0,Math.min(WORLD_W-1,tx+ax))])score+=3;
       }
       // Prefer closer tiles
       score-=Math.hypot(dx,dy)*0.1;
@@ -1636,13 +1654,14 @@ class Human{
     if(this.hunger<30||this.health<30)return;
     const myCiv=this.civId!=null?civilizations.get(this.civId):null;
     if(!myCiv)return;
+    if(!structureGrid)return;
     // Find nearby enemy structure using grid — O(radius²) not O(all structures)
     let target=null,bestD=Infinity;
     const r=20;
     const x0=Math.max(0,this.tx-r),x1=Math.min(WORLD_W-1,this.tx+r);
     const y0=Math.max(0,this.ty-r),y1=Math.min(WORLD_H-1,this.ty+r);
     for(let ty=y0;ty<=y1&&!target;ty++)for(let tx=x0;tx<=x1&&!target;tx++){
-      const s=structureGrid[ty][tx];
+      const s=structureGrid[ty*WORLD_W+tx];
       if(!s||s.civId==null||s.civId===this.civId)continue;
       if(!myCiv.enemies.has(s.civId))continue;
       const d=Math.hypot(tx-this.tx,ty-this.ty);
@@ -1657,7 +1676,7 @@ class Human{
     this.addLog(`Atacó ${target.label}`);
     if(target.hp<=0){
       const idx=structures.indexOf(target);
-      if(idx>=0){structures.splice(idx,1);structureGrid[target.ty][target.tx]=null;}
+      if(idx>=0){structures.splice(idx,1);structureGrid[target.ty*WORLD_W+target.tx]=null;}
       addWorldEvent(`💥 ${this.name.split(' ')[0]} destruyó ${target.label} de ${civilizations.get(target.civId)?.name||'?'}`);
     }
   }
@@ -1775,7 +1794,7 @@ class Human{
         let hasNearStruct=false;
         for(let sy2=Math.max(0,ty-3);sy2<=Math.min(WORLD_H-1,ty+3)&&!hasNearStruct;sy2++){
           for(let sx2=Math.max(0,tx-3);sx2<=Math.min(WORLD_W-1,tx+3)&&!hasNearStruct;sx2++){
-            const ns=structureGrid[sy2][sx2];
+            const ns=structureGrid[sy2*WORLD_W+sx2];
             if(ns&&ns.civId===this.civId)hasNearStruct=true;
           }
         }
@@ -1846,25 +1865,25 @@ class Human{
       let targetLevel=0;
       for(const def of HOUSING_LEVELS){if(avgK>=def.minK)targetLevel=def.level;}
       // Always demolish camps once past primitive era (avgK > 50)
-      if(avgK>50){
+      if(avgK>50&&structureGrid){
         for(let i=structures.length-1;i>=0;i--){
           const s=structures[i];
           if(s.civId!==this.civId||s.type!=='camp')continue;
-          structureGrid[s.ty][s.tx]=null;
+          structureGrid[s.ty*WORLD_W+s.tx]=null;
           structures.splice(i,1);
           if(typeof markCityGlowDirty!=='undefined')markCityGlowDirty();
           break;
         }
       }
       // Demolish huts that are 2+ levels behind the current target (was 3+)
-      if(targetLevel>=2){
+      if(targetLevel>=2&&structureGrid){
         for(let i=structures.length-1;i>=0;i--){
           const s=structures[i];
           if(s.civId!==this.civId)continue;
           if(s.type!=='hut')continue;
           const sl=s.housingLevel||0;
           if(sl<=targetLevel-2&&Math.random()<0.05){ // 5% chance (was 2%)
-            structureGrid[s.ty][s.tx]=null;
+            structureGrid[s.ty*WORLD_W+s.tx]=null;
             structures.splice(i,1);
             if(typeof markCityGlowDirty!=='undefined')markCityGlowDirty();
             break;
@@ -2031,9 +2050,10 @@ class Human{
     const tryPlace=(bx,by)=>{
       if(!isLand(bx,by)||getStructureAt(bx,by))return false;
       if(bx<0||by<0||bx>=WORLD_W||by>=WORLD_H)return false;
+      if(!structureGrid) return false;
       for(let sy2=Math.max(0,by-minSpacing);sy2<=Math.min(WORLD_H-1,by+minSpacing);sy2++){
         for(let sx2=Math.max(0,bx-minSpacing);sx2<=Math.min(WORLD_W-1,bx+minSpacing);sx2++){
-          const ns=structureGrid[sy2][sx2];
+          const ns=structureGrid[sy2*WORLD_W+sx2];
           if(ns&&ns.type===type)return false;
         }
       }
@@ -2107,7 +2127,7 @@ class Human{
     let worst=null, worstRatio=1.0;
     for(let ty=y0;ty<=y1;ty++){
       for(let tx=x0;tx<=x1;tx++){
-        const s=structureGrid[ty][tx];
+        const s=structureGrid[ty*WORLD_W+tx];
         if(!s||!s.decay||s.decayRate<=0)continue;
         if(s.civId!==this.civId)continue;
         const ratio=s.hp/s.maxHp;
@@ -2431,7 +2451,11 @@ class Human{
     if(!this._canReproduce||this.age<15||this.age>50||this.reproTimer>0){
       this.action=ACTIONS.SOCIALIZE;return;
     }
-    if(this.hunger<35||this.energy<25||this.sick){this.action=ACTIONS.IDLE;return;}
+    const lowPop = _cachedAliveCount < 15;
+    const hungerMin = lowPop ? 30 : 45;
+    const energyMin = lowPop ? 20 : 35;
+    if(this.hunger<hungerMin||this.energy<energyMin||this.sick){this.action=ACTIONS.IDLE;return;}
+    // Con población muy baja, relajar requisitos para evitar extinción
     const {soft,hard}=_getPopCaps();
     const aliveCount=_cachedAliveCount;
     if(aliveCount>=hard){this.action=ACTIONS.SOCIALIZE;return;}
@@ -2444,13 +2468,17 @@ class Human{
     const candidates=searchRadius===16?nearby:_spatialQuery(this.tx,this.ty,80,this.id);
     for(const h of candidates){
       if(h.gender===this.gender||h.age<15||h.age>50||h.reproTimer>0)continue;
-      if(h.hunger<30||h.energy<20||h.sick)continue;
+      if(h.hunger<(lowPop?20:30)||h.energy<(lowPop?15:20)||h.sick)continue;
       if(Math.hypot(h.tx-this.tx,h.ty-this.ty)<=8){partner=h;break;}
     }
     if(partner){
       this.action=ACTIONS.REPRODUCE;partner.action=ACTIONS.REPRODUCE;
-      this.reproTimer=1+Math.floor(this._rng()*3);
-      partner.reproTimer=1+Math.floor(partner._rng()*3);
+      // Cooldown entre hijos: primitivo ~2-4 años, avanzado ~1-2 años
+      const kFactor = Math.min(1, this.knowledge / 5000);
+      const minCooldown = Math.round(2 - kFactor * 1); // 2 primitivo → 1 avanzado
+      const rangeCooldown = 2; // rango fijo de 2 años
+      this.reproTimer = minCooldown + Math.floor(this._rng() * rangeCooldown);
+      partner.reproTimer = minCooldown + Math.floor(partner._rng() * rangeCooldown);
       this._reproUrge=0;partner._reproUrge=0;
       const cRng=mulberry32(WORLD_SEED^(this.id*0x1337)^(year*0x7F)^(partner.id*0x31));
       const childGender=cRng()<0.5?'F':'M';
@@ -2519,13 +2547,14 @@ class Human{
     return best;
   }
   _findNearbyStructure(type,radius){
+    if(!structureGrid) return null;
     let best=null,bestD=Infinity;
     const r2=radius*radius;
     // Scan structureGrid directly — O(radius²) instead of O(all structures)
     const x0=Math.max(0,this.tx-radius),x1=Math.min(WORLD_W-1,this.tx+radius);
     const y0=Math.max(0,this.ty-radius),y1=Math.min(WORLD_H-1,this.ty+radius);
     for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++){
-      const s=structureGrid[ty][tx];
+      const s=structureGrid[ty*WORLD_W+tx];
       if(!s)continue;
       if(type&&s.type!==type)continue;
       const dx=tx-this.tx,dy=ty-this.ty;
@@ -2541,7 +2570,7 @@ class Human{
     if(farm.hp<=0){
       const idx=structures.indexOf(farm);
       if(idx>=0)structures.splice(idx,1);
-      structureGrid[farm.ty][farm.tx]=null;
+      structureGrid[farm.ty*WORLD_W+farm.tx]=null;
     }
   }
 
@@ -2856,7 +2885,7 @@ const PRODIGY_TYPES=[
         const types=new Set(['workshop','forge','academy','university']);
         let best=null,bestD=Infinity;
         const r=30,x0=Math.max(0,h.tx-r),x1=Math.min(WORLD_W-1,h.tx+r),y0=Math.max(0,h.ty-r),y1=Math.min(WORLD_H-1,h.ty+r);
-        for(let sy=y0;sy<=y1;sy++)for(let sx=x0;sx<=x1;sx++){const s=structureGrid[sy][sx];if(s&&types.has(s.type)){const d=(sx-h.tx)**2+(sy-h.ty)**2;if(d<bestD){bestD=d;best=s;}}}
+        for(let sy=y0;sy<=y1;sy++)for(let sx=x0;sx<=x1;sx++){const s=structureGrid&&structureGrid[sy*WORLD_W+sx];if(s&&types.has(s.type)){const d=(sx-h.tx)**2+(sy-h.ty)**2;if(d<bestD){bestD=d;best=s;}}}
         if(best){h.tx=Math.max(0,Math.min(WORLD_W-1,best.tx+Math.floor(h._rng()*4-2)));h.ty=Math.max(0,Math.min(WORLD_H-1,best.ty+Math.floor(h._rng()*4-2)));}
       }
     },
@@ -3037,7 +3066,7 @@ function spawnInitialHumans(){
 
   // Find the best spawn tile — scan whole world, prefer rich grassland near center
   const cx=Math.floor(WORLD_W/2), cy=Math.floor(WORLD_H/2);
-  const GOOD_BIOMES=['grass','dense_grass','savanna','dry_grass','shrubland','forest'];
+  const GOOD_BIOMES=['grass','dense_grass','savanna','dry_grass','shrubland','forest','bamboo_forest','rainforest'];
   let sx=cx, sy=cy;
   let bestScore=-Infinity;
   // Sample every 4 tiles for speed, then refine

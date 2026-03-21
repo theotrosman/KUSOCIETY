@@ -497,9 +497,11 @@ function renderFrame(dt){
 
   // Natural monuments
   if(typeof naturalMonuments!=='undefined'&&naturalMonuments.length>0) _drawMonuments();
+  if(typeof getTouristSites!=='undefined') _drawTouristSites();
 
   // Epic overlays: battlefields, wonders, dark age, pandemic
   _drawEpicOverlays();
+  _drawBiomeEffects();
 
   // Humans
   if(typeof humans!=='undefined') _drawHumans();
@@ -529,6 +531,7 @@ function renderFrame(dt){
   _drawPandemicHUD();
   _drawClimateHUD();
   _drawAIPlagueHUD();
+  _drawGlobalizationHUD();
 }
 
 // ── Trade Routes ─────────────────────────────────────────────────────────────
@@ -1400,6 +1403,40 @@ function _drawMegaStructure(s, px, py, civ, t, showShadow){
   }
 }
 
+// ── Tourist Sites ─────────────────────────────────────────────────────────────
+function _drawTouristSites(){
+  const sites = getTouristSites();
+  if(!sites||sites.length===0) return;
+  if(cam.zoom < 0.6) return; // solo visible con zoom medio/alto
+  _ctx.textAlign='center';_ctx.textBaseline='middle';
+  const vx0=Math.floor(-cam.x/cam.zoom/TILE)-2, vy0=Math.floor(-cam.y/cam.zoom/TILE)-2;
+  const vx1=vx0+Math.ceil(_canvas.width/cam.zoom/TILE)+4;
+  const vy1=vy0+Math.ceil(_canvas.height/cam.zoom/TILE)+4;
+  for(const s of sites){
+    if(s.tx<vx0||s.tx>vx1||s.ty<vy0||s.ty>vy1) continue;
+    const px=s.tx*TILE+TILE/2, py=s.ty*TILE+TILE/2;
+    // Aura dorada pulsante
+    _ctx.globalAlpha=0.15+Math.sin(_waterPhase*2+s.tx)*0.08;
+    _ctx.fillStyle='#ffd700';
+    _ctx.beginPath();
+    _ctx.arc(px,py,TILE*2.5,0,Math.PI*2);
+    _ctx.fill();
+    _ctx.globalAlpha=1;
+    // Icono
+    _ctx.font=`${Math.round(TILE*1.1)}px serif`;
+    _ctx.fillText('🗺️',px,py-TILE*0.5);
+    // Nombre a zoom alto
+    if(cam.zoom>1.2){
+      _ctx.font=`bold ${Math.round(TILE*0.55)}px sans-serif`;
+      _ctx.strokeStyle='rgba(0,0,0,0.8)';_ctx.lineWidth=2;
+      _ctx.strokeText(s.name,px,py+TILE*0.8);
+      _ctx.fillStyle='#ffd700';
+      _ctx.fillText(s.name,px,py+TILE*0.8);
+    }
+  }
+  _ctx.textBaseline='alphabetic';
+}
+
 // ── Natural Monuments ────────────────────────────────────────────────────────
 function _drawMonuments(){
   if(!naturalMonuments||naturalMonuments.length===0)return;
@@ -1679,7 +1716,17 @@ function _buildLegendDOM(){
     if(_unlockedTypes.has('neural_hub'))   extraItems.push(['🧠','Hub Neural']);
     if(_unlockedTypes.has('spaceport'))    extraItems.push(['🚀','Puerto Espacial']);
   }
-  const items=[...baseItems,...extraItems];
+  const biomeItems=[
+    ['🟦','Mar / Océano'],['🟫','Playa / Costa'],['🌵','Desierto'],['🟧','Mesa'],
+    ['🌾','Sabana'],['🌿','Pantano'],['🌱','Manglar'],['🟩','Pradera'],
+    ['🌳','Bosque'],['🌲','Bosque Boreal'],['🎋','Bosque de Bambú'],
+    ['🌴','Selva Tropical'],['🏔','Montaña'],['🌋','Volcánico'],
+    ['❄️','Tundra'],['🧊','Glaciar'],['🪸','Arrecife de Coral'],['🏔','Nieve'],
+  ];
+  const items=[...baseItems,...extraItems,
+    ['─','─────────────'],
+    ...biomeItems,
+  ];
   el.innerHTML=`
     <div style="padding:6px 10px;font-size:9px;color:#a89060;letter-spacing:1px;border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0;text-transform:uppercase">
       📋 Leyenda
@@ -1730,6 +1777,86 @@ function _roundRect(ctx,x,y,w,h,r){
   ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
   ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r);
   ctx.closePath();
+}
+
+// ── Biome special effects ─────────────────────────────────────────────────────
+function _drawBiomeEffects(){
+  if(cam.zoom < 0.5) return;
+  const ctx = _ctx;
+  const t = _waterPhase;
+  const vx0=Math.floor(-cam.x/cam.zoom/TILE)-1, vy0=Math.floor(-cam.y/cam.zoom/TILE)-1;
+  const vx1=vx0+Math.ceil(_canvas.width/cam.zoom/TILE)+2;
+  const vy1=vy0+Math.ceil(_canvas.height/cam.zoom/TILE)+2;
+
+  // Sample every 3 tiles for performance
+  const step = cam.zoom > 1.5 ? 1 : cam.zoom > 0.8 ? 2 : 3;
+
+  ctx.save();
+  for(let ty=Math.max(0,vy0);ty<=Math.min(WORLD_H-1,vy1);ty+=step){
+    for(let tx=Math.max(0,vx0);tx<=Math.min(WORLD_W-1,vx1);tx+=step){
+      const cell = getCell(tx,ty);
+      if(!cell) continue;
+      const px = tx*TILE+TILE/2, py = ty*TILE+TILE/2;
+
+      switch(cell.biome){
+        case 'glacier':{
+          // Shimmer azul-blanco
+          const g = 0.05 + Math.sin(t*1.5 + tx*0.3 + ty*0.2)*0.04;
+          ctx.globalAlpha = g;
+          ctx.fillStyle = '#aaddff';
+          ctx.fillRect(tx*TILE, ty*TILE, TILE*step, TILE*step);
+          break;
+        }
+        case 'tundra':{
+          // Partículas de nieve ocasionales
+          if(Math.sin(t*2 + tx*0.7 + ty*0.5) > 0.85){
+            ctx.globalAlpha = 0.35;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(px + Math.sin(t+tx)*3, py + ((t*20 + tx*7) % TILE) - TILE/2, 1, 0, Math.PI*2);
+            ctx.fill();
+          }
+          break;
+        }
+        case 'coral_reef':{
+          // Brillo turquesa pulsante
+          const pulse = 0.06 + Math.sin(t*2.5 + tx*0.4 + ty*0.6)*0.04;
+          ctx.globalAlpha = pulse;
+          ctx.fillStyle = '#00ffcc';
+          ctx.fillRect(tx*TILE, ty*TILE, TILE*step, TILE*step);
+          break;
+        }
+        case 'volcanic':{
+          // Brillo naranja-rojo intermitente
+          if(Math.sin(t*3 + tx*0.9 + ty*1.1) > 0.7){
+            ctx.globalAlpha = 0.12 + Math.random()*0.08;
+            ctx.fillStyle = '#ff4400';
+            ctx.fillRect(tx*TILE, ty*TILE, TILE*step, TILE*step);
+          }
+          break;
+        }
+        case 'mangrove':{
+          // Reflejo verde en el agua
+          const r = 0.04 + Math.sin(t*1.8 + tx*0.5)*0.03;
+          ctx.globalAlpha = r;
+          ctx.fillStyle = '#44aa44';
+          ctx.fillRect(tx*TILE, ty*TILE, TILE*step, TILE*step);
+          break;
+        }
+        case 'bamboo_forest':{
+          // Leve brillo verde-amarillo
+          if(Math.sin(t + tx*0.3) > 0.6){
+            ctx.globalAlpha = 0.06;
+            ctx.fillStyle = '#aaff44';
+            ctx.fillRect(tx*TILE, ty*TILE, TILE*step, TILE*step);
+          }
+          break;
+        }
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
 // ── Battlefields, Wonders, Dark Age, Pandemic overlays ───────────────────────
@@ -1982,6 +2109,31 @@ function _drawAIPlagueHUD(){
   ctx.fillStyle = color;
   ctx.fillText(txt, x, y);
   ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ── Globalization HUD indicator ───────────────────────────────────────────────
+function _drawGlobalizationHUD(){
+  if(typeof getGlobalizationLevel === 'undefined') return;
+  const lvl = getGlobalizationLevel();
+  if(lvl < 0.1) return;
+  const ctx = _ctx;
+  const x = _canvas.width/2, y = 168;
+  const pct = Math.round(lvl * 100);
+  const phases = ['','Integración Temprana','Integración Media','Integración Avanzada','Aldea Global'];
+  const phaseIdx = lvl >= 1 ? 4 : lvl >= 0.75 ? 3 : lvl >= 0.5 ? 2 : 1;
+  const colors = ['','#88ddff','#44aaff','#2266ff','#ffffff'];
+  const color = colors[phaseIdx];
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.font = 'bold 12px monospace';
+  ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+  ctx.lineWidth = 3;
+  const txt = `🌐 Globalización: ${phases[phaseIdx]} — ${pct}%`;
+  ctx.strokeText(txt, x, y);
+  ctx.fillStyle = color;
+  ctx.fillText(txt, x, y);
   ctx.restore();
 }
 

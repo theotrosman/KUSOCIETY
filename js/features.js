@@ -43,11 +43,12 @@ function tickEarthquakes(yearsElapsed) {
     const tx = Math.floor(rng() * WORLD_W);
     const ty = Math.floor(rng() * WORLD_H);
     const cell = getCell(tx, ty);
-    if (cell && (cell.biome === 'mountain' || cell.biome === 'highland')) {
+    if (cell && (cell.biome === 'mountain' || cell.biome === 'highland' || cell.biome === 'volcanic')) {
       epicTx = tx; epicTy = ty; break;
     }
   }
   if (epicTx < 0) return;
+  if (typeof structureGrid === 'undefined' || !structureGrid) return;
   const radius = 8 + Math.floor(rng() * 10);
   let destroyed = 0;
   // Dañar estructuras en el radio
@@ -58,7 +59,7 @@ function tickEarthquakes(yearsElapsed) {
     const dmg = Math.floor((1 - d / radius) * s.maxHp * 0.7);
     s.hp -= dmg;
     if (s.hp <= 0) {
-      structureGrid[s.ty][s.tx] = null;
+      structureGrid[s.ty*WORLD_W+s.tx] = null;
       structures.splice(i, 1);
       destroyed++;
     }
@@ -90,6 +91,7 @@ function tickLocusts(yearsElapsed) {
   _locustTimer = 0;
   if (typeof _season === 'undefined' || _season !== 1) return; // solo en verano
   if (Math.random() > 0.15) return;
+  if (typeof structureGrid === 'undefined' || !structureGrid) return;
   const rng = mulberry32(WORLD_SEED ^ year ^ 0xA0CC);
   const epicTx = Math.floor(rng() * WORLD_W);
   const epicTy = Math.floor(rng() * WORLD_H);
@@ -99,7 +101,7 @@ function tickLocusts(yearsElapsed) {
     const s = structures[i];
     if (s.type !== 'farm' && s.type !== 'granary') continue;
     if (Math.hypot(s.tx - epicTx, s.ty - epicTy) > radius) continue;
-    structureGrid[s.ty][s.tx] = null;
+    structureGrid[s.ty*WORLD_W+s.tx] = null;
     structures.splice(i, 1);
     destroyed++;
   }
@@ -209,7 +211,7 @@ function tickClimateMigration(yearsElapsed) {
     if (migrants >= 8) break;
     const cell = getCell(h.tx, h.ty);
     if (!cell) continue;
-    if (!['highland', 'mountain', 'snow'].includes(cell.biome)) continue;
+    if (!['highland', 'mountain', 'snow', 'tundra', 'glacier'].includes(cell.biome)) continue;
     if (h.isLeader || h.isProdigy) continue;
     if (Math.random() > 0.3) continue;
     // Mover hacia el sur (mayor ty) buscando tierra cálida
@@ -385,7 +387,7 @@ function tickBigGame(yearsElapsed) {
       const ty = Math.floor(rng() * WORLD_H);
       const cell = getCell(tx, ty);
       if (!cell) continue;
-      if (!['grass', 'savanna', 'dry_grass', 'dense_grass'].includes(cell.biome)) continue;
+      if (!['grass', 'savanna', 'dry_grass', 'dense_grass', 'tundra'].includes(cell.biome)) continue;
       if (getStructureAt(tx, ty)) continue;
       const type = BIG_GAME_TYPES[Math.floor(rng() * BIG_GAME_TYPES.length)];
       _bigGameAnimals.push({ tx, ty, hp: type.hp, maxHp: type.hp, food: type.food, name: type.name, icon: type.icon, danger: type.danger });
@@ -484,14 +486,14 @@ function tickDrought(yearsElapsed) {
   for (const res of resources) {
     if (!['wheat_wild', 'berries', 'bush', 'animal'].includes(res.type)) continue;
     const cell = getCell(res.tx, res.ty);
-    if (!cell || !['desert', 'savanna', 'dry_grass'].includes(cell.biome)) continue;
+    if (!cell || !['desert', 'savanna', 'dry_grass', 'mesa'].includes(cell.biome)) continue;
     res.amount = Math.max(5, Math.floor(res.amount * 0.4));
   }
   // Penalizar humanos en zonas secas
   if (typeof _cachedAlive !== 'undefined') {
     for (const h of _cachedAlive) {
       const cell = getCell(h.tx, h.ty);
-      if (cell && ['desert', 'savanna', 'dry_grass'].includes(cell.biome)) {
+      if (cell && ['desert', 'savanna', 'dry_grass', 'mesa'].includes(cell.biome)) {
         h.hunger = Math.max(0, h.hunger - 20);
         h.health = Math.max(0, h.health - 10);
       }
@@ -925,6 +927,10 @@ function tickAllFeatures(yearsElapsed) {
   // Siempre activos — no dependen de velocidad
   tickAIPlague(yearsElapsed);
   tickGridCities(yearsElapsed);
+  tickAdvancedDiplomacy(yearsElapsed);
+  tickTourism(yearsElapsed);
+  tickGlobalization(yearsElapsed);
+  tickCivDiversity(yearsElapsed);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1059,6 +1065,7 @@ function tickVolcanicEruptions(yearsElapsed) {
   _volcanicTimer = 0;
   const volcanoes = naturalMonuments.filter(m => m.type === 'volcano');
   if (volcanoes.length === 0) return;
+  if (typeof structureGrid === 'undefined' || !structureGrid) return;
   for (const v of volcanoes) {
     if (Math.random() > 0.08) continue; // 8% por volcán cada 60 años
     const radius = 10 + Math.floor(Math.random() * 8);
@@ -1070,7 +1077,7 @@ function tickVolcanicEruptions(yearsElapsed) {
       if (d > radius * 0.6) continue; // lava directa solo en radio interior
       const dmg = Math.floor((1 - d / (radius * 0.6)) * s.maxHp);
       s.hp -= dmg;
-      if (s.hp <= 0) { structureGrid[s.ty][s.tx] = null; structures.splice(i, 1); destroyed++; }
+      if (s.hp <= 0) { structureGrid[s.ty*WORLD_W+s.tx] = null; structures.splice(i, 1); destroyed++; }
     }
     // Dañar humanos cercanos
     for (const h of _cachedAlive) {
@@ -1540,7 +1547,7 @@ function tickWorldWonders(yearsElapsed) {
           if (s) {
             s.hp = Math.max(0, s.hp - 80);
             if (s.hp <= 0) {
-              structureGrid[s.ty][s.tx] = null;
+              if (typeof structureGrid !== 'undefined' && structureGrid) structureGrid[s.ty*WORLD_W+s.tx] = null;
               structures.splice(structures.indexOf(s), 1);
               _builtWonders.delete(wonder.id);
               addMajorEvent(`💥 ¡${civ.name} DESTRUYÓ ${wonder.name}! Una maravilla del mundo cae para siempre`);
@@ -1715,12 +1722,17 @@ function tickGlobalClimate(yearsElapsed) {
       else if (cell.biome === 'savanna') newBiome = 'desert';
       else if (cell.biome === 'snow') newBiome = 'highland';
       else if (cell.biome === 'highland') newBiome = 'grass';
+      else if (cell.biome === 'tundra') newBiome = 'taiga';
+      else if (cell.biome === 'glacier') newBiome = 'tundra';
+      else if (cell.biome === 'taiga') newBiome = 'forest';
     } else if (_climatePhase === 'enfriamiento') {
       if (cell.biome === 'grass') newBiome = 'highland';
       else if (cell.biome === 'highland') newBiome = 'snow';
       else if (cell.biome === 'dry_grass') newBiome = 'grass';
       else if (cell.biome === 'savanna') newBiome = 'dry_grass';
       else if (cell.biome === 'desert') newBiome = 'savanna';
+      else if (cell.biome === 'forest') newBiome = 'taiga';
+      else if (cell.biome === 'taiga') newBiome = 'tundra';
     }
     if (!newBiome) continue;
     _climateChangedTiles.push({ tx, ty, originalBiome: cell.biome });
@@ -1734,8 +1746,8 @@ function tickGlobalClimate(yearsElapsed) {
     const cell = getCell(h.tx, h.ty);
     if (!cell) continue;
     const badBiome = _climatePhase === 'calentamiento'
-      ? ['desert', 'savanna'].includes(cell.biome)
-      : ['snow', 'highland'].includes(cell.biome);
+      ? ['desert', 'savanna', 'mesa'].includes(cell.biome)
+      : ['snow', 'highland', 'tundra', 'glacier'].includes(cell.biome);
     if (!badBiome || h.isLeader || Math.random() > 0.08) continue;
     // Migrar hacia zona más habitable
     const targetTy = _climatePhase === 'calentamiento'
@@ -2448,7 +2460,7 @@ function tickAIPlague(yearsElapsed) {
             color: civ.color,
             _aiBuilt: true,
           });
-          if (typeof structureGrid !== 'undefined') structureGrid[ty][tx] = structures[structures.length-1];
+          if (typeof structureGrid !== 'undefined') structureGrid[ty*WORLD_W+tx] = structures[structures.length-1];
         }
       }
     }
@@ -2628,7 +2640,7 @@ function tickGridCities(yearsElapsed) {
           color: civ.color,
           _gridBuilt: true,
         });
-        if (typeof structureGrid !== 'undefined') structureGrid[ty][tx] = structures[structures.length-1];
+        if (typeof structureGrid !== 'undefined') structureGrid[ty*WORLD_W+tx] = structures[structures.length-1];
         if (typeof markCityGlowDirty !== 'undefined') markCityGlowDirty();
       }
     }
@@ -2640,3 +2652,263 @@ function tickGridCities(yearsElapsed) {
     }
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DIPLOMACIA AVANZADA — Tratados, embajadas, bloques políticos
+// ═══════════════════════════════════════════════════════════════════════════════
+const _treaties = []; // {civA, civB, type, year, duration}
+const TREATY_TYPES = [
+  { id: 'no_agresion',   name: 'Pacto de No Agresión',   icon: '🤝', minK: 0,     duration: 80,  effect: (a,b) => { a.enemies.delete(b.id); b.enemies.delete(a.id); } },
+  { id: 'comercio',      name: 'Tratado Comercial',       icon: '📜', minK: 500,   duration: 120, effect: (a,b) => { a.allies.add(b.id); b.allies.add(a.id); a.honor=Math.min(100,a.honor+5); b.honor=Math.min(100,b.honor+5); } },
+  { id: 'defensa_mutua', name: 'Alianza Defensiva',       icon: '⚔️', minK: 2000,  duration: 200, effect: (a,b) => { a.allies.add(b.id); b.allies.add(a.id); a.militaryPower+=10; b.militaryPower+=10; } },
+  { id: 'union_cultural',name: 'Unión Cultural',          icon: '🎭', minK: 8000,  duration: 300, effect: (a,b) => { a.allies.add(b.id); b.allies.add(a.id); /* knowledge boost handled in tick */ } },
+  { id: 'federacion',    name: 'Federación',              icon: '🌐', minK: 30000, duration: 999, effect: (a,b) => { a.allies.add(b.id); b.allies.add(a.id); a.atWarWith.delete(b.id); b.atWarWith.delete(a.id); } },
+];
+
+let _diplomacyTimer = 0;
+function tickAdvancedDiplomacy(yearsElapsed) {
+  _diplomacyTimer += yearsElapsed;
+  if (_diplomacyTimer < 50) return;
+  _diplomacyTimer = 0;
+
+  // Expirar tratados viejos
+  for (let i = _treaties.length - 1; i >= 0; i--) {
+    const t = _treaties[i];
+    if (year - t.year > t.duration) {
+      _treaties.splice(i, 1);
+    }
+  }
+
+  const civList = [...civilizations.values()].filter(c => c.population > 3);
+  for (let i = 0; i < civList.length; i++) {
+    const civA = civList[i];
+    const avgKA = _civAvgKnowledge(civA.id);
+    for (let j = i + 1; j < civList.length; j++) {
+      const civB = civList[j];
+      // No tratar con enemigos activos en guerra
+      if (civA.atWarWith.has(civB.id)) continue;
+      // Ya tienen tratado?
+      const hasTreaty = _treaties.some(t =>
+        (t.civA === civA.id && t.civB === civB.id) ||
+        (t.civA === civB.id && t.civB === civA.id)
+      );
+      if (hasTreaty) continue;
+      if (Math.random() > 0.12) continue;
+
+      const avgKB = _civAvgKnowledge(civB.id);
+      const avgK = (avgKA + avgKB) / 2;
+
+      // Elegir el tratado más avanzado que puedan firmar
+      let best = null;
+      for (const tt of TREATY_TYPES) {
+        if (avgK >= tt.minK) best = tt;
+      }
+      if (!best) best = TREATY_TYPES[0];
+
+      best.effect(civA, civB);
+      _treaties.push({ civA: civA.id, civB: civB.id, type: best.id, year, duration: best.duration });
+      addMajorEvent(`${best.icon} ${civA.name} y ${civB.name} firman un ${best.name}`);
+      addChronicle('diplomacy', `${best.name}: ${civA.name} & ${civB.name}`,
+        `Los representantes de ambas naciones se reunieron y sellaron un acuerdo que cambiaría sus relaciones para siempre. El ${best.name} fue firmado ante testigos de ambos pueblos.`, best.icon);
+    }
+  }
+
+  // Unión Cultural: boost de conocimiento mutuo
+  for (const t of _treaties) {
+    if (t.type !== 'union_cultural') continue;
+    const a = civilizations.get(t.civA), b = civilizations.get(t.civB);
+    if (!a || !b) continue;
+    for (const id of a.members) { const h = _hById(id); if (h && h.alive) h.knowledge = Math.min(99999, h.knowledge + yearsElapsed * 3 * _intelModifier); }
+    for (const id of b.members) { const h = _hById(id); if (h && h.alive) h.knowledge = Math.min(99999, h.knowledge + yearsElapsed * 3 * _intelModifier); }
+  }
+}
+
+function _civAvgKnowledge(civId) {
+  const civ = civilizations.get(civId);
+  if (!civ || civ.population === 0) return 0;
+  let sum = 0, cnt = 0;
+  for (const id of civ.members) { const h = _hById(id); if (h && h.alive) { sum += h.knowledge; cnt++; } }
+  return cnt > 0 ? sum / cnt : 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TURISMO Y CENTROS TURÍSTICOS — civs avanzadas atraen visitantes
+// ═══════════════════════════════════════════════════════════════════════════════
+const _touristSites = []; // {civId, tx, ty, name, visitors, income}
+let _tourismTimer = 0;
+
+function tickTourism(yearsElapsed) {
+  _tourismTimer += yearsElapsed;
+  if (_tourismTimer < 60) return;
+  _tourismTimer = 0;
+
+  const TOURIST_SITE_NAMES = [
+    'Gran Bazar', 'Templo Milenario', 'Palacio Real', 'Coliseo Antiguo',
+    'Jardines Colgantes', 'Torre del Reloj', 'Puerto Histórico', 'Mercado Central',
+    'Catedral Gótica', 'Anfiteatro Romano', 'Pirámide Sagrada', 'Faro Colosal',
+  ];
+
+  // Crear sitios turísticos en civs con maravillas o estructuras épicas
+  for (const [, civ] of civilizations) {
+    if ((civ.knowledge || 0) < 3000 || civ.population < 8) continue;
+    const alreadyHas = _touristSites.some(s => s.civId === civ.id);
+    if (alreadyHas) continue;
+    if (Math.random() > 0.15) continue;
+
+    const epicStructures = structures.filter(s =>
+      s.civId === civ.id &&
+      ['palace','cathedral','colosseum','pyramid','ziggurat','amphitheater','lighthouse','stadium'].includes(s.type)
+    );
+    if (!epicStructures.length) continue;
+
+    const anchor = epicStructures[Math.floor(Math.random() * epicStructures.length)];
+    const siteName = TOURIST_SITE_NAMES[Math.floor(Math.random() * TOURIST_SITE_NAMES.length)];
+    _touristSites.push({ civId: civ.id, tx: anchor.tx, ty: anchor.ty, name: siteName, visitors: 0, income: 0 });
+    addWorldEvent(`🗺️ ${civ.name} establece el ${siteName} como destino turístico`);
+  }
+
+  // Turismo activo: civs aliadas envían "visitantes" que generan conocimiento e ingresos
+  for (const site of _touristSites) {
+    const hostCiv = civilizations.get(site.civId);
+    if (!hostCiv || hostCiv.population === 0) continue;
+
+    let visitors = 0;
+    for (const alliedId of hostCiv.allies) {
+      const allied = civilizations.get(alliedId);
+      if (!allied || allied.population === 0) continue;
+      if (Math.random() > 0.4) continue;
+      visitors += Math.floor(allied.population * 0.1);
+      // Los visitantes llevan conocimiento de vuelta
+      const kBonus = 20 + Math.floor(Math.random() * 30);
+      for (const id of allied.members) {
+        const h = _hById(id);
+        if (h && h.alive && Math.random() < 0.3) h.knowledge = Math.min(99999, h.knowledge + kBonus * _intelModifier);
+      }
+    }
+    site.visitors = visitors;
+    site.income += visitors * 2;
+
+    // El anfitrión también gana conocimiento y honor
+    if (visitors > 0) {
+      for (const id of hostCiv.members) {
+        const h = _hById(id);
+        if (h && h.alive) h.knowledge = Math.min(99999, h.knowledge + yearsElapsed * 5 * _intelModifier);
+      }
+      hostCiv.honor = Math.min(100, hostCiv.honor + 1);
+      if (visitors > 5 && Math.random() < 0.1) {
+        addWorldEvent(`✈️ ${visitors} visitantes llegan al ${site.name} de ${hostCiv.name}`);
+      }
+    }
+  }
+}
+
+function getTouristSites() { return _touristSites; }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GLOBALIZACIÓN — cuando múltiples civs avanzadas coexisten, el mundo se integra
+// ═══════════════════════════════════════════════════════════════════════════════
+let _globalizationLevel = 0; // 0..1
+let _globalizationTimer = 0;
+let _globalizationAnnounced = [false, false, false, false]; // fases 0.25, 0.5, 0.75, 1.0
+
+function tickGlobalization(yearsElapsed) {
+  _globalizationTimer += yearsElapsed;
+  if (_globalizationTimer < 30) return;
+  _globalizationTimer = 0;
+
+  // La globalización sube cuando hay muchas civs avanzadas con alianzas
+  const advancedCivs = [...civilizations.values()].filter(c => (c.knowledge || 0) > 5000 && c.population > 5);
+  if (advancedCivs.length < 2) return;
+
+  let allianceCount = 0;
+  for (const c of advancedCivs) allianceCount += c.allies.size;
+  const allianceDensity = allianceCount / Math.max(1, advancedCivs.length);
+
+  // Sube lentamente con alianzas y civs avanzadas
+  const growthRate = 0.0005 * advancedCivs.length * (1 + allianceDensity * 0.3);
+  _globalizationLevel = Math.min(1, _globalizationLevel + growthRate * 30);
+
+  // Anunciar hitos
+  const milestones = [
+    { lvl: 0.25, msg: '🌍 Las civilizaciones comienzan a conectarse — nace el comercio global', phase: 'Integración Temprana' },
+    { lvl: 0.50, msg: '🌐 La globalización avanza — las culturas se mezclan y las fronteras se difuminan', phase: 'Integración Media' },
+    { lvl: 0.75, msg: '🛰️ El mundo está interconectado — nace una economía global unificada', phase: 'Integración Avanzada' },
+    { lvl: 1.00, msg: '🌌 Globalización total — la humanidad habla con una sola voz', phase: 'Aldea Global' },
+  ];
+  for (let i = 0; i < milestones.length; i++) {
+    if (!_globalizationAnnounced[i] && _globalizationLevel >= milestones[i].lvl) {
+      _globalizationAnnounced[i] = true;
+      addMajorEvent(milestones[i].msg);
+      addChronicle('culture', milestones[i].phase,
+        `El mundo alcanzó un nuevo nivel de integración. Las ideas, los bienes y las personas fluyen libremente entre civilizaciones. Lo que antes tardaba generaciones en difundirse, ahora llega en años.`, '🌐');
+    }
+  }
+
+  // Efectos de la globalización: boost de conocimiento proporcional al nivel
+  if (_globalizationLevel > 0.1) {
+    for (const h of _cachedAlive) {
+      h.knowledge = Math.min(99999, h.knowledge + yearsElapsed * _globalizationLevel * 8 * _intelModifier);
+    }
+    // Reducir guerras activas
+    if (_globalizationLevel > 0.5 && Math.random() < 0.05) {
+      for (const [, civ] of civilizations) {
+        if (civ.atWarWith.size > 0 && Math.random() < _globalizationLevel * 0.3) {
+          const firstEnemy = [...civ.atWarWith.keys()][0];
+          civ.atWarWith.delete(firstEnemy);
+          const enemy = civilizations.get(firstEnemy);
+          if (enemy) enemy.atWarWith.delete(civ.id);
+          addWorldEvent(`🕊️ La presión global fuerza la paz entre ${civ.name} y sus enemigos`);
+        }
+      }
+    }
+  }
+}
+
+function getGlobalizationLevel() { return _globalizationLevel; }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MÚLTIPLES CIVS FORZADAS — asegurar que siempre haya diversidad política
+// ═══════════════════════════════════════════════════════════════════════════════
+let _civDiversityTimer = 0;
+function tickCivDiversity(yearsElapsed) {
+  _civDiversityTimer += yearsElapsed;
+  if (_civDiversityTimer < 100) return;
+  _civDiversityTimer = 0;
+
+  const aliveCivs = [...civilizations.values()].filter(c => c.population > 0);
+  if (aliveCivs.length >= 4) return; // ya hay suficiente diversidad
+  if (_cachedAlive.length < 15) return; // muy poca gente para dividirse
+
+  // Buscar un grupo de humanos sin civ o en la civ más grande
+  const biggestCiv = aliveCivs.sort((a, b) => b.population - a.population)[0];
+  if (!biggestCiv || biggestCiv.population < 12) return;
+  if (Math.random() > 0.3) return;
+
+  // Tomar un subgrupo de la civ más grande y fundar una nueva
+  const members = _cachedAlive.filter(h => h.civId === biggestCiv.id && !h.isLeader && !h.isProdigy);
+  if (members.length < 6) return;
+
+  // Elegir un fundador con buenas stats
+  members.sort((a, b) => b.leaderScore - a.leaderScore);
+  const founder = members[Math.floor(Math.random() * Math.min(3, members.length))];
+  const newCiv = new Civilization(founder);
+  newCiv.color = `hsl(${Math.floor(Math.random() * 360)},65%,55%)`;
+  civilizations.set(newCiv.id, newCiv);
+  founder.isLeader = true;
+  founder.color = newCiv.color;
+
+  // Llevar entre 3-5 seguidores
+  const followers = members.slice(1, 1 + 3 + Math.floor(Math.random() * 3));
+  for (const f of followers) {
+    biggestCiv.removeMember(f.id);
+    f.civId = newCiv.id;
+    f.color = newCiv.color;
+    newCiv.addMember(f);
+  }
+
+  // Relación inicial: neutral (ni aliados ni enemigos)
+  addMajorEvent(`🏳️ Un grupo se separa de ${biggestCiv.name} y funda ${newCiv.name} — nace una nueva nación`);
+  addChronicle('culture', `Fundación de ${newCiv.name}`,
+    `Un grupo de disidentes liderados por ${founder.name.split(' ')[0]} abandonó ${biggestCiv.name} en busca de su propio destino. Cargando sus pertenencias y sus sueños, fundaron ${newCiv.name} en tierras nuevas.`, '🏳️');
+}
+
