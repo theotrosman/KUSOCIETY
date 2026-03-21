@@ -18,8 +18,11 @@ function rendererResize(){
 }
 function clampCamera(){
   const ww=WORLD_W*TILE*cam.zoom, wh=WORLD_H*TILE*cam.zoom;
-  cam.x=Math.min(0,Math.max(_canvas.width-ww,cam.x));
-  cam.y=Math.min(0,Math.max(_canvas.height-wh,cam.y));
+  // If the world fits inside the viewport, center it instead of clamping to corner
+  if(ww <= _canvas.width)  cam.x = (_canvas.width  - ww) / 2;
+  else cam.x = Math.min(0, Math.max(_canvas.width  - ww, cam.x));
+  if(wh <= _canvas.height) cam.y = (_canvas.height - wh) / 2;
+  else cam.y = Math.min(0, Math.max(_canvas.height - wh, cam.y));
 }
 function centerCamera(){
   const ww=WORLD_W*TILE*cam.zoom, wh=WORLD_H*TILE*cam.zoom;
@@ -676,7 +679,7 @@ function _rebuildCityGlows(){
   const CELL=20;
   const cellMap=new Map();
   for(const s of structures){
-    const ck=`${Math.floor(s.tx/CELL)},${Math.floor(s.ty/CELL)}`;
+    const ck=(Math.floor(s.tx/CELL))|(Math.floor(s.ty/CELL)<<12); // integer key — no string alloc
     if(!cellMap.has(ck))cellMap.set(ck,{count:0,sumX:0,sumY:0,hasEpic:false,civId:s.civId,maxTier:0});
     const c=cellMap.get(ck);
     c.count++;c.sumX+=s.tx;c.sumY+=s.ty;
@@ -787,14 +790,28 @@ function _drawCityGlows(){
 }
 
 // Helper: convert any CSS color to rgba string with given alpha
+// Also caches parsed r,g,b on the color string to avoid repeated parsing
+const _colorRGBCache=new Map();
+function _colorToRGB(color){
+  if(_colorRGBCache.has(color))return _colorRGBCache.get(color);
+  let rgb;
+  if(color.startsWith('hsl(')){
+    // Keep as-is for hsla conversion
+    rgb=null;
+  } else if(color.startsWith('#')&&color.length===7){
+    rgb=[parseInt(color.slice(1,3),16),parseInt(color.slice(3,5),16),parseInt(color.slice(5,7),16)];
+  } else {
+    rgb=null;
+  }
+  _colorRGBCache.set(color,rgb);
+  return rgb;
+}
 function _alphaColor(color, alpha){
   if(color.startsWith('hsl(')){
     return color.replace('hsl(','hsla(').replace(')',`,${alpha})`);
   }
-  if(color.startsWith('#')){
-    const r=parseInt(color.slice(1,3),16),g2=parseInt(color.slice(3,5),16),b=parseInt(color.slice(5,7),16);
-    return `rgba(${r},${g2},${b},${alpha})`;
-  }
+  const rgb=_colorToRGB(color);
+  if(rgb) return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha.toFixed(3)})`;
   return color;
 }
 const STRUCTURE_HEIGHT={

@@ -81,43 +81,52 @@ function _tickAutoFollow(){
 }
 
 // ── HUD ───────────────────────────────────────────────────────────────────────
+// Cache DOM refs — getElementById is slow when called 60x/sec
+const _hudEls={
+  year:   document.getElementById('year-label'),
+  era:    document.getElementById('era-label'),
+  pop:    document.getElementById('pop-label'),
+  civ:    document.getElementById('civ-label'),
+  phase:  document.getElementById('phase-label'),
+  intel:  document.getElementById('intel-label'),
+  slider: document.getElementById('intel-slider-val'),
+  season: document.getElementById('season-label'),
+};
+let _hudTimer=0;
 function updateHUD(){
-  const yearEl=document.getElementById('year-label');
-  if(yearEl) yearEl.textContent=formatYear(year);
-  const eraEl=document.getElementById('era-label');
-  if(eraEl) eraEl.textContent=getEra(year).name;
+  // Throttle DOM writes to ~10fps — no need to update every frame
+  _hudTimer++;
+  if(_hudTimer<6)return;
+  _hudTimer=0;
+  if(_hudEls.year) _hudEls.year.textContent=formatYear(year);
+  if(_hudEls.era)  _hudEls.era.textContent=getEra(year).name;
   const alive=getAlive();
-  const popEl=document.getElementById('pop-label');
-  if(popEl) popEl.textContent=`👥 ${alive.length}`;
-  const civEl=document.getElementById('civ-label');
-  if(civEl){
-    const activeCivs=typeof civilizations!=='undefined'?[...civilizations.values()].filter(c=>c.population>0).length:0;
-    civEl.textContent=`🏛 ${activeCivs}`;
+  if(_hudEls.pop)  _hudEls.pop.textContent=`👥 ${alive.length}`;
+  if(_hudEls.civ){
+    let activeCivs=0;
+    if(typeof civilizations!=='undefined')for(const [,c] of civilizations)if(c.population>0)activeCivs++;
+    _hudEls.civ.textContent=`🏛 ${activeCivs}`;
   }
-  const phaseEl=document.getElementById('phase-label');
-  if(phaseEl&&typeof getSocialPhase!=='undefined'){
-    phaseEl.textContent=getSocialPhase()==='division'?'⚔️ División':'🤝 Unidad';
-    phaseEl.style.color=getSocialPhase()==='division'?'#f88':'#8f8';
+  if(_hudEls.phase&&typeof getSocialPhase!=='undefined'){
+    const div=getSocialPhase()==='division';
+    _hudEls.phase.textContent=div?'⚔️ División':'🤝 Unidad';
+    _hudEls.phase.style.color=div?'#f88':'#8f8';
   }
-  const intelEl=document.getElementById('intel-label');
-  if(intelEl&&typeof _intelModifier!=='undefined'){
+  if(_hudEls.intel&&typeof _intelModifier!=='undefined'){
     const pct=Math.round(_intelModifier*100);
-    intelEl.textContent=`🧠 ${pct}%`;
-    intelEl.style.color=_intelModifier>1.2?'#4ff':_intelModifier>0.8?'#adf':'#f84';
+    _hudEls.intel.textContent=`🧠 ${pct}%`;
+    _hudEls.intel.style.color=_intelModifier>1.2?'#4ff':_intelModifier>0.8?'#adf':'#f84';
   }
-  // Sync slider label to live _intelModifier value
-  const sliderVal=document.getElementById('intel-slider-val');
-  if(sliderVal&&typeof _intelModifier!=='undefined'){
-    sliderVal.textContent=Math.round(_intelModifier*100)+'%';
-    sliderVal.style.color=_intelModifier>1.4?'#4ff':_intelModifier>1.0?'#a8f':'#f84';
+  if(_hudEls.slider&&typeof _intelModifier!=='undefined'){
+    _hudEls.slider.textContent=Math.round(_intelModifier*100)+'%';
+    _hudEls.slider.style.color=_intelModifier>1.4?'#4ff':_intelModifier>1.0?'#a8f':'#f84';
   }
-  // Season label
-  const seasonEl=document.getElementById('season-label');
-  if(seasonEl&&typeof _seasonName!=='undefined'){
+  if(_hudEls.season&&typeof _seasonName!=='undefined'){
     const icons=['🌸','☀️','🍂','❄️'];
-    seasonEl.textContent=`${icons[_season]||'🌸'} ${_seasonName}`;
-    seasonEl.style.color=_season===3?'#88ccff':_season===1?'#ffdd44':'#aaffaa';
+    _hudEls.season.textContent=`${icons[_season]||'🌸'} ${_seasonName}`;
+    _hudEls.season.style.color=_season===3?'#88ccff':_season===1?'#ffdd44':'#aaffaa';
   }
+  _updateStatsPanel();
 }
 
 function setSpeedUI(){
@@ -869,4 +878,189 @@ function _renderChronicleEpic(content){
     }
   }
   content.innerHTML = html;
+}
+
+// ── Social Stats Panel ────────────────────────────────────────────────────────
+const _statsEl = document.getElementById('stats-content');
+let _statsTimer = 0;
+
+function _updateStatsPanel(){
+  if(!_statsEl) return;
+  _statsTimer++;
+  if(_statsTimer < 10) return; // update ~6fps
+  _statsTimer = 0;
+
+  const alive = getAlive();
+  const n = alive.length;
+  if(n === 0){ _statsEl.innerHTML = '<div style="color:#445;padding:8px">Sin población</div>'; return; }
+
+  // ── Compute world stats ──────────────────────────────────────────────────
+  let totalWars=0, totalAlliances=0, totalTreaties=0;
+  let totalInventions=0, religions=new Set(), totalHonor=0;
+  let civCount=0, nomadCount=0, atWarCivs=0;
+  let maxPop=0, dominantCiv=null;
+  let totalMilitary=0, totalKnowledge=0;
+  const civList=[];
+  if(typeof civilizations!=='undefined'){
+    for(const [,c] of civilizations){
+      if(c.population===0) continue;
+      civList.push(c);
+      civCount++;
+      totalWars += c.atWarWith ? c.atWarWith.size : 0;
+      totalAlliances += c.allies ? c.allies.size : 0;
+      totalInventions += c.inventions ? c.inventions.size : 0;
+      if(c.religion) religions.add(c.religion);
+      totalHonor += c.honor||0;
+      totalMilitary += c.militaryPower||0;
+      totalKnowledge += c.avgKnowledge||0;
+      if(c.nomadic) nomadCount++;
+      if(c.atWarWith && c.atWarWith.size>0) atWarCivs++;
+      if(c.population>maxPop){maxPop=c.population;dominantCiv=c;}
+    }
+  }
+  totalWars = Math.floor(totalWars/2);
+  totalAlliances = Math.floor(totalAlliances/2);
+  const avgHonor = civCount>0 ? Math.round(totalHonor/civCount) : 0;
+  const avgCivK = civCount>0 ? Math.round(totalKnowledge/civCount) : 0;
+
+  // Human stats
+  let sick=0, soldiers=0, leaders=0, prodigies=0, bandits=0;
+  let totalAge=0, totalChildren=0, totalKills=0, totalWealth=0;
+  let hungry=0, tired=0, happy=0;
+  let maxAge=0, maxKills=0, maxChildren=0, maxK=0;
+  let oldestH=null, killerH=null, parentH=null, scholarH=null;
+  for(const h of alive){
+    if(h.sick) sick++;
+    if(h.isSoldier) soldiers++;
+    if(h.isLeader) leaders++;
+    if(h.isProdigy) prodigies++;
+    if(h._isBandit) bandits++;
+    if(h.hunger<30) hungry++;
+    if(h.energy<20) tired++;
+    if(h.social>70&&h.health>70&&h.hunger>60) happy++;
+    totalAge+=h.age; totalChildren+=h.children;
+    totalKills+=h.kills; totalWealth+=h.wealth||0;
+    if(h.age>maxAge){maxAge=h.age;oldestH=h;}
+    if(h.kills>maxKills){maxKills=h.kills;killerH=h;}
+    if(h.children>maxChildren){maxChildren=h.children;parentH=h;}
+    if(h.knowledge>maxK){maxK=h.knowledge;scholarH=h;}
+  }
+  const avgAge = Math.round(totalAge/n);
+  const avgChildren = (totalChildren/n).toFixed(1);
+  const avgKills = (totalKills/n).toFixed(2);
+  const happyPct = Math.round(happy/n*100);
+  const sickPct = Math.round(sick/n*100);
+  const soldierPct = Math.round(soldiers/n*100);
+
+  // Trade routes
+  const tradeRoutes = typeof getTradeRoutes!=='undefined' ? getTradeRoutes().length : 0;
+
+  // Globalization
+  const globLvl = typeof getGlobalizationLevel!=='undefined' ? Math.round(getGlobalizationLevel()*100) : 0;
+
+  // Active outbreaks
+  const outbreaks = typeof activeOutbreaks!=='undefined' ? activeOutbreaks.length : 0;
+
+  // Structures
+  const structCount = typeof structures!=='undefined' ? structures.length : 0;
+
+  // ── Build HTML ───────────────────────────────────────────────────────────
+  const val=(v,color='#adf')=>`<span class="stat-value" style="color:${color}">${v}</span>`;
+  const row=(label,v,color)=>`<div class="stat-row"><span class="stat-label">${label}</span>${val(v,color)}</div>`;
+  const bar=(pct,color)=>`<div class="stat-bar-h"><div class="stat-bar-h-fill" style="width:${Math.min(100,pct)}%;background:${color}"></div></div>`;
+  const section=(title,content)=>`<div class="stat-section"><div class="stat-section-title">${title}</div>${content}</div>`;
+
+  let html='';
+
+  // ── Población ──
+  const popColor = n>3000?'#f84':n>1000?'#fda':n>200?'#8f8':'#adf';
+  html += section('👥 Población',
+    row('Vivos',n,popColor)+
+    row('Edad media',`${avgAge} años`,'#adf')+
+    row('Hijos/persona',avgChildren,'#f9a')+
+    row('Hambrientos',`${hungry} (${Math.round(hungry/n*100)}%)`,hungry>n*0.3?'#f44':'#8f8')+
+    row('Cansados',`${tired}`,tired>n*0.3?'#f84':'#adf')+
+    row('Felices',`${happyPct}%`,happyPct>60?'#8f8':happyPct>30?'#fda':'#f84')+
+    bar(happyPct,'#4f8')
+  );
+
+  // ── Sociedad ──
+  html += section('🏛 Sociedad',
+    row('Civilizaciones',civCount,'#fda')+
+    row('Nómadas',nomadCount,nomadCount>0?'#f84':'#667')+
+    row('Soldados',`${soldiers} (${soldierPct}%)`,soldierPct>30?'#f84':soldierPct>10?'#fda':'#8ac')+
+    row('Líderes',leaders,'#ffd700')+
+    (prodigies>0?row('Prodigios',prodigies,'#ff88ff'):'')+
+    (bandits>0?row('Bandidos',bandits,'#f44'):'')+
+    row('Honor medio',`${avgHonor}`,avgHonor>70?'#8f8':avgHonor>40?'#fda':'#f84')
+  );
+
+  // ── Diplomacia ──
+  const peaceColor = atWarCivs===0?'#8f8':atWarCivs<civCount/2?'#fda':'#f44';
+  html += section('⚔️ Diplomacia',
+    row('Guerras activas',totalWars,totalWars>0?'#f44':'#8f8')+
+    row('Civs en guerra',atWarCivs,peaceColor)+
+    row('Alianzas',totalAlliances,'#4af')+
+    row('Rutas comerciales',tradeRoutes,'#fda')+
+    row('Religiones',religions.size,'#d0a0ff')+
+    row('Globalización',`${globLvl}%`,globLvl>50?'#4af':'#667')
+  );
+
+  // ── Conocimiento ──
+  html += section('🧠 Conocimiento',
+    row('Saber medio civ',avgCivK,'#a8f')+
+    row('Inventos totales',totalInventions,'#4ff')+
+    row('Enfermos',`${sick} (${sickPct}%)`,sickPct>20?'#f44':sickPct>5?'#f84':'#8f8')+
+    row('Brotes activos',outbreaks,outbreaks>3?'#f44':outbreaks>0?'#f84':'#8f8')+
+    row('Estructuras',structCount,'#adf')+
+    bar(Math.min(100,avgCivK/1000),'#a8f')
+  );
+
+  // ── Conflicto ──
+  html += section('🗡️ Conflicto',
+    row('Muertes en combate',totalKills,'#f88')+
+    row('Kills/persona',avgKills,parseFloat(avgKills)>1?'#f44':'#8ac')+
+    row('Poder militar',Math.round(totalMilitary),'#f84')
+  );
+
+  // ── Récords ──
+  let records='';
+  if(oldestH) records+=row('Más viejo',`${oldestH.name.split(' ')[0]} (${Math.round(oldestH.age)}a)`,'#ffd700');
+  if(killerH&&killerH.kills>0) records+=row('Más letal',`${killerH.name.split(' ')[0]} (${killerH.kills}💀)`,'#f44');
+  if(parentH&&parentH.children>0) records+=row('Más prolífico',`${parentH.name.split(' ')[0]} (${parentH.children}👶)`,'#f9a');
+  if(scholarH&&scholarH.knowledge>0) records+=row('Más sabio',`${scholarH.name.split(' ')[0]} (${Math.round(scholarH.knowledge)}📚)`,'#a8f');
+  if(records) html += section('🏆 Récords', records);
+
+  // ── Top civs ──
+  if(civList.length>0){
+    const sorted = civList.slice().sort((a,b)=>b.population-a.population).slice(0,4);
+    let civHtml='';
+    for(const c of sorted){
+      const leader = typeof _hById!=='undefined'?_hById(c.leaderId):null;
+      const atWar = c.atWarWith&&c.atWarWith.size>0;
+      const invIcons={'escritura':'📝','rueda':'⚙️','imprenta':'📖','brujula':'🧭','telescopio':'🔭','vapor':'♨️','electricidad':'⚡','radio':'📡'};
+      civHtml+=`<div class="civ-row" style="border-left-color:${c.color}">
+        <div class="civ-row-name" style="color:${c.color}">${c.name} ${atWar?'⚔️':c.allies.size>2?'🤝':''}</div>
+        <div class="civ-row-stats">
+          <span>👥${c.population}</span>
+          <span>🧠${Math.round(c.avgKnowledge||0)}</span>
+          <span>🏅${Math.round(c.honor)}</span>
+          ${c.religion?`<span style="color:#d0a0ff">🛕</span>`:''}
+          ${c.inventions&&c.inventions.size>0?`<span>${[...c.inventions].slice(0,3).map(id=>invIcons[id]||'💡').join('')}</span>`:''}
+          ${leader&&leader.alive?`<span style="color:#ffd700">👑${leader.name.split(' ')[0]}</span>`:''}
+        </div>
+      </div>`;
+    }
+    html += section('🌍 Civilizaciones', civHtml);
+  }
+
+  _statsEl.innerHTML = html;
+}
+
+function _toggleStatsPanel(){
+  const p = document.getElementById('stats-panel');
+  const btn = document.getElementById('stats-toggle');
+  if(!p) return;
+  p.classList.toggle('collapsed');
+  if(btn) btn.textContent = p.classList.contains('collapsed') ? '▶' : '◀';
 }

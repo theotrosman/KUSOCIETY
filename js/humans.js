@@ -117,7 +117,8 @@ function placeStructure(tx,ty,type,builder){
   const def=STRUCTURE_TYPES[type];
   if(!def)return false;
   const s={tx,ty,type,hp:def.hp,maxHp:def.hp,builtBy:builder.name,civId:builder.civId,
-           icon:def.icon,color:def.color,label:def.label,decay:def.decay,decayRate:def.decayRate};
+           icon:def.icon,color:def.color,label:def.label,decay:def.decay,decayRate:def.decayRate,
+           builtYear:year};
   structures.push(s);structureGrid[ty*WORLD_W+tx]=s;return true;
 }
 function getStructureAt(tx,ty){
@@ -418,8 +419,8 @@ function tickTrade(yearsElapsed){
   _tradeTimer+=yearsElapsed;
   if(_tradeTimer<15)return; // run every 15 years
   _tradeTimer=0;
-  const civList=[...civilizations.values()].filter(c=>c.population>0);
-  for(const civ of civList){
+  for(const [,civ] of civilizations){
+    if(civ.population===0)continue;
     const civTypes=_civStructureTypes.get(civ.id);
     const hasMarket=civTypes&&(civTypes.has('market')||civTypes.has('harbor'));
     if(!hasMarket)continue;
@@ -462,13 +463,10 @@ function tickInventions(yearsElapsed){
   _inventionTimer+=yearsElapsed;
   if(_inventionTimer<30)return; // check every 30 years
   _inventionTimer=0;
-  const civList=[...civilizations.values()].filter(c=>c.population>0);
-  for(const civ of civList){
-    // Compute avg knowledge for this civ
-    let sum=0,cnt=0;
-    for(const id of civ.members){const h=_hById(id);if(h&&h.alive){sum+=h.knowledge;cnt++;}}
-    if(cnt===0)continue;
-    const avgK=sum/cnt;
+  for(const [,civ] of civilizations){
+    if(civ.population===0)continue;
+    const avgK=civ.avgKnowledge||0; // cached by leader elect loop
+    if(avgK===0)continue;
     for(const inv of INVENTION_LIST){
       if(civ.inventions.has(inv.id))continue;
       if(avgK<inv.minAvgK)continue;
@@ -543,8 +541,8 @@ function tickFormalWars(yearsElapsed){
   _warTimer+=yearsElapsed;
   if(_warTimer<20)return;
   _warTimer=0;
-  const civList=[...civilizations.values()].filter(c=>c.population>0);
-  for(const civ of civList){
+  for(const [,civ] of civilizations){
+    if(civ.population===0)continue;
     // Declare war on enemies if strong enough
     for(const enemyId of [...civ.enemies]){
       const enemy=civilizations.get(enemyId);
@@ -939,8 +937,10 @@ function initSpatialGrid(){spatialGrid=new Map();}
 function _spatialAdd(h){const k=_spatialKey(h.tx,h.ty);if(!spatialGrid.has(k))spatialGrid.set(k,new Set());spatialGrid.get(k).add(h);h._spatialKey=k;}
 function _spatialRemove(h){if(h._spatialKey===undefined)return;const s=spatialGrid.get(h._spatialKey);if(s)s.delete(h);}
 function _spatialUpdate(h){const k=_spatialKey(h.tx,h.ty);if(k===h._spatialKey)return;_spatialRemove(h);_spatialAdd(h);}
+// Reusable result buffer for _spatialQuery — avoids array allocation per call
+const _sqResults=[];
 function _spatialQuery(tx,ty,radius,excludeId){
-  const results=[];
+  _sqResults.length=0;
   const r2=radius*radius;
   const cx0=Math.floor((tx-radius)/SPATIAL_CELL),cx1=Math.floor((tx+radius)/SPATIAL_CELL);
   const cy0=Math.floor((ty-radius)/SPATIAL_CELL),cy1=Math.floor((ty+radius)/SPATIAL_CELL);
@@ -950,17 +950,16 @@ function _spatialQuery(tx,ty,radius,excludeId){
     for(const h of cell){
       if(h.id===excludeId||!h.alive)continue;
       const dx=h.tx-tx,dy=h.ty-ty;
-      if(dx*dx+dy*dy<=r2)results.push(h);
+      if(dx*dx+dy*dy<=r2)_sqResults.push(h);
     }
   }
-  return results;
+  return _sqResults;
 }
 
 // ── Neural Brain ──────────────────────────────────────────────────────────────
 class NeuralBrain{
   constructor(rng){
-    this.iSize=12;this.hSize=6;this.oSize=10; // hSize 8→6 saves 20% weights
-    // Outputs: 0=seekFood 1=sleep 2=wander 3=socialize 4=gather 5=build 6=reproduce 7=farm 8=fight 9=raze
+    this.iSize=12;this.hSize=6;this.oSize=10;
     this.wIH=new Float32Array(this.iSize*this.hSize).map(()=>rng()*2-1);
     this.wHO=new Float32Array(this.hSize*this.oSize).map(()=>rng()*2-1);
     this.bH=new Float32Array(this.hSize);
@@ -968,23 +967,26 @@ class NeuralBrain{
     this.lr=0.10;
     this.memory=[];
     this.epsilon=0.35;
+    // Reusable buffers — avoid Float32Array allocation every forward()
+    this._h=new Float32Array(this.hSize);
+    this._raw=new Float32Array(this.oSize);
+    this._ex=new Float32Array(this.oSize);
   }
   _relu(x){return x>0?x:x*0.05;}
   forward(inp){
-    const h=new Float32Array(this.hSize);
+    const h=this._h, raw=this._raw, ex=this._ex;
     for(let i=0;i<this.hSize;i++){
       let s=this.bH[i];
       for(let j=0;j<this.iSize;j++)s+=inp[j]*this.wIH[j*this.hSize+i];
-      h[i]=this._relu(s);
+      h[i]=s>0?s:s*0.05;
     }
-    const raw=new Float32Array(this.oSize);
     for(let o=0;o<this.oSize;o++){
       let s=this.bO[o];
       for(let i=0;i<this.hSize;i++)s+=h[i]*this.wHO[i*this.oSize+o];
       raw[o]=s;
     }
     let mx=raw[0];for(let i=1;i<this.oSize;i++)if(raw[i]>mx)mx=raw[i];
-    let sm=0;const ex=new Float32Array(this.oSize);
+    let sm=0;
     for(let i=0;i<this.oSize;i++){ex[i]=Math.exp(raw[i]-mx);sm+=ex[i];}
     for(let i=0;i<this.oSize;i++)ex[i]/=sm;
     return ex;
@@ -1042,7 +1044,17 @@ function _inheritTrait(a,b,rng){
   return Math.max(1,Math.min(100,Math.round(base+(rng()*14-7))));
 }
 
-// ── Intelligence curve (rises and falls naturally) ────────────────────────────
+// Lookup table for knowledge curve: kCurve = 1 + (k/500)^1.6 * 0.4, k in [0,5000]
+// 101 entries covering k=0..5000 in steps of 50
+const _kCurveLUT=(()=>{
+  const t=new Float32Array(101);
+  for(let i=0;i<=100;i++)t[i]=1+Math.pow(i*0.1,1.6)*0.4; // i*0.1 = k/500 (0..10 but capped at 10)
+  return t;
+})();
+function _kCurve(k){
+  const idx=Math.min(100,Math.floor(Math.min(k,5000)/50));
+  return _kCurveLUT[idx];
+}
 // Global intelligence modifier — oscillates to create dark ages and renaissances
 let _intelPhase=0;
 let _intelModifier=1.2; // start higher — societies are more capable from the start
@@ -1170,6 +1182,9 @@ class Human{
     this._onWater=false; // currently sailing
     // Dynasty tracking
     this.parentIds=parentA?[parentA.id,parentB?parentB.id:parentA.id]:null;
+    // Nearby cache — avoid _spatialQuery every tick per human
+    this._nearbyCached=[];
+    this._nearbyYear=-999;
   }
 
   addLog(msg){this.log.unshift(`Año ${year}: ${msg}`);if(this.log.length>4)this.log.pop();}
@@ -1213,10 +1228,10 @@ class Human{
     } else {
       for(const o of activeOutbreaks){
         if(this.immunity.has(o.type.name))continue;
-        const d=Math.hypot(this.tx-o.tx,this.ty-o.ty);
-        // Más conocimiento = más resistencia a enfermedades
-        const resistance = Math.min(0.92, this.knowledge * 0.00015 + (this.traits.intellect||50) * 0.003);
-        if(d<=o.radius&&this._rng()<o.type.spread*0.03*yearsElapsed*(1-resistance)){
+        const dx=this.tx-o.tx,dy=this.ty-o.ty;
+        if(dx*dx+dy*dy>o.radius*o.radius)continue;
+        const resistance=Math.min(0.92,this.knowledge*0.00015+(this.traits.intellect||50)*0.003);
+        if(this._rng()<o.type.spread*0.03*yearsElapsed*(1-resistance)){
           this.sick=true;this.sickType=o.type;
           this.sickTimer=o.type.duration*(0.8+this._rng()*0.4)*(1-resistance*0.5);
           this.addLog(`Contrajo ${o.type.name}`);break;
@@ -1278,9 +1293,8 @@ class Human{
 
     // Knowledge grows exponentially — slow at first, explosive at high levels
     // Base rate scales with intellect, then multiplied by a curve that accelerates with existing knowledge
-    const kGrowthBase=0.10+this.traits.intellect*0.005; // faster base growth
-    const kCurve=1+Math.pow(Math.min(this.knowledge,5000)/500,1.6)*0.4; // exponential acceleration
-    this.knowledge=Math.min(99999,this.knowledge+yearsElapsed*kGrowthBase*intelMult*kCurve);
+    const kGrowthBase=0.10+this.traits.intellect*0.005;
+    this.knowledge=Math.min(99999,this.knowledge+yearsElapsed*kGrowthBase*intelMult*_kCurve(this.knowledge));
 
     this.wealth=this.inventory.food+this.inventory.wood*2+this.inventory.stone*1.5;
 
@@ -1312,9 +1326,18 @@ class Human{
     if(this.hunger<10||this.health<8){this._seekFoodNow();return;}
     if(this.energy<5){this._doSleep();return;}
 
-    const nearby=_spatialQuery(this.tx,this.ty,16,this.id);
-    // Raise crowding threshold so humans don't disperse before they can build a city
-    const crowding=nearby.filter(h=>Math.hypot(h.tx-this.tx,h.ty-this.ty)<6).length;
+    // Nearby cache — refresh every 3 game-years to avoid per-tick spatial query
+    if(year-this._nearbyYear>=3){
+      const _fresh=_spatialQuery(this.tx,this.ty,16,this.id);
+      // Copy into own array (shared _sqResults gets overwritten)
+      this._nearbyCached.length=0;
+      for(let _ci=0;_ci<_fresh.length;_ci++)this._nearbyCached.push(_fresh[_ci]);
+      this._nearbyYear=year;
+    }
+    const nearby=this._nearbyCached;
+    // Count crowding inline — avoid filter() allocation
+    let crowding=0;
+    for(let _i=0;_i<nearby.length;_i++){const _n=nearby[_i];const _dx=_n.tx-this.tx,_dy=_n.ty-this.ty;if(_dx*_dx+_dy*_dy<36)crowding++;}
 
     if(this.hunger<25){this._seekFoodNow();return;}
     if(this.energy<15){this._doSleep();return;}
@@ -3381,6 +3404,7 @@ function tickHumans(yearsElapsed){
       }
       if(count>0){
         const avg=totalK/count;
+        civ.avgKnowledge=avg; // cache — reused by tickInventions, features.js, etc.
         civ.era=avg>300?'imperial':avg>150?'moderna':avg>80?'industrial':avg>50?'medieval':avg>30?'antigua':'primitiva';
         civ.militaryPower=(civMilitary.get(civ.id)||0)+count*2;
       }

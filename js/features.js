@@ -2,6 +2,14 @@
 // FEATURES.JS — 15 nuevas mecánicas de profundidad para la simulación
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Reusable civ list buffer — avoids [...civilizations.values()] spread allocations
+const _civBuf = [];
+function _fillCivBuf(minPop) {
+  _civBuf.length = 0;
+  for (const [, c] of civilizations) { if (c.population > minPop) _civBuf.push(c); }
+  return _civBuf;
+}
+
 // ── 1. EPIDEMIAS ESTACIONALES ─────────────────────────────────────────────────
 // Las enfermedades se propagan más en invierno y menos en verano
 let _seasonalEpidemicTimer = 0;
@@ -130,7 +138,7 @@ function tickMarriageDiplomacy(yearsElapsed) {
   _marriageTimer += yearsElapsed;
   if (_marriageTimer < 35) return;
   _marriageTimer = 0;
-  const civList = [...civilizations.values()].filter(c => c.population > 3);
+  const civList = _fillCivBuf(3);
   for (const civA of civList) {
     if (civA.enemies.size === 0) continue;
     const leaderA = typeof _hById !== 'undefined' ? _hById(civA.leaderId) : null;
@@ -247,7 +255,7 @@ function tickLuxuryTrade(yearsElapsed) {
   _luxuryTradeTimer += yearsElapsed;
   if (_luxuryTradeTimer < 25) return;
   _luxuryTradeTimer = 0;
-  const civList = [...civilizations.values()].filter(c => c.population > 5);
+  const civList = _fillCivBuf(5);
   for (const civ of civList) {
     const civTypes = _civStructureTypes.get(civ.id);
     if (!civTypes || !civTypes.has('market')) continue;
@@ -615,8 +623,16 @@ function tickSuccessionCrisis(deadLeader, civ) {
 // ── FIX: INTELIGENCIA MÍNIMA MÁS ALTA ────────────────────────────────────────
 // Parche que se aplica sobre _tickIntelligenceCurve para elevar el piso
 // y añadir un bonus por infraestructura de conocimiento
+let _intelFloorTimer = 0;
+let _intelFloorCache = 0;
 function _applyIntelFloor() {
   if (typeof _intelModifier === 'undefined') return;
+  _intelFloorTimer++;
+  if (_intelFloorTimer < 30) { // only recount every 30 calls
+    if (_intelModifier < _intelFloorCache) _intelModifier = _intelFloorCache;
+    return;
+  }
+  _intelFloorTimer = 0;
   // Contar estructuras de conocimiento activas
   let knowledgeStructures = 0;
   for (const s of structures) {
@@ -628,9 +644,9 @@ function _applyIntelFloor() {
   const infraBonus = Math.min(0.4, Math.floor(knowledgeStructures / 5) * 0.02);
   // Piso mínimo incluye el bias del usuario
   const userBias = typeof _userIntelBias !== 'undefined' ? _userIntelBias : 0;
-  const newFloor = 0.85 + infraBonus + userBias;
-  if (_intelModifier < newFloor) {
-    _intelModifier = newFloor;
+  _intelFloorCache = 0.85 + infraBonus + userBias;
+  if (_intelModifier < _intelFloorCache) {
+    _intelModifier = _intelFloorCache;
   }
 }
 
@@ -651,8 +667,6 @@ function _tickCoreFeatues(yearsElapsed) {
   tickFestivals(yearsElapsed);
   tickScientificExpeditions(yearsElapsed);
   _applyIntelFloor();
-  // Marcar año de construcción en estructuras nuevas
-  for (const s of structures) { if (!s.builtYear) s.builtYear = year; }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -737,7 +751,7 @@ function tickPiracy(yearsElapsed) {
   _pirateTimer += yearsElapsed;
   if (_pirateTimer < 30) return;
   _pirateTimer = 0;
-  const civList = [...civilizations.values()].filter(c => c.population > 5);
+  const civList = _fillCivBuf(5);
   for (const civ of civList) {
     const civTypes = _civStructureTypes.get(civ.id);
     if (!civTypes || !civTypes.has('shipyard')) continue;
@@ -961,7 +975,7 @@ function tickTradeRoutes(yearsElapsed) {
   }
 
   const GOODS = ['Oro', 'Seda', 'Especias', 'Grano', 'Hierro', 'Ámbar'];
-  const civList = [...civilizations.values()].filter(c => c.population > 4);
+  const civList = _fillCivBuf(4);
   for (const civA of civList) {
     const typesA = _civStructureTypes.get(civA.id);
     if (!typesA || !typesA.has('market')) continue;
@@ -1272,7 +1286,8 @@ function tickFamine(yearsElapsed) {
     if (famine.severity >= 2 && Math.random() < 0.2) {
       for (const [otherId, otherCiv] of civilizations) {
         if (otherId === civ.id || otherCiv.population === 0) continue;
-        const otherFood = structures.filter(s => s.civId === otherId && (s.type === 'farm' || s.type === 'granary')).length;
+        const otherTypes = _civStructureTypes.get(otherId);
+        const otherFood = otherTypes && (otherTypes.has('farm') || otherTypes.has('granary')) ? 2 : 0;
         if (otherFood < 2) continue;
         if (!civ.enemies.has(otherId)) {
           civ.enemies.add(otherId);
@@ -1500,7 +1515,7 @@ function tickGlobalPandemic(yearsElapsed) {
   }
   // Chance de nueva pandemia
   if (Math.random() > 0.08) return;
-  const civList = [...civilizations.values()].filter(c => c.population > 8);
+  const civList = _fillCivBuf(8);
   if (civList.length === 0) return;
   const originCiv = civList[Math.floor(Math.random() * civList.length)];
   const name = PANDEMIC_NAMES[Math.floor(Math.random() * PANDEMIC_NAMES.length)];
@@ -1538,10 +1553,8 @@ function tickWorldWonders(yearsElapsed) {
   if (typeof _cachedAlive === 'undefined') return;
   for (const [, civ] of civilizations) {
     if (civ.population < 10) continue;
-    let avgK = 0, cnt = 0;
-    for (const id of civ.members) { const h = _hById(id); if (h && h.alive) { avgK += h.knowledge; cnt++; } }
-    if (cnt === 0) continue;
-    avgK /= cnt;
+    const avgK = civ.avgKnowledge || 0; // cached by leader elect loop
+    if (avgK === 0) continue;
     for (const wonder of WORLD_WONDERS) {
       if (_builtWonders.has(wonder.id)) {
         // Otras civs intentan destruir la maravilla (si son enemigas)
@@ -1907,7 +1920,7 @@ function tickSecretCults(yearsElapsed) {
   _cultTimer = 0;
   // crear nuevo culto ocasionalmente
   if (_cults.length < 4 && Math.random() < 0.15) {
-    const civArr = [...civilizations.values()].filter(c => c.population > 10);
+    const civArr = _fillCivBuf(10).slice(); // need stable copy for random pick
     if (civArr.length) {
       const civ = civArr[Math.floor(Math.random() * civArr.length)];
       const name = _CULT_NAMES[Math.floor(Math.random() * _CULT_NAMES.length)];
@@ -2039,7 +2052,7 @@ function tickForcedNomadism(yearsElapsed) {
     if (civ.nomadic) continue;
     if (civ.population < 2) continue;
     const civTypes = _civStructureTypes.get(id);
-    const civStructCount = civTypes ? structures.filter(s => s.civId === id).length : 0;
+    const civStructCount = civTypes && civTypes.size > 0 ? 1 : 0; // just need to know if any exist
     if (civStructCount > 0) continue;
     // sin estructuras → nómadas
     civ.nomadic = true;
@@ -2050,7 +2063,8 @@ function tickForcedNomadism(yearsElapsed) {
   // nómadas pueden recuperarse si construyen algo
   for (const [id, civ] of civilizations) {
     if (!civ.nomadic) continue;
-    const nomadStructCount = structures.filter(s => s.civId === id).length;
+    const nomadTypes = _civStructureTypes.get(id);
+    const nomadStructCount = nomadTypes ? nomadTypes.size : 0;
     if (nomadStructCount >= 3) {
       civ.nomadic = false;
       addWorldEvent(`🏘️ ${civ.name} abandona el nomadismo y vuelve a establecerse`);
@@ -2374,7 +2388,7 @@ function tickAIPlague(yearsElapsed) {
   // ── Fase 1: EXPANSIÓN — la IA se propaga entre civs ──────────────────────
   if (_aiPlaguePhase === 1) {
     // Transferir conocimiento entre civs (homogenización gradual)
-    const civList = [...civilizations.values()].filter(c => c.population > 0);
+    const civList = _fillCivBuf(0);
     if (civList.length > 1) {
       let totalK = 0;
       for (const c of civList) totalK += (c.knowledge || 0);
@@ -2471,7 +2485,7 @@ function tickAIPlague(yearsElapsed) {
 
     // Homogenización total: las civs empiezan a fusionarse
     if (_aiPlagueProgress > 0.6 && Math.random() < 0.05) {
-      const civList = [...civilizations.values()].filter(c => c.population > 3);
+      const civList = _fillCivBuf(3);
       if (civList.length >= 2) {
         const a = civList[0], b = civList[Math.floor(Math.random() * civList.length)];
         if (a !== b && !a.allies.has(b.id)) {
@@ -2683,7 +2697,7 @@ function tickAdvancedDiplomacy(yearsElapsed) {
     }
   }
 
-  const civList = [...civilizations.values()].filter(c => c.population > 3);
+  const civList = _fillCivBuf(3);
   for (let i = 0; i < civList.length; i++) {
     const civA = civList[i];
     const avgKA = _civAvgKnowledge(civA.id);
@@ -2730,6 +2744,8 @@ function tickAdvancedDiplomacy(yearsElapsed) {
 function _civAvgKnowledge(civId) {
   const civ = civilizations.get(civId);
   if (!civ || civ.population === 0) return 0;
+  // Use cached value from leader elect loop (updated every 5 years)
+  if (civ.avgKnowledge != null) return civ.avgKnowledge;
   let sum = 0, cnt = 0;
   for (const id of civ.members) { const h = _hById(id); if (h && h.alive) { sum += h.knowledge; cnt++; } }
   return cnt > 0 ? sum / cnt : 0;
@@ -2821,7 +2837,9 @@ function tickGlobalization(yearsElapsed) {
   _globalizationTimer = 0;
 
   // La globalización sube cuando hay muchas civs avanzadas con alianzas
-  const advancedCivs = [...civilizations.values()].filter(c => (c.knowledge || 0) > 5000 && c.population > 5);
+  _civBuf.length = 0;
+  for (const [, c] of civilizations) { if ((c.knowledge || 0) > 5000 && c.population > 5) _civBuf.push(c); }
+  const advancedCivs = _civBuf;
   if (advancedCivs.length < 2) return;
 
   let allianceCount = 0;
@@ -2879,7 +2897,7 @@ function tickCivDiversity(yearsElapsed) {
   if (_civDiversityTimer < 100) return;
   _civDiversityTimer = 0;
 
-  const aliveCivs = [...civilizations.values()].filter(c => c.population > 0);
+  const aliveCivs = _fillCivBuf(0).slice(); // need a stable copy for sort
   if (aliveCivs.length >= 4) return; // ya hay suficiente diversidad
   if (_cachedAlive.length < 15) return; // muy poca gente para dividirse
 
