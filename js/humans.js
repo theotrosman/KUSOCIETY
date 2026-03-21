@@ -554,8 +554,9 @@ function tickFormalWars(yearsElapsed){
         civ.atWarWith.set(enemyId,{startYear:year,tributePaid:false});
         enemy.atWarWith.set(civ.id,{startYear:year,tributePaid:false});
         civ.honor=Math.max(0,civ.honor-5);
+        const reason=WAR_REASONS[Math.floor(Math.random()*WAR_REASONS.length)];
         addMajorEvent(`⚔️ ¡${civ.name} declaró guerra a ${enemy.name}! El conflicto comienza`);
-        chronicleWar(civ.name, enemy.name, `Las negociaciones fracasaron. Los ejércitos se pusieron en marcha.`);
+        chronicleWar(civ.name, enemy.name, reason);
       }
     }
     // Peace after 100 years of war
@@ -832,10 +833,34 @@ function addMajorEvent(text){
 }
 
 // ── Narrative helpers — generate epic prose from raw data ─────────────────────
-const _EPITHETS_WAR=['sangrienta','brutal','devastadora','épica','legendaria','feroz'];
-const _EPITHETS_PEACE=['gloriosa','memorable','histórica','trascendental','sagrada'];
-const _EPITHETS_CITY=['imponente','magnífica','colosal','majestuosa','legendaria'];
+const _EPITHETS_WAR=['sangrienta','brutal','devastadora','épica','legendaria','feroz','implacable','despiadada','titánica','catastrófica','interminable','salvaje'];
+const _EPITHETS_PEACE=['gloriosa','memorable','histórica','trascendental','sagrada','frágil','inesperada','duradera','amarga','necesaria'];
+const _EPITHETS_CITY=['imponente','magnífica','colosal','majestuosa','legendaria','soberbia','monumental','deslumbrante','inexpugnable','eterna'];
 const _rndOf=(arr)=>arr[Math.floor(Math.random()*arr.length)];
+
+// ── War reasons pool — injected by tickFormalWars ─────────────────────────────
+const WAR_REASONS=[
+  'Las disputas por tierras fértiles llevaron años envenenando las relaciones.',
+  'Un insulto al líder de una delegación diplomática fue la chispa que encendió el polvorín.',
+  'El control de las rutas comerciales era demasiado valioso para compartirlo.',
+  'Viejas deudas de sangre, nunca olvidadas, nunca perdonadas, reclamaron su precio.',
+  'La ambición de un general convenció a su pueblo de que la guerra era inevitable.',
+  'Los recursos escaseaban y solo quedaba una solución: tomar los del vecino.',
+  'Una frontera mal trazada fue el pretexto que ambos bandos esperaban.',
+  'El orgullo herido de un pueblo que se sentía menospreciado no encontró otra salida.',
+  'La expansión territorial de uno amenazó la supervivencia del otro.',
+  'Décadas de pequeñas escaramuzas culminaron en una guerra abierta.',
+  'La muerte de un embajador en circunstancias oscuras rompió toda posibilidad de diálogo.',
+  'El robo de ganado y cosechas se convirtió en un ciclo de represalias sin fin.',
+  'Un matrimonio rechazado entre líderes fue tomado como afrenta imperdonable.',
+  'La conquista de un templo sagrado desató la furia de todo un pueblo.',
+  'Los espías descubiertos en la corte enemiga sellaron el destino de la paz.',
+  'La sequía obligó a un pueblo a buscar agua en tierras ajenas, con las armas en la mano.',
+  'Un eclipse fue interpretado como señal divina para atacar al enemigo.',
+  'El asesinato del heredero al trono fue atribuido, con o sin pruebas, al pueblo vecino.',
+  'La diferencia de fe entre ambos pueblos nunca fue un obstáculo para el comercio, hasta que lo fue.',
+  'El descubrimiento de minas de metal en la frontera convirtió la disputa en guerra total.',
+];
 
 function _narrateWar(civA, civB, context=''){
   const ep=_rndOf(_EPITHETS_WAR);
@@ -844,64 +869,181 @@ function _narrateWar(civA, civB, context=''){
     `La paz se rompió en mil pedazos cuando`,
     `El mundo tembló ante la noticia:`,
     `Ningún tratado pudo contener la furia cuando`,
+    `Las fronteras que separaban a`,
+    `Generaciones de tensión acumulada explotaron cuando`,
+    `Los heraldos de guerra cabalgaron entre`,
+    `El humo de las primeras aldeas quemadas anunció que`,
+    `Nadie recuerda quién disparó primero, pero todos saben que`,
+    `Los diplomáticos fracasaron y los generales tomaron el mando cuando`,
+    `La sangre derramada en la frontera fue el inicio de algo mucho mayor:`,
+    `Cuando los ejércitos de`,
+    `El ultimátum fue ignorado. La guerra comenzó cuando`,
+    `Madres, hijos, ancianos — todos supieron que algo había cambiado cuando`,
+    `Los cuervos sobrevolaron el horizonte antes de que`,
   ];
-  return `${_rndOf(openers)} ${civA} y ${civB} se enfrentaron en una ${ep} batalla. ${context}`;
+  const closers=[
+    `El mundo nunca volvería a ser el mismo.`,
+    `Nadie ganó. Todos perdieron algo.`,
+    `Los bardos cantarían esta historia durante generaciones.`,
+    `La tierra quedó marcada para siempre.`,
+    `Solo los muertos conocen el final de la guerra.`,
+    `El odio sembrado ese día tardaría siglos en apagarse.`,
+    `Los supervivientes juraron que nunca olvidarían.`,
+    `La historia juzgaría a ambos con dureza.`,
+  ];
+  const opener=_rndOf(openers);
+  const closer=_rndOf(closers);
+  if(opener.endsWith('cuando')||opener.endsWith('que')||opener.endsWith('mando cuando')||opener.endsWith('mayor:')){
+    return `${opener} ${civA} y ${civB} se enfrentaron en una ${ep} guerra. ${context} ${closer}`;
+  }
+  return `${opener} ${civA} y ${civB} cruzaron sus armas en una ${ep} guerra. ${context} ${closer}`;
 }
 
 function _narratePeace(civA, civB, context=''){
   const ep=_rndOf(_EPITHETS_PEACE);
-  return `Tras años de conflicto, una ${ep} paz fue sellada entre ${civA} y ${civB}. ${context} Los anales recordarán este día.`;
+  const templates=[
+    `Tras años de conflicto, una ${ep} paz fue sellada entre ${civA} y ${civB}. ${context} Los anales recordarán este día.`,
+    `Los negociadores de ${civA} y ${civB} se reunieron en terreno neutral. La ${ep} paz que firmaron costó más de lo que nadie admitirá jamás. ${context}`,
+    `El silencio de los cañones llegó por fin. ${civA} y ${civB} acordaron una tregua ${ep}. ${context} Pero la desconfianza permanecería durante generaciones.`,
+    `Exhaustos y desangrados, ${civA} y ${civB} eligieron la paz sobre el orgullo. ${context} Fue una decisión ${ep} que salvó a miles.`,
+    `Los líderes de ${civA} y ${civB} se dieron la mano sobre las ruinas de lo que fue. ${context} Una paz ${ep}, construida sobre cenizas.`,
+    `Cuando los últimos soldados depusieron las armas, ${civA} y ${civB} firmaron un acuerdo ${ep}. ${context} El mundo respiró aliviado.`,
+  ];
+  return _rndOf(templates);
 }
 
 function _narrateBuilding(builderName, structLabel, civName, context=''){
   const ep=_rndOf(_EPITHETS_CITY);
-  const verbs=['se alzó','emergió de la tierra','fue consagrada','quedó terminada'];
-  return `Bajo el mando de ${builderName}, una ${ep} ${structLabel} ${_rndOf(verbs)} en el corazón de ${civName}. ${context}`;
+  const templates=[
+    `Bajo el mando de ${builderName}, una ${ep} ${structLabel} emergió en el corazón de ${civName}. ${context}`,
+    `${builderName} dedicó años de su vida a construir la ${ep} ${structLabel} que definiría a ${civName} para siempre. ${context}`,
+    `Generaciones de artesanos trabajaron bajo la visión de ${builderName}. El resultado: una ${ep} ${structLabel} en ${civName} que desafía el tiempo. ${context}`,
+    `Cuando la ${ep} ${structLabel} de ${civName} quedó terminada, ${builderName} miró su obra y supo que había cambiado el mundo. ${context}`,
+  ];
+  return _rndOf(templates);
 }
 
 function _narrateDisaster(type, place, victims, context=''){
   const openers={
-    earthquake:['La tierra se abrió bajo los pies de','El suelo tembló sin piedad en','Un rugido sordo precedió la catástrofe en'],
-    volcano:['El cielo se tiñó de rojo cuando','Las cenizas cubrieron el sol sobre','La montaña de fuego despertó cerca de'],
-    plague:['Una sombra invisible se extendió por','La muerte silenciosa llegó a','Nadie pudo escapar del azote que cayó sobre'],
-    famine:['El hambre desnudó su rostro en','Los campos se secaron y el hambre llegó a','La desesperación se instaló en'],
-    locusts:['Una nube oscura devoró los campos de','Las langostas arrasaron las cosechas de'],
+    earthquake:[
+      `La tierra se abrió bajo los pies de los habitantes de`,
+      `El suelo tembló sin piedad en`,
+      `Un rugido sordo precedió la catástrofe en`,
+      `Sin previo aviso, el mundo se sacudió en`,
+      `Las grietas se abrieron como heridas en la tierra de`,
+    ],
+    volcano:[
+      `El cielo se tiñó de rojo cuando la montaña despertó cerca de`,
+      `Las cenizas cubrieron el sol sobre`,
+      `La montaña de fuego rugió y escupió su furia sobre`,
+      `Nadie creyó que el volcán despertaría, hasta que lo hizo en`,
+      `El fuego que dormía bajo la tierra reclamó su precio en`,
+    ],
+    plague:[
+      `Una sombra invisible se extendió por`,
+      `La muerte silenciosa llegó a`,
+      `Nadie pudo escapar del azote que cayó sobre`,
+      `Los enfermos llenaron las calles de`,
+      `El miedo fue el primer síntoma que llegó a`,
+    ],
+    famine:[
+      `El hambre desnudó su rostro en`,
+      `Los campos se secaron y el hambre llegó a`,
+      `La desesperación se instaló en`,
+      `Los graneros vacíos anunciaron lo peor para`,
+      `Cuando los niños empezaron a llorar de hambre en`,
+    ],
+    locusts:[
+      `Una nube oscura devoró los campos de`,
+      `Las langostas arrasaron las cosechas de`,
+      `El zumbido ensordecedor llegó antes que la devastación a`,
+    ],
   };
+  const closers=[
+    `${victims>0?`${victims} almas pagaron el precio.`:''} ${context} Quienes sobrevivieron nunca olvidaron.`,
+    `${victims>0?`${victims} vidas se perdieron.`:''} ${context} La reconstrucción tardaría generaciones.`,
+    `${context} El mundo siguió girando, indiferente al dolor.`,
+    `${victims>0?`${victims} personas desaparecieron en un instante.`:''} ${context}`,
+  ];
   const arr=openers[type]||openers.earthquake;
-  return `${_rndOf(arr)} ${place}. ${victims>0?`${victims} almas pagaron el precio.`:''} ${context}`;
+  return `${_rndOf(arr)} ${place}. ${_rndOf(closers)}`;
 }
 
 function _narrateDynasty(leaderName, civName, generation, context=''){
-  if(generation>=5) return `La ${civName} celebra ${generation} generaciones ininterrumpidas de liderazgo. ${leaderName} asciende al trono como heredero de una estirpe que ha moldeado el mundo. ${context}`;
-  if(generation>=3) return `${leaderName} hereda el poder en ${civName}, continuando el linaje que su familia ha forjado con sangre y gloria. ${context}`;
-  return `Con la muerte del líder anterior, ${leaderName} toma las riendas de ${civName}. Una nueva era comienza. ${context}`;
+  const templates=[
+    generation>=5
+      ? `${civName} celebra ${generation} generaciones ininterrumpidas de liderazgo. ${leaderName} asciende al trono como heredero de una estirpe que ha moldeado el mundo. ${context}`
+      : generation>=3
+        ? `${leaderName} hereda el poder en ${civName}, continuando el linaje que su familia ha forjado con sangre y gloria. ${context}`
+        : `Con la muerte del líder anterior, ${leaderName} toma las riendas de ${civName}. Una nueva era comienza. ${context}`,
+    `El trono de ${civName} tiene un nuevo ocupante: ${leaderName}. Los que lo conocen dicen que es diferente. Los que no, pronto lo descubrirán. ${context}`,
+    `${leaderName} no eligió ser líder de ${civName}. El destino lo eligió a él. ${context}`,
+    `Cuando ${leaderName} tomó el poder en ${civName}, nadie sabía si sería recordado como héroe o como tirano. ${context}`,
+  ];
+  return _rndOf(templates);
 }
 
 function _narrateScience(civName, inventionName, context=''){
-  const openers=[
-    `Los sabios de ${civName} cambiaron el mundo para siempre al descubrir`,
-    `Después de generaciones de estudio, ${civName} reveló al mundo`,
-    `Un destello de genialidad iluminó ${civName}: el descubrimiento de`,
+  const templates=[
+    `Los sabios de ${civName} cambiaron el mundo para siempre al descubrir ${inventionName}. ${context} La humanidad nunca volvería a ser la misma.`,
+    `Después de generaciones de estudio, ${civName} reveló al mundo ${inventionName}. ${context} Lo que parecía imposible se volvió inevitable.`,
+    `Un destello de genialidad iluminó ${civName}: el descubrimiento de ${inventionName}. ${context} Los demás pueblos miraron con envidia y asombro.`,
+    `Nadie en ${civName} sabía que ese día cambiaría la historia. Pero cuando descubrieron ${inventionName}, todo fue diferente. ${context}`,
+    `${inventionName} nació en ${civName} de la mente de alguien que se negó a aceptar que las cosas no podían ser mejores. ${context}`,
+    `El conocimiento acumulado durante siglos en ${civName} cristalizó en un solo momento: el nacimiento de ${inventionName}. ${context}`,
+    `Cuando ${civName} presentó ${inventionName} al mundo, hubo quienes rieron. Luego hubo quienes copiaron. ${context}`,
   ];
-  return `${_rndOf(openers)} ${inventionName}. ${context} La humanidad nunca volvería a ser la misma.`;
+  return _rndOf(templates);
 }
 
 function _narrateReligion(civName, religionName, context=''){
-  return `En los templos de ${civName}, una nueva fe tomó forma: "${religionName}". Los fieles encontraron en ella respuestas a preguntas que habían atormentado a la humanidad desde sus orígenes. ${context}`;
+  const templates=[
+    `En los templos de ${civName}, una nueva fe tomó forma: "${religionName}". Los fieles encontraron en ella respuestas a preguntas que habían atormentado a la humanidad desde sus orígenes. ${context}`,
+    `"${religionName}" nació en ${civName} de la boca de un profeta que nadie escuchó al principio. Luego todos escucharon. ${context}`,
+    `Los sacerdotes de ${civName} proclamaron "${religionName}" como la verdad que el mundo había estado esperando. ${context} La fe se extendió como fuego en paja seca.`,
+    `En tiempos de incertidumbre, ${civName} encontró en "${religionName}" un ancla. ${context} La fe no da respuestas, pero da fuerza para seguir preguntando.`,
+    `"${religionName}" no fue inventada en ${civName}. Fue descubierta. Al menos eso dicen sus fieles. ${context}`,
+  ];
+  return _rndOf(templates);
 }
 
 function _narrateRebellion(civName, rebelCount, context=''){
-  return `La desigualdad acumulada durante generaciones estalló en ${civName}. ${rebelCount} almas oprimidas alzaron la voz y las armas, dispuestas a reescribir su destino. ${context}`;
+  const templates=[
+    `La desigualdad acumulada durante generaciones estalló en ${civName}. ${rebelCount} almas oprimidas alzaron la voz y las armas, dispuestas a reescribir su destino. ${context}`,
+    `${rebelCount} personas de ${civName} decidieron que ya era suficiente. El poder no se pide, se toma. ${context}`,
+    `Los que nada tenían en ${civName} se levantaron contra los que todo tenían. ${rebelCount} rebeldes. Una sola causa. ${context}`,
+    `La chispa de la rebelión llevaba años esperando en ${civName}. ${rebelCount} personas la encendieron. ${context} El fuego se extendió más rápido de lo que nadie esperaba.`,
+    `"Basta" fue la palabra que unió a ${rebelCount} personas en ${civName}. Una palabra simple. Consecuencias enormes. ${context}`,
+  ];
+  return _rndOf(templates);
 }
 
 function _narrateEspionage(spyName, targetCiv, mission, success, context=''){
-  if(!success) return `${spyName} fue capturado en las sombras de ${targetCiv}. Su misión de ${mission} terminó en fracaso y humillación. ${context}`;
+  if(!success){
+    const failTemplates=[
+      `${spyName} fue capturado en las sombras de ${targetCiv}. Su misión terminó en fracaso y humillación. ${context}`,
+      `Las calles de ${targetCiv} guardaron el secreto de ${spyName} solo hasta que no pudieron más. Fue capturado. ${context}`,
+      `${spyName} subestimó a los guardias de ${targetCiv}. Un error que le costaría todo. ${context}`,
+    ];
+    return _rndOf(failTemplates);
+  }
   const missionText={robo_conocimiento:'robar los secretos más preciados',sabotaje:'destruir desde adentro',asesinato_lider:'eliminar al líder'};
-  return `En las sombras de ${targetCiv}, ${spyName} logró ${missionText[mission]||mission}. Nadie vio nada. Nadie supo nada. ${context}`;
+  const successTemplates=[
+    `En las sombras de ${targetCiv}, ${spyName} logró ${missionText[mission]||mission}. Nadie vio nada. Nadie supo nada. ${context}`,
+    `${spyName} entró en ${targetCiv} como un fantasma y salió con lo que nadie debería haber podido obtener. ${context}`,
+    `La misión de ${spyName} en ${targetCiv} fue perfecta. Demasiado perfecta para ser olvidada. ${context}`,
+  ];
+  return _rndOf(successTemplates);
 }
 
 function _narrateTrade(civA, civB, good, context=''){
-  return `Las caravanas de ${civA} y ${civB} comenzaron a cruzar las tierras cargadas de ${good}. El comercio floreció y con él, la prosperidad de ambos pueblos. ${context}`;
+  const templates=[
+    `Las caravanas de ${civA} y ${civB} comenzaron a cruzar las tierras cargadas de ${good}. El comercio floreció y con él, la prosperidad de ambos pueblos. ${context}`,
+    `${good} fue el puente que unió a ${civA} y ${civB}. Lo que empezó como intercambio se convirtió en amistad. ${context}`,
+    `Los mercaderes de ${civA} llegaron a ${civB} con ${good} y se fueron con algo más valioso: confianza. ${context}`,
+    `Cuando ${civA} y ${civB} abrieron sus rutas comerciales, el ${good} fue solo el comienzo. ${context} El mundo se hizo un poco más pequeño ese día.`,
+  ];
+  return _rndOf(templates);
 }
 
 // Public API — called from features.js and humans.js

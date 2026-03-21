@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════════════════════════════════════
 // FEATURES.JS — 15 nuevas mecánicas de profundidad para la simulación
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1791,8 +1791,20 @@ function tickGlobalClimate(yearsElapsed) {
 // Dan bonus de conocimiento militar a quienes los visiten.
 // Generan crónicas épicas con nombres de la batalla.
 const _battlefields = []; // {tx,ty,name,year,civA,civB,casualties,knowledgeBonus}
-const BATTLE_PREFIXES = ['Batalla de','Masacre de','Asedio de','Combate de','Carnicería de'];
-const BATTLE_PLACES = ['las Llanuras','el Valle','la Colina','el Río','los Bosques','la Costa','las Ruinas','el Paso','la Fortaleza'];
+const BATTLE_PREFIXES = ['Batalla de','Masacre de','Asedio de','Combate de','Carnicería de','Matanza de','Choque de','Confrontación de'];
+const BATTLE_PLACES = ['las Llanuras','el Valle','la Colina','el Río','los Bosques','la Costa','las Ruinas','el Paso','la Fortaleza','el Pantano','las Dunas','la Cima','el Desfiladero','el Puente','los Campos'];
+
+const _BATTLE_BODIES = [
+  (place, civA, civB, casualties) => `El suelo de ${place.toLowerCase()} quedó empapado de sangre. ${casualties} guerreros cayeron en el enfrentamiento entre ${civA} y ${civB}. Los cuervos sobrevolaron durante días. Quienes sobrevivieron nunca olvidaron lo que vieron.`,
+  (place, civA, civB, casualties) => `${civA} y ${civB} se encontraron en ${place.toLowerCase()} y ninguno quiso ceder. ${casualties} combatientes pagaron con su vida la terquedad de sus líderes. El lugar quedó marcado para siempre.`,
+  (place, civA, civB, casualties) => `Nadie recuerda quién atacó primero en ${place.toLowerCase()}. Lo que sí recuerdan es el resultado: ${casualties} muertos y dos pueblos que se odiarían durante generaciones. ${civA} y ${civB} escribieron ese día una página oscura de la historia.`,
+  (place, civA, civB, casualties) => `Los generales de ${civA} prometieron victoria rápida en ${place.toLowerCase()}. Los de ${civB} prometieron lo mismo. Ambos mintieron. ${casualties} soldados murieron en lo que se convirtió en una de las batallas más cruentas de la era.`,
+  (place, civA, civB, casualties) => `${place} fue el escenario elegido por el destino para que ${civA} y ${civB} resolvieran sus diferencias a punta de espada. ${casualties} almas se perdieron. Las diferencias siguieron sin resolverse.`,
+  (place, civA, civB, casualties) => `La batalla de ${place.toLowerCase()} duró días. ${civA} contra ${civB}, sin cuartel ni piedad. Cuando el polvo se asentó, ${casualties} cuerpos yacían en el campo. Los supervivientes miraron el horizonte preguntándose para qué había servido todo aquello.`,
+  (place, civA, civB, casualties) => `En ${place.toLowerCase()}, los ejércitos de ${civA} y ${civB} chocaron con una violencia que dejó sin palabras a los testigos. ${casualties} guerreros cayeron. El campo de batalla se convirtió en lugar de peregrinación para los que buscaban entender el precio de la guerra.`,
+  (place, civA, civB, casualties) => `Los estrategas de ${civA} eligieron ${place.toLowerCase()} por sus ventajas tácticas. Los de ${civB} llegaron de todas formas. ${casualties} muertos después, ninguno de los dos bandos podía reclamar una victoria clara.`,
+];
+
 let _battlefieldTimer = 0;
 function tickBattlefieldLegacy(yearsElapsed) {
   _battlefieldTimer += yearsElapsed;
@@ -1822,11 +1834,28 @@ function tickBattlefieldLegacy(yearsElapsed) {
     const civIds = [...zone.civIds];
     const civA = civilizations.get(civIds[0]);
     const civB = civilizations.get(civIds[1] || civIds[0]);
+    const civAName = civA?.name || '?';
+    const civBName = civB?.name || '?';
     const casualties = zone.count;
     const knowledgeBonus = 30 + casualties * 5;
-    _battlefields.push({ tx: zone.tx, ty: zone.ty, name: battleName, year, civA: civA?.name || '?', civB: civB?.name || '?', casualties, knowledgeBonus });
-    addMajorEvent(`⚔️ La ${battleName} quedará en la historia — ${casualties} combatientes, ${civA?.name || '?'} vs ${civB?.name || '?'}`);
-    addChronicle('war', battleName, `El suelo de ${place.toLowerCase()} quedó empapado de sangre. ${casualties} guerreros cayeron en la ${battleName}. Los cuervos sobrevolaron durante días. Quienes sobrevivieron nunca olvidaron lo que vieron. El lugar se convirtió en símbolo de lo que la guerra realmente es.`, '⚔️');
+
+    // Pick a war reason if these civs are at war
+    let warReason = '';
+    if (civA && civB) {
+      const warData = civA.atWarWith?.get(civB.id);
+      if (warData) {
+        const reasons = typeof WAR_REASONS !== 'undefined' ? WAR_REASONS : [];
+        if (reasons.length > 0) warReason = reasons[Math.floor(rng() * reasons.length)];
+      }
+    }
+
+    _battlefields.push({ tx: zone.tx, ty: zone.ty, name: battleName, year, civA: civAName, civB: civBName, casualties, knowledgeBonus });
+    addMajorEvent(`⚔️ La ${battleName} quedará en la historia — ${casualties} combatientes, ${civAName} vs ${civBName}`);
+
+    // Pick a varied battle body
+    const bodyFn = _BATTLE_BODIES[Math.floor(rng() * _BATTLE_BODIES.length)];
+    const body = bodyFn(place, civAName, civBName, casualties) + (warReason ? ` ${warReason}` : '');
+    addChronicle('war', battleName, body, '⚔️');
   }
   // Bonus de conocimiento militar a humanos que visiten campos de batalla
   for (const h of _cachedAlive) {
@@ -2784,9 +2813,390 @@ const _RANDOM_CHRONICLE_POOL = [
       ['el molino de agua', 'El río empezó a trabajar para ellos.'],
       ['el calendario lunar', 'Las estaciones dejaron de ser una sorpresa.'],
       ['el horno de fundición', 'El metal obedeció a sus manos por primera vez.'],
+      ['el arado de hierro', 'Los campos rindieron el doble desde ese año.'],
+      ['el barco de vela', 'El horizonte dejó de ser un límite.'],
+      ['el sistema de irrigación', 'El desierto empezó a florecer.'],
+      ['la pólvora', 'El sonido del trueno ya no era solo del cielo.'],
     ];
     const inv = INVENTIONS[Math.floor(Math.random() * INVENTIONS.length)];
     addChronicle('science', `${civ.name} inventa ${inv[0]}`, `Un artesano anónimo de ${civ.name} cambió el mundo sin saberlo. ${inv[1]} El inventor nunca supo que su nombre sería olvidado, pero su obra no.`, '💡');
+    return true;
+  },
+  (civs) => {
+    // Huérfano que se convierte en líder
+    const civ = civs.find(c => c.population >= 8);
+    if (!civ) return false;
+    const ORPHAN_STORIES = [
+      `Nadie recordaba el nombre de sus padres. Creció entre las ruinas de una aldea quemada, aprendiendo solo lo que la necesidad le enseñó. Años después, ese niño sin nombre gobernaba ${civ.name} con mano firme y corazón templado.`,
+      `Lo encontraron en el umbral de un templo, envuelto en tela de saco. Los sacerdotes lo criaron. El pueblo lo siguió. ${civ.name} nunca tuvo un líder más querido.`,
+      `Huérfano de guerra, aprendiz de herrero, soldado por necesidad. Nadie apostaba por él. Todos se equivocaron. ${civ.name} lo recuerda como el que cambió todo.`,
+    ];
+    addChronicle('culture', `El huérfano de ${civ.name}`, ORPHAN_STORIES[Math.floor(Math.random() * ORPHAN_STORIES.length)], '🧒');
+    return true;
+  },
+  (civs) => {
+    // Anciano sabio — legado de conocimiento
+    const civ = civs.find(c => c.population >= 6 && (c.avgKnowledge || 0) >= 100);
+    if (!civ) return false;
+    const ELDER_STORIES = [
+      `Vivió más de ochenta inviernos. Vio nacer y morir a tres generaciones de líderes. Cuando por fin cerró los ojos, ${civ.name} guardó silencio durante tres días. Sus palabras, grabadas en piedra, guiaron a su pueblo durante siglos.`,
+      `Los jóvenes de ${civ.name} acudían a su cabaña con preguntas. Él respondía con más preguntas. Decían que era molesto. Decían también que era el más sabio que habían conocido.`,
+      `No tenía título ni rango. Solo tenía memoria. Y en ${civ.name}, la memoria valía más que el oro.`,
+    ];
+    addChronicle('culture', `El anciano de ${civ.name}`, ELDER_STORIES[Math.floor(Math.random() * ELDER_STORIES.length)], '🧓');
+    return true;
+  },
+  (civs) => {
+    // Inundación devastadora
+    const civ = civs.find(c => c.population >= 8);
+    if (!civ) return false;
+    const FLOOD_STORIES = [
+      `Las lluvias no pararon durante cuarenta días. Los ríos se desbordaron y se tragaron los campos de ${civ.name}. Los que sobrevivieron reconstruyeron sobre el barro. Los que no, fueron recordados en canciones.`,
+      `El río que daba vida a ${civ.name} se convirtió en su verdugo. En una sola noche, el agua borró lo que tardó décadas en construirse. Pero ${civ.name} no desapareció. Solo cambió de forma.`,
+      `Nadie creyó a los que dijeron que el agua subiría. Cuando lo hizo, ya era tarde para salvar los graneros. ${civ.name} pasó hambre ese invierno, pero aprendió a escuchar a los viejos.`,
+    ];
+    addChronicle('disaster', `La gran inundación de ${civ.name}`, FLOOD_STORIES[Math.floor(Math.random() * FLOOD_STORIES.length)], '🌊');
+    return true;
+  },
+  (civs) => {
+    // Plaga de langostas — hambre narrativa
+    const civ = civs.find(c => c.population >= 10);
+    if (!civ) return false;
+    const LOCUST_STORIES = [
+      `El cielo se oscureció antes de que nadie entendiera qué pasaba. Cuando las langostas se fueron, los campos de ${civ.name} eran tierra pelada. El hambre llegó puntual, como siempre.`,
+      `Los agricultores de ${civ.name} miraron impotentes cómo su trabajo de un año desaparecía en horas. Las langostas no distinguen entre ricos y pobres. Eso, al menos, era justo.`,
+    ];
+    addChronicle('disaster', `La plaga de langostas en ${civ.name}`, LOCUST_STORIES[Math.floor(Math.random() * LOCUST_STORIES.length)], '🦗');
+    return true;
+  },
+  (civs) => {
+    // Boom comercial entre dos civs aliadas
+    const allied = civs.filter(c => c.allies.size > 0);
+    if (allied.length === 0) return false;
+    const civA = allied[Math.floor(Math.random() * allied.length)];
+    const allyId = [...civA.allies][0];
+    const civB = civilizations.get(allyId);
+    if (!civB) return false;
+    const TRADE_STORIES = [
+      `Las caravanas entre ${civA.name} y ${civB.name} se hicieron tan frecuentes que los caminos se convirtieron en carreteras. El intercambio de bienes trajo también el intercambio de ideas. Ambos pueblos salieron ganando.`,
+      `${civA.name} tenía lo que ${civB.name} necesitaba. ${civB.name} tenía lo que ${civA.name} deseaba. Así nació una de las rutas comerciales más prósperas de la historia.`,
+      `Los mercaderes de ${civA.name} y ${civB.name} aprendieron a hablar la lengua del otro. Primero por necesidad. Luego por amistad. El comercio hizo lo que los diplomáticos no pudieron.`,
+    ];
+    addChronicle('culture', `Ruta comercial: ${civA.name} y ${civB.name}`, TRADE_STORIES[Math.floor(Math.random() * TRADE_STORIES.length)], '🛒');
+    return true;
+  },
+  (civs) => {
+    // Intercambio cultural entre civs aliadas
+    const allied = civs.filter(c => c.allies.size > 0 && (c.avgKnowledge || 0) >= 150);
+    if (allied.length === 0) return false;
+    const civA = allied[Math.floor(Math.random() * allied.length)];
+    const allyId = [...civA.allies][0];
+    const civB = civilizations.get(allyId);
+    if (!civB) return false;
+    addChronicle('culture', `Intercambio cultural: ${civA.name} y ${civB.name}`,
+      `Los artistas de ${civA.name} viajaron a ${civB.name}. Los filósofos de ${civB.name} visitaron ${civA.name}. Lo que volvió con ellos no era lo mismo que se fue. La cultura, como el agua, siempre encuentra la forma de mezclarse.`, '🎭');
+    return true;
+  },
+  (civs) => {
+    // Logro arquitectónico — civ con muchas estructuras
+    const civ = civs.find(c => c.structureCount >= 5 && c.population >= 8);
+    if (!civ) return false;
+    const ARCH_STORIES = [
+      `Las construcciones de ${civ.name} empezaron a verse desde lejos. Viajeros de otras tierras hacían desvíos solo para contemplarlas. La arquitectura se convirtió en el idioma con el que ${civ.name} le hablaba al mundo.`,
+      `Generación tras generación, ${civ.name} construyó sobre lo que sus antepasados dejaron. El resultado era una ciudad que parecía haber crecido sola, como un árbol que no pide permiso.`,
+      `Los ingenieros de ${civ.name} resolvieron problemas que otros ni siquiera habían identificado. Sus puentes, sus muros, sus templos — todo hablaba de un pueblo que pensaba en el futuro.`,
+    ];
+    addChronicle('culture', `Las grandes obras de ${civ.name}`, ARCH_STORIES[Math.floor(Math.random() * ARCH_STORIES.length)], '🏛️');
+    return true;
+  },
+  (civs) => {
+    // Derrota militar — civ que perdió una guerra
+    const defeated = civs.filter(c => c.enemies.size > 0 && c.population >= 5);
+    if (defeated.length === 0) return false;
+    const civ = defeated[Math.floor(Math.random() * defeated.length)];
+    const DEFEAT_STORIES = [
+      `Los ejércitos de ${civ.name} regresaron sin victorias. La derrota no los destruyó, pero los cambió. A veces perder es la única forma de aprender lo que realmente importa.`,
+      `${civ.name} sufrió una derrota que nadie esperaba. Los generales culparon al clima. Los soldados culparon a los generales. El pueblo culpó a todos. La verdad, como siempre, era más complicada.`,
+      `La retirada de ${civ.name} fue ordenada, pero humillante. Cedieron territorio. Cedieron orgullo. Pero no cedieron su voluntad de volver más fuertes.`,
+    ];
+    addChronicle('war', `La derrota de ${civ.name}`, DEFEAT_STORIES[Math.floor(Math.random() * DEFEAT_STORIES.length)], '🏳️');
+    return true;
+  },
+  (civs) => {
+    // Traición diplomática
+    const civ = civs.find(c => c.allies.size > 0 && c.enemies.size > 0);
+    if (!civ) return false;
+    const BETRAYAL_STORIES = [
+      `${civ.name} descubrió que su aliado más cercano había estado negociando con sus enemigos. La traición no tiene precio, pero siempre tiene consecuencias.`,
+      `El tratado fue firmado con sonrisas. Roto con cuchillos. ${civ.name} aprendió que la diplomacia sin confianza es solo teatro.`,
+      `Los espías de ${civ.name} trajeron la noticia antes de que fuera demasiado tarde. Apenas. La alianza que parecía eterna duró lo que duran todas las alianzas: hasta que dejó de ser conveniente.`,
+    ];
+    addChronicle('war', `La traición que sacudió a ${civ.name}`, BETRAYAL_STORIES[Math.floor(Math.random() * BETRAYAL_STORIES.length)], '🗡️');
+    return true;
+  },
+  (civs) => {
+    // Conversión religiosa masiva
+    const civ = civs.find(c => c.population >= 10 && (c.avgKnowledge || 0) >= 80);
+    if (!civ) return false;
+    const RELIGION_STORIES = [
+      `Un predicador llegó a ${civ.name} sin nada más que palabras. Cuando se fue, la mitad del pueblo había cambiado de fe. Los sacerdotes antiguos no lo perdonaron. El pueblo no los escuchó.`,
+      `La nueva fe llegó a ${civ.name} por las rutas comerciales, escondida entre las especias y las telas. Se extendió en susurros antes de que nadie pudiera detenerla.`,
+      `${civ.name} no abandonó sus dioses de golpe. Los fue mezclando con los nuevos, poco a poco, hasta que nadie recordaba dónde terminaba uno y empezaba el otro.`,
+    ];
+    addChronicle('culture', `La nueva fe en ${civ.name}`, RELIGION_STORIES[Math.floor(Math.random() * RELIGION_STORIES.length)], '🙏');
+    return true;
+  },
+  (civs) => {
+    // Descubrimiento accidental — tecnología por error
+    const civ = civs.find(c => (c.avgKnowledge || 0) >= 300 && c.population >= 6);
+    if (!civ) return false;
+    const ACCIDENTS = [
+      [`el vidrio`, `Un alfarero de ${civ.name} dejó arena en el horno equivocado. Lo que salió no era cerámica. Era transparente, frágil y hermoso. Tardaron años en entender qué habían hecho. Tardaron décadas en dominarlo.`],
+      [`la fermentación`, `Alguien en ${civ.name} olvidó un cuenco de fruta durante demasiado tiempo. Lo que encontró al volver no era lo que esperaba. Era mejor. Mucho mejor.`],
+      [`el papel`, `Intentaban hacer tela. Hicieron algo más fino, más ligero, más útil. ${civ.name} no lo llamó error. Lo llamó progreso.`],
+      [`el jabón`, `La grasa y la ceniza se mezclaron por accidente en las cocinas de ${civ.name}. El resultado olía mal pero limpiaba bien. La higiene nunca volvió a ser lo mismo.`],
+      [`los antibióticos naturales`, `Un curandero de ${civ.name} notó que el moho en el pan viejo curaba heridas infectadas. Sus colegas se rieron. Sus pacientes sobrevivieron.`],
+    ];
+    const acc = ACCIDENTS[Math.floor(Math.random() * ACCIDENTS.length)];
+    addChronicle('science', `${civ.name} descubre ${acc[0]} por accidente`, acc[1], '🔬');
+    return true;
+  },
+  (civs) => {
+    // Boom de población — celebración
+    const civ = civs.find(c => c.population >= 20);
+    if (!civ) return false;
+    const POP_STORIES = [
+      `${civ.name} celebró el nacimiento de su milésimo ciudadano con tres días de fiesta. Los ancianos decían que nunca habían visto tanta gente. Los jóvenes decían que era solo el principio.`,
+      `Las calles de ${civ.name} se llenaron de voces nuevas. Niños que corrían donde antes había silencio. El crecimiento no era solo en números — era en ruido, en vida, en futuro.`,
+      `Los registros de ${civ.name} mostraban algo que nadie había visto antes: más nacimientos que muertes durante diez años seguidos. El pueblo florecía.`,
+    ];
+    addChronicle('culture', `${civ.name} florece`, POP_STORIES[Math.floor(Math.random() * POP_STORIES.length)], '👶');
+    return true;
+  },
+  (civs) => {
+    // Aniversario de civilización — civ antigua
+    const civ = civs.find(c => c.population >= 5 && (c.avgKnowledge || 0) >= 500);
+    if (!civ) return false;
+    const ANNIV_STORIES = [
+      `${civ.name} lleva generaciones en pie. Otros pueblos nacieron y murieron mientras ellos seguían construyendo. No es suerte. Es memoria colectiva, transmitida de padres a hijos sin interrupciones.`,
+      `Los historiadores de ${civ.name} llenaron bibliotecas enteras con su propia historia. Guerras, paces, hambrunas, glorias — todo estaba escrito. Todo sería recordado.`,
+      `Cuando otros preguntaban el secreto de la longevidad de ${civ.name}, los ancianos respondían lo mismo: "Nunca olvidamos de dónde venimos."`,
+    ];
+    addChronicle('culture', `La permanencia de ${civ.name}`, ANNIV_STORIES[Math.floor(Math.random() * ANNIV_STORIES.length)], '🏆');
+    return true;
+  },
+  (civs) => {
+    // Explorador que descubre nuevas tierras
+    const civ = civs.find(c => c.population >= 8 && (c.avgKnowledge || 0) >= 120);
+    if (!civ) return false;
+    const EXPLORER_STORIES = [
+      `Un explorador de ${civ.name} partió hacia el este con tres compañeros y volvió solo, pero con mapas que nadie había dibujado antes. No habló de lo que perdió. Solo habló de lo que encontró.`,
+      `Los exploradores de ${civ.name} cruzaron la montaña que todos decían que era infranqueable. Al otro lado encontraron un valle verde, ríos limpios y ningún enemigo. Por ahora.`,
+      `La expedición de ${civ.name} tardó dos años en volver. Cuando lo hizo, nadie los reconoció. Ellos tampoco reconocieron su hogar. Ambos habían cambiado demasiado.`,
+    ];
+    addChronicle('culture', `Los exploradores de ${civ.name}`, EXPLORER_STORIES[Math.floor(Math.random() * EXPLORER_STORIES.length)], '🧭');
+    return true;
+  },
+  (civs) => {
+    // Obra maestra artesanal
+    const civ = civs.find(c => c.population >= 6 && (c.avgKnowledge || 0) >= 80);
+    if (!civ) return false;
+    const CRAFT_STORIES = [
+      `Un tejedor de ${civ.name} pasó veinte años perfeccionando una técnica que nadie más podía imitar. Su obra fue copiada, admirada y nunca igualada. Murió sabiendo que había hecho algo único.`,
+      `La espada forjada por el maestro herrero de ${civ.name} pasó de mano en mano durante generaciones. Cada dueño añadió su historia a la hoja. Ninguno la manchó de deshonor.`,
+      `El mural que pintó una artista de ${civ.name} en la pared del templo sobrevivió a guerras, terremotos y el paso del tiempo. Siglos después, la gente seguía deteniéndose a mirarlo.`,
+    ];
+    addChronicle('culture', `La obra maestra de ${civ.name}`, CRAFT_STORIES[Math.floor(Math.random() * CRAFT_STORIES.length)], '🎨');
+    return true;
+  },
+  (civs) => {
+    // Movimiento filosófico
+    const civ = civs.find(c => (c.avgKnowledge || 0) >= 400 && c.population >= 8);
+    if (!civ) return false;
+    const PHILO_STORIES = [
+      `Un grupo de pensadores en ${civ.name} empezó a hacer preguntas que nadie quería responder: ¿Por qué obedecemos? ¿Quién decide lo que es justo? ¿Qué le debemos a los que vendrán después? Las respuestas tardaron generaciones. Las preguntas cambiaron todo.`,
+      `La escuela de pensamiento que nació en ${civ.name} no tenía nombre al principio. Solo tenía ideas. Y las ideas, bien sembradas, crecen solas.`,
+      `Los filósofos de ${civ.name} fueron ignorados, luego ridiculizados, luego perseguidos. Finalmente, fueron citados por los mismos que los persiguieron. Así funciona la historia del pensamiento.`,
+    ];
+    addChronicle('science', `El pensamiento de ${civ.name}`, PHILO_STORIES[Math.floor(Math.random() * PHILO_STORIES.length)], '📜');
+    return true;
+  },
+  (civs) => {
+    // Bandidos / crimen organizado
+    const civ = civs.find(c => c.population >= 12 && c.enemies.size > 0);
+    if (!civ) return false;
+    const BANDIT_STORIES = [
+      `Las rutas comerciales de ${civ.name} se volvieron peligrosas. Los bandidos no eran extranjeros — eran ciudadanos que habían perdido demasiado y no tenían nada que perder. El problema no era la seguridad. Era la justicia.`,
+      `Un grupo de forajidos operaba desde las colinas al norte de ${civ.name}. Robaban a los ricos, decían. Los ricos decían otra cosa. La verdad, como siempre, dependía de quién la contaba.`,
+      `${civ.name} ofreció amnistía a los bandidos que depusieran las armas. Algunos aceptaron. Otros prefirieron la libertad peligrosa a la seguridad encadenada.`,
+    ];
+    addChronicle('war', `Los forajidos de ${civ.name}`, BANDIT_STORIES[Math.floor(Math.random() * BANDIT_STORIES.length)], '🗡️');
+    return true;
+  },
+  (civs) => {
+    // Avance médico / curación
+    const civ = civs.find(c => (c.avgKnowledge || 0) >= 250 && c.population >= 6);
+    if (!civ) return false;
+    const MEDICINE_STORIES = [
+      `Los curanderos de ${civ.name} desarrollaron un tratamiento para la fiebre que mató a miles el año anterior. No lo llamaron medicina. Lo llamaron sentido común. Funcionó igual.`,
+      `Una herborista de ${civ.name} catalogó cien plantas y sus usos. Su libro fue copiado a mano durante generaciones. Salvó más vidas que cualquier ejército.`,
+      `${civ.name} aprendió a hervir el agua antes de beberla. Parecía obvio. No lo era. La mortalidad infantil cayó a la mitad en una generación.`,
+    ];
+    addChronicle('science', `Medicina en ${civ.name}`, MEDICINE_STORIES[Math.floor(Math.random() * MEDICINE_STORIES.length)], '⚕️');
+    return true;
+  },
+  (civs) => {
+    // Innovación agrícola
+    const civ = civs.find(c => {
+      const types = _civStructureTypes.get(c.id);
+      return types && types.has('granary') && c.population >= 8;
+    });
+    if (!civ) return false;
+    const AGRI_STORIES = [
+      `Los agricultores de ${civ.name} descubrieron que rotar los cultivos mantenía la tierra fértil. Sus vecinos los miraron con escepticismo. Diez años después, los imitaban.`,
+      `${civ.name} construyó terrazas en las laderas que nadie creía cultivables. Fue trabajo de décadas. El resultado alimentó a generaciones.`,
+      `Un agricultor de ${civ.name} cruzó dos variedades de trigo por curiosidad. La nueva variedad resistía la sequía y rendía el doble. Lo llamaron suerte. Era ciencia.`,
+    ];
+    addChronicle('science', `Innovación agrícola en ${civ.name}`, AGRI_STORIES[Math.floor(Math.random() * AGRI_STORIES.length)], '🌾');
+    return true;
+  },
+  (civs) => {
+    // Maravilla natural descubierta
+    const civ = civs.find(c => c.population >= 6);
+    if (!civ) return false;
+    const WONDER_STORIES = [
+      `Los exploradores de ${civ.name} encontraron una cascada tan alta que el agua se convertía en niebla antes de llegar al suelo. La llamaron "el velo del cielo". Nadie discutió el nombre.`,
+      `En las profundidades del bosque al este de ${civ.name}, los cazadores encontraron una cueva cuyas paredes brillaban en la oscuridad. Los sacerdotes dijeron que era sagrada. Los científicos dijeron que era mineral. Ambos tenían razón.`,
+      `${civ.name} descubrió un lago de aguas tan claras que podías ver el fondo a veinte metros de profundidad. Lo protegieron como si fuera un tesoro. Lo era.`,
+    ];
+    addChronicle('culture', `Maravilla natural de ${civ.name}`, WONDER_STORIES[Math.floor(Math.random() * WONDER_STORIES.length)], '🌋');
+    return true;
+  },
+  (civs) => {
+    // Rebelión interna sofocada
+    const civ = civs.find(c => c.population >= 15 && (c.avgKnowledge || 0) >= 100);
+    if (!civ) return false;
+    const REBEL_STORIES = [
+      `Los campesinos de ${civ.name} se hartaron. No fue de golpe — fue una acumulación de años de injusticia, impuestos y silencio forzado. Cuando hablaron, lo hicieron con fuego. El líder escuchó. Tarde, pero escuchó.`,
+      `La rebelión en ${civ.name} duró tres semanas. No ganó. Pero tampoco perdió del todo — las reformas que siguieron llevaban la huella de los que se atrevieron a levantarse.`,
+      `${civ.name} sofocó la revuelta con rapidez. Lo que no pudo sofocar fueron las ideas que la habían provocado. Esas siguieron circulando, en susurros, durante generaciones.`,
+    ];
+    addChronicle('war', `La rebelión en ${civ.name}`, REBEL_STORIES[Math.floor(Math.random() * REBEL_STORIES.length)], '✊');
+    return true;
+  },
+  (civs) => {
+    // Hambruna y recuperación
+    const civ = civs.find(c => c.population >= 10);
+    if (!civ) return false;
+    const FAMINE_STORIES = [
+      `${civ.name} enterró a sus muertos en silencio. La hambruna no distinguió entre nobles y plebeyos — el hambre es el gran igualador. Los que sobrevivieron juraron que nunca volverían a depender de una sola cosecha.`,
+      `Tres años de malas cosechas pusieron a ${civ.name} de rodillas. El cuarto año, la lluvia volvió. La gente salió a los campos a llorar de alivio. Algunos lloraban por los que no llegaron a ver ese día.`,
+      `La hambruna en ${civ.name} fue tan severa que la gente comió corteza de árbol. Los que lo vivieron no hablaban de ello. Los que lo escucharon no lo olvidaron.`,
+    ];
+    addChronicle('disaster', `La hambruna de ${civ.name}`, FAMINE_STORIES[Math.floor(Math.random() * FAMINE_STORIES.length)], '🌵');
+    return true;
+  },
+  (civs) => {
+    // Espía descubierto — tensión diplomática
+    const civ = civs.find(c => c.enemies.size > 0 && c.population >= 6);
+    if (!civ) return false;
+    const SPY_STORIES = [
+      `Los guardias de ${civ.name} capturaron a un espía en el corazón de la ciudad. Lo que llevaba consigo era suficiente para iniciar una guerra. O para evitarla. Dependía de quién lo leyera primero.`,
+      `El espía de ${civ.name} operó durante años sin ser detectado. Cuando cayó, no fue por un error — fue por una traición. Alguien lo vendió. Nadie supo quién.`,
+      `${civ.name} descubrió que su propio consejero era un informante enemigo. La traición desde dentro siempre duele más. Siempre.`,
+    ];
+    addChronicle('war', `El espía de ${civ.name}`, SPY_STORIES[Math.floor(Math.random() * SPY_STORIES.length)], '🕵️');
+    return true;
+  },
+  (civs) => {
+    // Niño prodigio que cambia su civilización
+    const civ = civs.find(c => c.population >= 6 && (c.avgKnowledge || 0) >= 150);
+    if (!civ) return false;
+    const PRODIGY_STORIES = [
+      `A los doce años, el niño ya resolvía problemas que los maestros de ${civ.name} no podían. A los veinte, había reescrito lo que su pueblo sabía sobre las estrellas. A los treinta, era una leyenda. A los cuarenta, era una institución.`,
+      `Nadie en ${civ.name} entendía cómo una niña de esa edad podía saber lo que sabía. Sus padres eran agricultores. Sus maestros eran mediocres. Ella era otra cosa.`,
+      `El joven prodigio de ${civ.name} no tenía paciencia para las reglas. Las rompía todas. Y cada vez que lo hacía, descubría algo nuevo. Sus maestros aprendieron a dejarle espacio.`,
+    ];
+    addChronicle('science', `El prodigio de ${civ.name}`, PRODIGY_STORIES[Math.floor(Math.random() * PRODIGY_STORIES.length)], '🌟');
+    return true;
+  },
+  (civs) => {
+    // Ciclo de venganza entre civs enemigas
+    const warCivs = civs.filter(c => c.enemies.size > 0 && c.population >= 5);
+    if (warCivs.length === 0) return false;
+    const civA = warCivs[Math.floor(Math.random() * warCivs.length)];
+    const enemyId = [...civA.enemies][0];
+    const civB = civilizations.get(enemyId);
+    if (!civB) return false;
+    const REVENGE_STORIES = [
+      `${civA.name} atacó. ${civB.name} respondió. ${civA.name} contraatacó. Nadie recordaba ya quién había empezado. Solo sabían que no podían parar.`,
+      `Cada ataque de ${civA.name} generaba una represalia de ${civB.name}. Cada represalia justificaba el siguiente ataque. El ciclo llevaba décadas girando y nadie sabía cómo romperlo.`,
+      `Los historiadores de ambos pueblos escribían la misma guerra desde perspectivas opuestas. En ambas versiones, el otro era el agresor. En ambas versiones, tenían razón.`,
+    ];
+    addChronicle('war', `El ciclo de venganza: ${civA.name} y ${civB.name}`, REVENGE_STORIES[Math.floor(Math.random() * REVENGE_STORIES.length)], '🔄');
+    return true;
+  },
+  (civs) => {
+    // Movimiento de reforma social
+    const civ = civs.find(c => c.population >= 12 && (c.avgKnowledge || 0) >= 200);
+    if (!civ) return false;
+    const REFORM_STORIES = [
+      `Un grupo de ciudadanos de ${civ.name} presentó al consejo una lista de reformas. Pedían menos impuestos, más derechos, mejor justicia. El consejo los ignoró el primer año. El segundo año, los escuchó. El tercero, cedió.`,
+      `La reforma llegó a ${civ.name} sin violencia, lo cual era inusual. Alguien convenció a los poderosos de que era mejor ceder un poco que perderlo todo. Fue un milagro de la diplomacia.`,
+      `${civ.name} cambió sus leyes por primera vez en generaciones. No todos estaban contentos. Pero más gente tenía voz que antes. Eso era suficiente para empezar.`,
+    ];
+    addChronicle('culture', `La reforma de ${civ.name}`, REFORM_STORIES[Math.floor(Math.random() * REFORM_STORIES.length)], '⚖️');
+    return true;
+  },
+  (civs) => {
+    // Epidemia local superada
+    const civ = civs.find(c => c.population >= 8);
+    if (!civ) return false;
+    const EPIDEMIC_STORIES = [
+      `La enfermedad llegó a ${civ.name} con los mercaderes del sur. En semanas, un tercio de la población estaba en cama. Los curanderos trabajaron sin dormir. Algunos murieron también. Los que sobrevivieron eran más fuertes, o más afortunados. Nadie sabía cuál de las dos cosas.`,
+      `${civ.name} aisló a los enfermos antes de que nadie les dijera que debían hacerlo. El instinto de supervivencia es el médico más antiguo. Funcionó.`,
+      `La epidemia en ${civ.name} mató a los más débiles y a los más viejos. Los niños, curiosamente, sobrevivieron mejor. Nadie entendía por qué. Años después, alguien lo explicaría.`,
+    ];
+    addChronicle('disaster', `La epidemia de ${civ.name}`, EPIDEMIC_STORIES[Math.floor(Math.random() * EPIDEMIC_STORIES.length)], '🤒');
+    return true;
+  },
+  (civs) => {
+    // Líder carismático que unifica
+    const civ = civs.find(c => c.population >= 10 && c.allies.size > 0);
+    if (!civ) return false;
+    const LEADER_STORIES = [
+      `El nuevo líder de ${civ.name} no llegó al poder por herencia ni por fuerza. Llegó porque la gente lo seguía. Eso era más raro y más valioso que cualquier título.`,
+      `Bajo el liderazgo de ${civ.name}, pueblos que nunca habían cooperado encontraron razones para hacerlo. No era magia. Era escucha, paciencia y el arte de hacer que todos creyeran que la idea había sido suya.`,
+      `El líder de ${civ.name} tenía un don extraño: hacía que la gente se sintiera escuchada incluso cuando les decía que no. Eso, en política, vale más que el oro.`,
+    ];
+    addChronicle('culture', `El líder de ${civ.name}`, LEADER_STORIES[Math.floor(Math.random() * LEADER_STORIES.length)], '👑');
+    return true;
+  },
+  (civs) => {
+    // Colapso de una alianza
+    const civ = civs.find(c => c.allies.size > 0 && c.enemies.size > 0);
+    if (!civ) return false;
+    const allyId = [...civ.allies][0];
+    const ally = civilizations.get(allyId);
+    if (!ally) return false;
+    const COLLAPSE_STORIES = [
+      `La alianza entre ${civ.name} y ${ally.name} duró décadas. La rompió un malentendido que ninguno de los dos quiso aclarar a tiempo. Así terminan la mayoría de las alianzas: no con un grito, sino con un silencio.`,
+      `${civ.name} y ${ally.name} habían construido juntos más de lo que ninguno podría haber construido solo. Por eso dolió tanto cuando se separaron. Lo que se construye junto, al romperse, deja más escombros.`,
+      `Los historiadores debatirían durante generaciones quién tuvo la culpa. La respuesta honesta era: los dos. Y ninguno.`,
+    ];
+    addChronicle('war', `El fin de la alianza: ${civ.name} y ${ally.name}`, COLLAPSE_STORIES[Math.floor(Math.random() * COLLAPSE_STORIES.length)], '💔');
+    return true;
+  },
+  (civs) => {
+    // Festival o celebración cultural
+    const civ = civs.find(c => c.population >= 8 && (c.avgKnowledge || 0) >= 60);
+    if (!civ) return false;
+    const FESTIVAL_STORIES = [
+      `${civ.name} celebró su festival anual con más gente que nunca. Las hogueras se veían desde lejos. La música duró tres días. Por un momento, todos olvidaron sus problemas. Eso también es necesario.`,
+      `El festival de la cosecha en ${civ.name} era más que una celebración — era un recordatorio de que la comunidad era más fuerte que cualquier individuo. Todos traían algo. Todos se llevaban más.`,
+      `Los juegos anuales de ${civ.name} reunían a competidores de pueblos vecinos. Ganaban los más rápidos, los más fuertes, los más hábiles. Pero todos volvían a casa con algo que no tenían al llegar: respeto mutuo.`,
+    ];
+    addChronicle('culture', `El festival de ${civ.name}`, FESTIVAL_STORIES[Math.floor(Math.random() * FESTIVAL_STORIES.length)], '🎉');
     return true;
   },
 ];
