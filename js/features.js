@@ -949,6 +949,7 @@ function tickAllFeatures(yearsElapsed) {
   tickTourism(yearsElapsed);
   tickGlobalization(yearsElapsed);
   tickCivDiversity(yearsElapsed);
+  tickRandomChronicles(yearsElapsed);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2684,6 +2685,123 @@ const TREATY_TYPES = [
 ];
 
 let _diplomacyTimer = 0;
+
+// ── PRIMER CONTACTO entre civilizaciones ─────────────────────────────────────
+const _firstContacts = new Set(); // "civIdA-civIdB" pairs already recorded
+
+function _checkFirstContact(civA, civB) {
+  const key = civA.id < civB.id ? `${civA.id}-${civB.id}` : `${civB.id}-${civA.id}`;
+  if (_firstContacts.has(key)) return;
+  _firstContacts.add(key);
+  const CONTACT_STORIES = [
+    `Sus exploradores se encontraron en un paso de montaña. Ninguno hablaba la lengua del otro, pero ambos entendieron que el mundo era más grande de lo que creían.`,
+    `Un mercader perdido llegó a las puertas de una ciudad desconocida. Lo que siguió cambió la historia de dos pueblos para siempre.`,
+    `Los vigías de ${civA.name} vieron hogueras en el horizonte. No eran las suyas. Alguien más habitaba este mundo.`,
+    `Un náufrago de ${civB.name} fue rescatado por pescadores de ${civA.name}. Así comenzó todo.`,
+  ];
+  const story = CONTACT_STORIES[Math.floor(Math.random() * CONTACT_STORIES.length)];
+  addChronicle('culture', `Primer contacto: ${civA.name} y ${civB.name}`, story, '🤝');
+}
+
+// ── CRÓNICAS ALEATORIAS — eventos narrativos periódicos ───────────────────────
+let _randomChronicleTimer = 0;
+const _RANDOM_CHRONICLE_POOL = [
+  (civs) => {
+    // Prodigio anónimo — un humano ordinario hace algo extraordinario
+    const civ = civs[Math.floor(Math.random() * civs.length)];
+    if (!civ || civ.population < 5) return false;
+    const members = [...civ.members].map(id => _hById(id)).filter(h => h && h.alive && !h.isProdigy && !h.isLeader);
+    if (members.length === 0) return false;
+    const h = members[Math.floor(Math.random() * members.length)];
+    const deeds = [
+      `cruzó el desierto solo y regresó con mapas de tierras desconocidas`,
+      `curó a veinte enfermos durante el brote sin saber cómo lo hizo`,
+      `construyó un puente que nadie creía posible`,
+      `negoció la paz entre dos aldeas rivales con solo palabras`,
+      `descubrió una fuente de agua dulce que salvó a su pueblo del verano`,
+    ];
+    const deed = deeds[Math.floor(Math.random() * deeds.length)];
+    addChronicle('culture', `${h.name.split(' ')[0]}, el desconocido de ${civ.name}`, `Nadie esperaba nada de ${h.name.split(' ')[0]}. Pero un día, ${deed}. Los bardos lo cantaron. Los niños lo imitaron. A veces la historia la hacen los que nadie ve.`, '⭐');
+    return true;
+  },
+  (civs) => {
+    // Boom económico — civ con muchos mercados prospera
+    const civ = civs.find(c => {
+      const types = _civStructureTypes.get(c.id);
+      return types && types.has('market') && c.population >= 10;
+    });
+    if (!civ) return false;
+    addChronicle('culture', `Auge económico en ${civ.name}`, `Los mercados de ${civ.name} rebosaban de actividad. Las caravanas llegaban cargadas y partían vacías. La riqueza fluyó hacia todos los rincones de la civilización. Fue una época que los ancianos recordarían como "los años del oro".`, '💰');
+    return true;
+  },
+  (civs) => {
+    // Sequía narrativa — civ sin graneros sufre
+    const civ = civs.find(c => {
+      const types = _civStructureTypes.get(c.id);
+      return c.population >= 8 && (!types || !types.has('granary'));
+    });
+    if (!civ) return false;
+    addChronicle('disaster', `La gran sequía de ${civ.name}`, `El cielo no dio lluvia durante tres estaciones. Los ríos bajaron. Los campos se agrietaron. ${civ.name} aprendió de la manera más dura que la naturaleza no negocia.`, '☀️');
+    return true;
+  },
+  (civs) => {
+    // Migración masiva narrativa
+    const civ = civs.find(c => c.population >= 15);
+    if (!civ) return false;
+    const destinations = civs.filter(c => c.id !== civ.id && c.population >= 5);
+    if (destinations.length === 0) return false;
+    const dest = destinations[Math.floor(Math.random() * destinations.length)];
+    addChronicle('culture', `La gran migración de ${civ.name}`, `Cientos de personas abandonaron ${civ.name} en busca de mejores tierras. Algunos llegaron a ${dest.name}. Llevaban consigo sus costumbres, sus canciones y sus dioses. El mundo se mezcló un poco más.`, '🚶');
+    return true;
+  },
+  (civs) => {
+    // Rivalidad histórica — dos civs enemigas
+    const warCivs = civs.filter(c => c.enemies.size > 0);
+    if (warCivs.length === 0) return false;
+    const civA = warCivs[Math.floor(Math.random() * warCivs.length)];
+    const enemyId = [...civA.enemies][0];
+    const civB = civilizations.get(enemyId);
+    if (!civB) return false;
+    const RIVALRY_STORIES = [
+      `Generaciones de odio separan a estos dos pueblos. Nadie recuerda ya cómo empezó, pero todos saben que no terminará pronto.`,
+      `Cada vez que ${civA.name} construye, ${civB.name} destruye. Y viceversa. Es una danza de siglos.`,
+      `Los niños de ${civA.name} aprenden el nombre de ${civB.name} como sinónimo de peligro. Los de ${civB.name} hacen lo mismo.`,
+    ];
+    addChronicle('war', `La rivalidad entre ${civA.name} y ${civB.name}`, RIVALRY_STORIES[Math.floor(Math.random() * RIVALRY_STORIES.length)], '⚔️');
+    return true;
+  },
+  (civs) => {
+    // Inventor anónimo — civ con alta tecnología
+    const civ = civs.find(c => (c.avgKnowledge || 0) >= 200 && c.population >= 6);
+    if (!civ) return false;
+    const INVENTIONS = [
+      ['la rueda de alfarería', 'Las vasijas de barro nunca volvieron a ser las mismas.'],
+      ['el arco compuesto', 'La guerra cambió para siempre en ese momento.'],
+      ['el sistema de escritura', 'Por primera vez, la memoria no dependía de los vivos.'],
+      ['el molino de agua', 'El río empezó a trabajar para ellos.'],
+      ['el calendario lunar', 'Las estaciones dejaron de ser una sorpresa.'],
+      ['el horno de fundición', 'El metal obedeció a sus manos por primera vez.'],
+    ];
+    const inv = INVENTIONS[Math.floor(Math.random() * INVENTIONS.length)];
+    addChronicle('science', `${civ.name} inventa ${inv[0]}`, `Un artesano anónimo de ${civ.name} cambió el mundo sin saberlo. ${inv[1]} El inventor nunca supo que su nombre sería olvidado, pero su obra no.`, '💡');
+    return true;
+  },
+];
+
+function tickRandomChronicles(yearsElapsed) {
+  _randomChronicleTimer += yearsElapsed;
+  if (_randomChronicleTimer < 180) return; // roughly every 180 game-years
+  _randomChronicleTimer = 0;
+  if (Math.random() > 0.6) return; // 40% chance each interval
+  const civs = _fillCivBuf(3);
+  if (civs.length === 0) return;
+  // Shuffle pool and try until one fires
+  const pool = [..._RANDOM_CHRONICLE_POOL].sort(() => Math.random() - 0.5);
+  for (const fn of pool) {
+    try { if (fn(civs)) break; } catch(e) {}
+  }
+}
+
 function tickAdvancedDiplomacy(yearsElapsed) {
   _diplomacyTimer += yearsElapsed;
   if (_diplomacyTimer < 50) return;
@@ -2712,6 +2830,9 @@ function tickAdvancedDiplomacy(yearsElapsed) {
       );
       if (hasTreaty) continue;
       if (Math.random() > 0.12) continue;
+
+      // First contact chronicle
+      _checkFirstContact(civA, civB);
 
       const avgKB = _civAvgKnowledge(civB.id);
       const avgK = (avgKA + avgKB) / 2;

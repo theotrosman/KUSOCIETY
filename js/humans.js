@@ -358,9 +358,7 @@ function tickSeasons(yearsElapsed){
     _season=(_season+1)%4;
     _seasonName=SEASON_NAMES[_season];
     const icon=SEASON_ICONS[_season];
-    if(_season===3) addChronicle('disaster',`El invierno cae sobre el mundo`,`Las cosechas escasean y el frío muerde los huesos. Los más débiles buscan refugio. El mundo aguanta la respiración esperando la primavera.`,'❄️');
-    else if(_season===1) addChronicle('culture',`El verano trae abundancia`,`El calor del sol llena los graneros y alegra los corazones. Es tiempo de construir, de explorar, de vivir.`,'☀️');
-    else addWorldEvent(`${icon} Llega el ${_seasonName}`);
+    addWorldEvent(`${icon} Llega el ${_seasonName}`);
   }
 }
 
@@ -650,6 +648,15 @@ function _handleLeaderDeath(civ, deadLeader){
     if(h.parentIds&&(h.parentIds[0]===deadLeader.id||h.parentIds[1]===deadLeader.id)){
       if(!heir||h.knowledge>heir.knowledge)heir=h;
     }
+  }
+  // Chronicle for notable leader deaths
+  if(deadLeader.knowledge>500||deadLeader.kills>5||deadLeader.age>80){
+    const deeds=[];
+    if(deadLeader.kills>5) deeds.push(`guerrero temido con ${deadLeader.kills} victorias`);
+    if(deadLeader.knowledge>500) deeds.push(`sabio de conocimiento ${Math.floor(deadLeader.knowledge)}`);
+    if(deadLeader.age>80) deeds.push(`anciano de ${Math.floor(deadLeader.age)} años`);
+    const deedStr=deeds.join(', ');
+    addChronicle('culture',`Muere ${deadLeader.name.split(' ')[0]}, líder de ${civ.name}`,`${deadLeader.name}, ${deedStr}, cerró los ojos por última vez. ${civ.name} llora a su guía. El trono queda vacío y el futuro, incierto.`,'👑');
   }
   if(heir){
     const old=_hById(civ.leaderId);
@@ -1777,6 +1784,14 @@ class Human{
       enemy._warFlash=3;
       if(enemy.health<=0){
         this.kills++;
+        // Legendary warrior milestone
+        if(this.kills===10){
+          const civName=this.civId!=null?(civilizations.get(this.civId)?.name||'los sin nombre'):'los sin nombre';
+          addChronicle('war',`${this.name.split(' ')[0]}, el Implacable`,`Diez vidas segadas por una sola mano. ${this.name.split(' ')[0]}, guerrero de ${civName}, cruzó el umbral que separa al soldado de la leyenda. Los enemigos pronuncian su nombre en voz baja. Sus propios compañeros lo miran con una mezcla de admiración y miedo.`,'⚔️');
+        } else if(this.kills===25){
+          const civName=this.civId!=null?(civilizations.get(this.civId)?.name||'los sin nombre'):'los sin nombre';
+          addChronicle('war',`${this.name.split(' ')[0]}: 25 victorias en combate`,`Veinticinco enemigos caídos. ${this.name.split(' ')[0]} de ${civName} se ha convertido en una fuerza de la naturaleza. Los bardos ya cantan sus hazañas. Los niños imitan sus movimientos. Los enemigos rezan para no cruzarse en su camino.`,'🗡️');
+        }
         if(typeof registerCombat!=='undefined') registerCombat(enemy.tx,enemy.ty,true);
         enemy._die('combate');
       } else {
@@ -2608,6 +2623,12 @@ class Human{
       const civ=civilizations.get(this.civId);
       if(civ){
         civ.removeMember(this.id);
+        // Civ collapse chronicle — when a once-large civ falls to near zero
+        if(civ.population<=3&&civ.population>0&&civ._peakPop&&civ._peakPop>=20){
+          addChronicle('disaster',`El colapso de ${civ.name}`,`Lo que una vez fue un pueblo de ${civ._peakPop} almas se ha reducido a apenas ${civ.population}. ${civ.name} agoniza. Sus estructuras se vacían, sus calles enmudecen. La historia no perdona a los que no saben adaptarse.`,'💀');
+          civ._peakPop=0; // prevent repeat
+        }
+        if(civ._peakPop==null||civ.population>civ._peakPop) civ._peakPop=civ.population;
         if(civ.leaderId===this.id) _handleLeaderDeath(civ,this);
       }
     }
@@ -2616,6 +2637,7 @@ class Human{
     }
     if(this.isProdigy){
       addMajorEvent(`✨ ${this.name.split(' ')[0]} (${this.prodigyType?.icon||'✨'} ${this.prodigyType?.name||'Prodigio'}) murió a los ${Math.floor(this.age)} años — su legado perdura`);
+      addChronicle('wonder', `Muere ${this.name}, ${this.prodigyType?.name||'Prodigio'}`, `A los ${Math.floor(this.age)} años, ${this.name} cerró los ojos por última vez. Había llegado como una tormenta y se fue como el viento. ${this.kills>0?`${this.kills} enemigos cayeron ante él/ella. `:''}${this.children>0?`Dejó ${this.children} hijos. `:''}El mundo es un poco más oscuro sin ${this.prodigyType?.icon||'✨'} ${this.name.split(' ')[0]}.`, this.prodigyType?.icon||'✨');
     } else if(this.children>0||this.isLeader||this.kills>2){
       addWorldEvent(`💀 ${this.name.split(' ')[0]} murió de ${cause} (${Math.floor(this.age)}a, ${this.children} hijos, ${this.kills} victorias)`);
     }
@@ -2792,6 +2814,7 @@ function _checkCivSplits(){
     newCiv.enemies.add(civId);
     civ.enemies.add(newCiv.id);
     addWorldEvent(`✊ Escisión: ${newCiv.name} se separó de ${civ.name} (${splinters.length} disidentes)`);
+    addChronicle('war',`Escisión: nace ${newCiv.name}`,`Las diferencias ideológicas dentro de ${civ.name} llegaron a un punto de ruptura. ${splinters.length} disidentes, liderados por ${founder.name.split(' ')[0]}, abandonaron el seno de su pueblo y fundaron ${newCiv.name}. Dos pueblos donde antes había uno. Dos destinos donde antes había un solo camino.`,'✊');
   }
 }
 
@@ -3076,6 +3099,9 @@ function _spawnProdigy(){
 
   // Run the prodigy's spawn effect
   ptype.onSpawn(prodigy);
+
+  // Chronicle for prodigy birth
+  addChronicle('wonder', `Nace ${prodigy.name}, ${ptype.name}`, `Nadie esperaba que ese día fuera diferente. Pero cuando ${prodigy.name} llegó al mundo en ${targetCiv.name}, algo cambió. Los ancianos lo sintieron. Los niños lo miraron diferente. El ${ptype.icon} ${ptype.name} había llegado, y el mundo nunca volvería a ser exactamente igual.`, ptype.icon);
 
   _prodigyCount++;
 
@@ -3404,9 +3430,20 @@ function tickHumans(yearsElapsed){
       }
       if(count>0){
         const avg=totalK/count;
+        const prevAvg=civ.avgKnowledge||0;
         civ.avgKnowledge=avg; // cache — reused by tickInventions, features.js, etc.
         civ.era=avg>300?'imperial':avg>150?'moderna':avg>80?'industrial':avg>50?'medieval':avg>30?'antigua':'primitiva';
         civ.militaryPower=(civMilitary.get(civ.id)||0)+count*2;
+        // Knowledge golden age — when avgK doubles and crosses a meaningful threshold
+        if(!civ._kMilestones) civ._kMilestones=new Set();
+        const kThresholds=[50,150,400,1000,3000];
+        for(const t of kThresholds){
+          if(avg>=t&&prevAvg<t&&!civ._kMilestones.has(t)){
+            civ._kMilestones.add(t);
+            const labels={50:'la Antigüedad',150:'la Era Medieval',400:'el Renacimiento',1000:'la Revolución Industrial',3000:'la Era Moderna'};
+            addChronicle('science',`${civ.name} entra en ${labels[t]||'una nueva era'}`,`El conocimiento acumulado de ${civ.name} ha alcanzado un nuevo umbral. Sus pensadores, artesanos y líderes han transformado la manera en que su pueblo entiende el mundo. Una nueva era comienza para ellos.`,'🔬');
+          }
+        }
       }
     }
   }
