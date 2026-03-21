@@ -102,7 +102,7 @@ const TRANSPORT_TIERS=[
   {tier:2, icon:'🐎',label:'Carruaje',      speed:16,  minK:2000},
   {tier:3, icon:'🚂',label:'Tren',          speed:28,  minK:18000},
   {tier:4, icon:'🚗',label:'Automóvil',     speed:45,  minK:28000},
-  {tier:5, icon:'✈️', label:'Avión',         speed:80,  minK:50000},
+  {tier:5, icon:'✈️', label:'Avión',         speed:80,  minK:45000},
   {tier:6, icon:'🚁',label:'Helicóptero',   speed:65,  minK:65000},
   {tier:7, icon:'🚀',label:'Cohete',        speed:120, minK:90000},
   {tier:8, icon:'🛸',label:'Nave Orbital',  speed:180, minK:110000},
@@ -1283,15 +1283,15 @@ class Human{
 
     // Transport tier upgrade — based on knowledge, using 10-tier table
     const targetTransport=
-      this.knowledge>130000?9:
-      this.knowledge>110000?8:
-      this.knowledge>90000?7:
-      this.knowledge>65000?6:
-      this.knowledge>40000?5: // plane
-      this.knowledge>20000?4: // car
-      this.knowledge>8000?3:  // train
-      this.knowledge>2000?2:  // carriage
-      (this.knowledge>500&&_unlockedTypes.has('shipyard'))?1:0; // boat
+      this.knowledge>130000?9:  // teletransporte — Era Espacial tardía
+      this.knowledge>110000?8:  // nave orbital — Era Espacial
+      this.knowledge>90000?7:   // cohete — Era Espacial
+      this.knowledge>65000?6:   // helicóptero — Era Moderna tardía
+      this.knowledge>45000?5:   // avión — Era Moderna
+      this.knowledge>28000?4:   // automóvil — Era Industrial tardía
+      this.knowledge>18000?3:   // tren — Era Industrial
+      this.knowledge>2000?2:    // carruaje — Era Clásica
+      (this.knowledge>500&&_unlockedTypes.has('shipyard'))?1:0; // bote — Era del Hierro
     if(targetTransport>this.transportTier){
       this.transportTier=targetTransport;
       const td=TRANSPORT_TIERS[targetTransport];
@@ -1897,49 +1897,49 @@ class Human{
     const _noCamp = this.knowledge >= 30;
 
     // ── Unique / very rare structures (1 per civ) ─────────────────────────
-    if(_unlockedTypes.has('spaceport')&&this.knowledge>120000&&this.inventory.wood>=30&&this.inventory.stone>=80&&this.isLeader&&civCount('spaceport')<1)type='spaceport';
-    else if(_unlockedTypes.has('arcology')&&this.knowledge>80000&&this.inventory.wood>=30&&this.inventory.stone>=80&&this.isLeader&&civCount('arcology')<2)type='arcology';
-    else if(_unlockedTypes.has('megacity_core')&&this.knowledge>60000&&this.inventory.wood>=20&&this.inventory.stone>=60&&this.isLeader&&civCount('megacity_core')<1)type='megacity_core';
-    else if(_unlockedTypes.has('airport')&&this.knowledge>50000&&this.inventory.wood>=20&&this.inventory.stone>=40&&this.isLeader&&civCount('airport')<1)type='airport';
-    else if(_unlockedTypes.has('palace')&&this.knowledge>15000&&this.inventory.wood>=25&&this.inventory.stone>=30&&this.isLeader&&civCount('palace')<1)type='palace';
-    else if(_unlockedTypes.has('citadel')&&this.knowledge>7000&&this.inventory.wood>=15&&this.inventory.stone>=25&&civCount('citadel')<1)type='citadel';
-    else if(_unlockedTypes.has('cathedral')&&this.knowledge>10000&&this.inventory.wood>=20&&this.inventory.stone>=20&&civCount('cathedral')<1)type='cathedral';
-    else if(_unlockedTypes.has('colosseum')&&this.knowledge>1300&&this.inventory.wood>=15&&this.inventory.stone>=20&&civCount('colosseum')<1)type='colosseum';
+    if(_unlockedTypes.has('spaceport')&&this.knowledge>110000&&this.inventory.wood>=30&&this.inventory.stone>=80&&this.isLeader&&civCount('spaceport')<1)type='spaceport';
+    else if(_unlockedTypes.has('arcology')&&this.knowledge>75000&&this.inventory.wood>=30&&this.inventory.stone>=80&&this.isLeader&&civCount('arcology')<2)type='arcology';
+    else if(_unlockedTypes.has('megacity_core')&&this.knowledge>55000&&this.inventory.wood>=20&&this.inventory.stone>=60&&this.isLeader&&civCount('megacity_core')<1)type='megacity_core';
+    else if(_unlockedTypes.has('airport')&&this.knowledge>45000&&this.inventory.wood>=20&&this.inventory.stone>=40&&this.isLeader&&civCount('airport')<1)type='airport';
+    else if(_unlockedTypes.has('palace')&&this.knowledge>11000&&this.inventory.wood>=25&&this.inventory.stone>=30&&this.isLeader&&civCount('palace')<1)type='palace';
+    else if(_unlockedTypes.has('citadel')&&this.knowledge>6500&&this.inventory.wood>=15&&this.inventory.stone>=25&&civCount('citadel')<1)type='citadel';
+    else if(_unlockedTypes.has('cathedral')&&this.knowledge>8000&&this.inventory.wood>=20&&this.inventory.stone>=20&&civCount('cathedral')<1)type='cathedral';
+    else if(_unlockedTypes.has('colosseum')&&this.knowledge>3500&&this.inventory.wood>=15&&this.inventory.stone>=20&&civCount('colosseum')<1)type='colosseum';
     // ── Mega structures (1 per civ, require leader) ───────────────────────
-    else if(_unlockedTypes.has('stadium')&&this.knowledge>8000&&this.inventory.wood>=20&&this.inventory.stone>=40&&this.isLeader&&civCount('stadium')<1)type='stadium';
-    else if(_unlockedTypes.has('great_wall')&&this.knowledge>5000&&this.inventory.wood>=15&&this.inventory.stone>=50&&this.isLeader&&civCount('great_wall')<1)type='great_wall';
-    else if(_unlockedTypes.has('pyramid')&&this.knowledge>2000&&this.inventory.wood>=10&&this.inventory.stone>=60&&this.isLeader&&civCount('pyramid')<1)type='pyramid';
-    else if(_unlockedTypes.has('ziggurat')&&this.knowledge>1500&&this.inventory.wood>=12&&this.inventory.stone>=55&&this.isLeader&&civCount('ziggurat')<1)type='ziggurat';
-    else if(_unlockedTypes.has('lighthouse')&&this.knowledge>3000&&this.inventory.wood>=20&&this.inventory.stone>=35&&this._nearWater()&&civCount('lighthouse')<1)type='lighthouse';
-    else if(_unlockedTypes.has('amphitheater')&&this.knowledge>800&&this.inventory.wood>=18&&this.inventory.stone>=35&&civCount('amphitheater')<1)type='amphitheater';
+    else if(_unlockedTypes.has('stadium')&&this.knowledge>8500&&this.inventory.wood>=20&&this.inventory.stone>=40&&this.isLeader&&civCount('stadium')<1)type='stadium';
+    else if(_unlockedTypes.has('great_wall')&&this.knowledge>6000&&this.inventory.wood>=15&&this.inventory.stone>=50&&this.isLeader&&civCount('great_wall')<1)type='great_wall';
+    else if(_unlockedTypes.has('pyramid')&&this.knowledge>3000&&this.inventory.wood>=10&&this.inventory.stone>=60&&this.isLeader&&civCount('pyramid')<1)type='pyramid';
+    else if(_unlockedTypes.has('ziggurat')&&this.knowledge>2200&&this.inventory.wood>=12&&this.inventory.stone>=55&&this.isLeader&&civCount('ziggurat')<1)type='ziggurat';
+    else if(_unlockedTypes.has('lighthouse')&&this.knowledge>4000&&this.inventory.wood>=20&&this.inventory.stone>=35&&this._nearWater()&&civCount('lighthouse')<1)type='lighthouse';
+    else if(_unlockedTypes.has('amphitheater')&&this.knowledge>1800&&this.inventory.wood>=18&&this.inventory.stone>=35&&civCount('amphitheater')<1)type='amphitheater';
     else if(_unlockedTypes.has('obelisk')&&this.knowledge>400&&this.inventory.wood>=5&&this.inventory.stone>=30&&!atCap('obelisk',0.04,3))type='obelisk';
 
     // ── Infrastructure: roads connect the city — build proportionally ─────
-    else if(_unlockedTypes.has('neural_hub')&&this.knowledge>100000&&this.inventory.wood>=20&&this.inventory.stone>=60&&!atCap('neural_hub',0.05,3))type='neural_hub';
-    else if(_unlockedTypes.has('neon_district')&&this.knowledge>70000&&this.inventory.wood>=15&&this.inventory.stone>=50&&!atCap('neon_district',0.08,6))type='neon_district';
+    else if(_unlockedTypes.has('neural_hub')&&this.knowledge>90000&&this.inventory.wood>=20&&this.inventory.stone>=60&&!atCap('neural_hub',0.05,3))type='neural_hub';
+    else if(_unlockedTypes.has('neon_district')&&this.knowledge>65000&&this.inventory.wood>=15&&this.inventory.stone>=50&&!atCap('neon_district',0.08,6))type='neon_district';
     else if(_unlockedTypes.has('skyscraper')&&this.knowledge>35000&&this.inventory.wood>=10&&this.inventory.stone>=40&&!atCap('skyscraper',0.15,12))type='skyscraper';
     else if(_unlockedTypes.has('powerplant')&&this.knowledge>28000&&this.inventory.wood>=10&&this.inventory.stone>=30&&!atCap('powerplant',0.05,2))type='powerplant';
     else if(_unlockedTypes.has('subway')&&this.knowledge>22000&&this.inventory.wood>=5&&this.inventory.stone>=25&&!atCap('subway',0.08,4))type='subway';
     else if(_unlockedTypes.has('railway')&&this.knowledge>18000&&this.inventory.wood>=10&&this.inventory.stone>=20&&!atCap('railway',0.1,6))type='railway';
     else if(_unlockedTypes.has('factory')&&this.knowledge>12000&&this.inventory.wood>=20&&this.inventory.stone>=30&&!atCap('factory',0.08,4))type='factory';
-    else if(_unlockedTypes.has('observatory')&&this.knowledge>5000&&this.inventory.wood>=15&&this.inventory.stone>=25&&!atCap('observatory',0.04,2))type='observatory';
-    else if(_unlockedTypes.has('university')&&this.knowledge>3500&&this.inventory.wood>=20&&this.inventory.stone>=20&&!atCap('university',0.05,2))type='university';
-    else if(_unlockedTypes.has('highway')&&this.knowledge>8000&&this.inventory.stone>=15&&!atCap('highway',0.2,15))type='highway';
+    else if(_unlockedTypes.has('observatory')&&this.knowledge>5500&&this.inventory.wood>=15&&this.inventory.stone>=25&&!atCap('observatory',0.04,2))type='observatory';
+    else if(_unlockedTypes.has('university')&&this.knowledge>4500&&this.inventory.wood>=20&&this.inventory.stone>=20&&!atCap('university',0.05,2))type='university';
+    else if(_unlockedTypes.has('highway')&&this.knowledge>10000&&this.inventory.stone>=15&&!atCap('highway',0.2,15))type='highway';
     else if(_unlockedTypes.has('aqueduct')&&this.knowledge>2500&&this.inventory.wood>=4&&this.inventory.stone>=12&&!atCap('aqueduct',0.05,2))type='aqueduct';
     else if(_unlockedTypes.has('carriage')&&this.knowledge>2000&&this.inventory.wood>=10&&this.inventory.stone>=4&&!atCap('carriage',0.04,2))type='carriage';
-    else if(_unlockedTypes.has('harbor')&&this.knowledge>1800&&this.inventory.wood>=10&&this.inventory.stone>=6&&this._nearWater()&&!atCap('harbor',0.04,2))type='harbor';
+    else if(_unlockedTypes.has('harbor')&&this.knowledge>1500&&this.inventory.wood>=10&&this.inventory.stone>=6&&this._nearWater()&&!atCap('harbor',0.04,2))type='harbor';
     else if(_unlockedTypes.has('bridge')&&this.knowledge>1200&&this.inventory.wood>=8&&this.inventory.stone>=12&&this._nearWater()&&!atCap('bridge',0.04,3))type='bridge';
     else if(_unlockedTypes.has('road')&&this.knowledge>1000&&this.inventory.stone>=4&&!atCap('road',0.5,30))type='road';
     else if(_unlockedTypes.has('shipyard')&&this.knowledge>500&&this.inventory.wood>=15&&this.inventory.stone>=8&&this._nearWater()&&!atCap('shipyard',0.04,2))type='shipyard';
 
     // ── Replanting: build tree_nursery/greenhouse when wood is scarce nearby ─
     else if(_unlockedTypes.has('crane')&&this.knowledge>15000&&this.inventory.wood>=10&&this.inventory.stone>=15&&!atCap('crane',0.04,3))type='crane';
-    else if(_unlockedTypes.has('ore_processor')&&this.knowledge>12000&&this.inventory.wood>=15&&this.inventory.stone>=25&&!atCap('ore_processor',0.04,3))type='ore_processor';
-    else if(_unlockedTypes.has('mining_complex')&&this.knowledge>8000&&this.inventory.wood>=12&&this.inventory.stone>=20&&!atCap('mining_complex',0.06,4)&&this._stoneScarcity())type='mining_complex';
-    else if(_unlockedTypes.has('drill_rig')&&this.knowledge>5000&&this.inventory.wood>=10&&this.inventory.stone>=18&&!atCap('drill_rig',0.06,4)&&this._stoneScarcity())type='drill_rig';
-    else if(_unlockedTypes.has('excavator')&&this.knowledge>2000&&this.inventory.wood>=8&&this.inventory.stone>=12&&!atCap('excavator',0.08,5)&&this._stoneScarcity())type='excavator';
-    else if(_unlockedTypes.has('bulldozer')&&this.knowledge>3000&&this.inventory.wood>=6&&this.inventory.stone>=10&&!atCap('bulldozer',0.06,4))type='bulldozer';
-    else if(_unlockedTypes.has('greenhouse')&&this.knowledge>800&&this.inventory.wood>=8&&this.inventory.stone>=6&&!atCap('greenhouse',0.06,4)&&this._woodScarcity())type='greenhouse';
+    else if(_unlockedTypes.has('ore_processor')&&this.knowledge>13000&&this.inventory.wood>=15&&this.inventory.stone>=25&&!atCap('ore_processor',0.04,3))type='ore_processor';
+    else if(_unlockedTypes.has('mining_complex')&&this.knowledge>9000&&this.inventory.wood>=12&&this.inventory.stone>=20&&!atCap('mining_complex',0.06,4)&&this._stoneScarcity())type='mining_complex';
+    else if(_unlockedTypes.has('drill_rig')&&this.knowledge>7500&&this.inventory.wood>=10&&this.inventory.stone>=18&&!atCap('drill_rig',0.06,4)&&this._stoneScarcity())type='drill_rig';
+    else if(_unlockedTypes.has('excavator')&&this.knowledge>5000&&this.inventory.wood>=8&&this.inventory.stone>=12&&!atCap('excavator',0.08,5)&&this._stoneScarcity())type='excavator';
+    else if(_unlockedTypes.has('bulldozer')&&this.knowledge>7000&&this.inventory.wood>=6&&this.inventory.stone>=10&&!atCap('bulldozer',0.06,4))type='bulldozer';
+    else if(_unlockedTypes.has('greenhouse')&&this.knowledge>700&&this.inventory.wood>=8&&this.inventory.stone>=6&&!atCap('greenhouse',0.06,4)&&this._woodScarcity())type='greenhouse';
     else if(_unlockedTypes.has('tree_nursery')&&this.knowledge>200&&this.inventory.wood>=4&&this.inventory.stone>=2&&!atCap('tree_nursery',0.08,6)&&this._woodScarcity())type='tree_nursery';
 
     // ── Military (only in division phase, strict caps) ────────────────────
@@ -2596,61 +2596,77 @@ class Human{
   }
 }
 
-// ── Knowledge unlocks (expanded to 15+ structures) ────────────────────────────
+// ── Knowledge unlocks — thresholds aligned with era timeline ─────────────────
+// Era map (avgK ≈ year):
+//   Primitiva  yr1-100    avgK 0-50
+//   Piedra     yr100-400  avgK 50-300
+//   Bronce     yr400-1000 avgK 300-800
+//   Hierro     yr1000-2500 avgK 800-2500
+//   Clásica    yr2500-5000 avgK 2500-6000
+//   Medieval   yr5000-8000 avgK 6000-10000
+//   Renacimiento yr8000-12000 avgK 10000-18000
+//   Industrial yr12000-25000 avgK 18000-40000
+//   Moderna    yr25000-60000 avgK 40000-90000
+//   Espacial   yr60000+   avgK 90000+
 const KNOWLEDGE_UNLOCKS=[
-  {avgK:30,   type:'animal_pen', icon:'🐄',color:'#c8a040',label:'Corral',       cost:{wood:3,stone:1},  hp:120,decay:false,decayRate:0, msg:'🐄 Corrales desbloqueados — ganadería primitiva, fuente estable de comida'},
+  // ── Era Primitiva / Piedra (avgK 0-300) ──────────────────────────────────
   {avgK:15,   type:'well',       icon:'💧',color:'#60a0ff',label:'Pozo',        cost:{wood:2,stone:4},  hp:120,decay:false,decayRate:0, msg:'💧 Pozo desbloqueado — agua garantizada'},
+  {avgK:30,   type:'animal_pen', icon:'🐄',color:'#c8a040',label:'Corral',       cost:{wood:3,stone:1},  hp:120,decay:false,decayRate:0, msg:'🐄 Corrales desbloqueados — ganadería primitiva, fuente estable de comida'},
   {avgK:40,   type:'workshop',   icon:'🔨',color:'#c08040',label:'Taller',      cost:{wood:5,stone:3},  hp:120,decay:false,decayRate:0, msg:'🔨 Taller desbloqueado — producción avanzada'},
   {avgK:80,   type:'palisade',   icon:'🪵',color:'#8B5E3C',label:'Empalizada',  cost:{wood:6,stone:0},  hp:200,decay:false,decayRate:0, msg:'🪵 Empalizada desbloqueada — primeras defensas'},
   {avgK:140,  type:'library',    icon:'📚',color:'#80c0ff',label:'Biblioteca',  cost:{wood:8,stone:6},  hp:150,decay:false,decayRate:0, msg:'📚 Biblioteca desbloqueada — conocimiento compartido'},
+  {avgK:200,  type:'tree_nursery',icon:'🌱',color:'#44cc44',label:'Vivero',     cost:{wood:4,stone:2},  hp:120,decay:false,decayRate:0, msg:'🌱 Viveros desbloqueados — la civilización aprende a replantar bosques'},
   {avgK:220,  type:'granary',    icon:'🌽',color:'#d4a017',label:'Granero',     cost:{wood:6,stone:4},  hp:150,decay:false,decayRate:0, msg:'🌽 Granero desbloqueado — reservas de alimento'},
+  // ── Era del Bronce (avgK 300-800) ────────────────────────────────────────
   {avgK:320,  type:'forge',      icon:'⚒️', color:'#ff8040',label:'Forja',       cost:{wood:6,stone:8},  hp:150,decay:false,decayRate:0, msg:'⚒️ Forja desbloqueada — era del metal'},
+  {avgK:400,  type:'obelisk',    icon:'▲', color:'#f0d060',label:'Obelisco',    cost:{wood:5,stone:30}, hp:500,decay:false,decayRate:0, msg:'▲ Obeliscos desbloqueados — monumentos eternos al poder'},
   {avgK:450,  type:'watchtower', icon:'🗼',color:'#aaaaaa',label:'Torre Vigía', cost:{wood:5,stone:8},  hp:200,decay:false,decayRate:0, msg:'🗼 Torre Vigía desbloqueada — vigilancia del territorio'},
+  {avgK:500,  type:'shipyard',   icon:'⛵',color:'#4080ff',label:'Astillero',   cost:{wood:15,stone:8}, hp:300,decay:false,decayRate:0, msg:'⛵ Astillero desbloqueado — los mares son navegables'},
   {avgK:650,  type:'academy',    icon:'🎓',color:'#ffd700',label:'Academia',    cost:{wood:10,stone:10},hp:200,decay:false,decayRate:0, msg:'🎓 Academia desbloqueada — era del conocimiento'},
+  {avgK:700,  type:'greenhouse', icon:'🏡',color:'#88ee44',label:'Invernadero', cost:{wood:8,stone:6},  hp:200,decay:false,decayRate:0, msg:'🏡 Invernaderos desbloqueados — agricultura controlada'},
+  // ── Era del Hierro (avgK 800-2500) ───────────────────────────────────────
   {avgK:900,  type:'barracks',   icon:'⚔️', color:'#cc4444',label:'Cuartel',    cost:{wood:8,stone:6},  hp:180,decay:false,decayRate:0, msg:'⚔️ Cuartel desbloqueado — ejércitos organizados'},
-  {avgK:1300, type:'colosseum',  icon:'🏟',color:'#e0a040',label:'Coliseo',     cost:{wood:15,stone:20},hp:300,decay:false,decayRate:0, msg:'🏟 Coliseo desbloqueado — era de los espectáculos'},
-  {avgK:1800, type:'harbor',     icon:'⚓',color:'#3080ff',label:'Puerto',      cost:{wood:10,stone:6}, hp:200,decay:false,decayRate:0, msg:'⚓ Puerto desbloqueado — comercio marítimo'},
-  {avgK:2500, type:'aqueduct',   icon:'🌊',color:'#40c0ff',label:'Acueducto',   cost:{wood:4,stone:12}, hp:250,decay:false,decayRate:0, msg:'🌊 Acueducto desbloqueado — ingeniería hidráulica'},
-  {avgK:3500, type:'university', icon:'🏫',color:'#a0d0ff',label:'Universidad', cost:{wood:20,stone:20},hp:300,decay:false,decayRate:0, msg:'🏫 Universidad desbloqueada — ciencia avanzada'},
-  {avgK:5000, type:'observatory',icon:'🔭',color:'#c0a0ff',label:'Observatorio',cost:{wood:15,stone:25},hp:300,decay:false,decayRate:0, msg:'🔭 Observatorio desbloqueado — era de la ciencia'},
-  {avgK:7000, type:'citadel',    icon:'🏰',color:'#888888',label:'Ciudadela',   cost:{wood:15,stone:25},hp:500,decay:false,decayRate:0, msg:'🏰 Ciudadela desbloqueada — fortaleza inexpugnable'},
-  {avgK:10000,type:'cathedral',  icon:'⛪',color:'#e8d0ff',label:'Catedral',    cost:{wood:20,stone:20},hp:400,decay:false,decayRate:0, msg:'⛪ Catedral desbloqueada — era de la fe'},
-  {avgK:15000,type:'palace',     icon:'🏯',color:'#ffd700',label:'Palacio',     cost:{wood:25,stone:30},hp:600,decay:false,decayRate:0, msg:'🏯 Palacio desbloqueado — era imperial'},
-  // Transport & Industrial era
-  {avgK:500,  type:'shipyard',   icon:'⛵',color:'#4080ff',label:'Astillero',   cost:{wood:15,stone:8}, hp:300,decay:false,decayRate:0, msg:'⛵ Astillero desbloqueado — ¡los mares son navegables!'},
   {avgK:1000, type:'road',       icon:'🛤️', color:'#888888',label:'Camino',      cost:{wood:0,stone:4},  hp:500,decay:false,decayRate:0, msg:'🛤️ Caminos desbloqueados — las civilizaciones se conectan'},
-  {avgK:2000, type:'carriage',   icon:'🪄', color:'#c8a060',label:'Establo',     cost:{wood:10,stone:4}, hp:200,decay:false,decayRate:0, msg:'🐎 Establos desbloqueados — carruajes y caballos'},
-  {avgK:12000,type:'factory',    icon:'🏭',color:'#888888',label:'Fábrica',     cost:{wood:20,stone:30},hp:400,decay:false,decayRate:0, msg:'🏭 Fábricas desbloqueadas — Revolución Industrial'},
-  {avgK:18000,type:'railway',    icon:'🚂',color:'#555555',label:'Ferrocarril', cost:{wood:10,stone:20},hp:600,decay:false,decayRate:0, msg:'🚂 Ferrocarril desbloqueado — el mundo se encoge'},
-  {avgK:28000,type:'powerplant', icon:'⚡',color:'#ffff00',label:'Central Eléc.',cost:{wood:10,stone:30},hp:500,decay:false,decayRate:0, msg:'⚡ Electricidad desbloqueada — una nueva era comienza'},
-  {avgK:50000,type:'airport',    icon:'✈️', color:'#aaddff',label:'Aeropuerto',  cost:{wood:20,stone:40},hp:600,decay:false,decayRate:0, msg:'✈️ Aeropuertos desbloqueados — la humanidad conquista el cielo'},
-  // Cyberpunk / Megacity era
-  {avgK:8000, type:'highway',    icon:'🛣️', color:'#666688',label:'Autopista',   cost:{wood:0,stone:15}, hp:800,decay:false,decayRate:0, msg:'🛣️ Autopistas desbloqueadas — las ciudades se expanden'},
   {avgK:1200, type:'bridge',     icon:'🌉',color:'#a08060',label:'Puente',       cost:{wood:8,stone:12}, hp:400,decay:false,decayRate:0, msg:'🌉 Puentes desbloqueados — cruzando ríos y mares'},
+  {avgK:1500, type:'harbor',     icon:'⚓',color:'#3080ff',label:'Puerto',      cost:{wood:10,stone:6}, hp:200,decay:false,decayRate:0, msg:'⚓ Puerto desbloqueado — comercio marítimo'},
+  {avgK:1800, type:'amphitheater',icon:'🎭',color:'#c8a0e0',label:'Anfiteatro', cost:{wood:18,stone:35},hp:700,decay:false,decayRate:0, msg:'🎭 Anfiteatro desbloqueado — el arte y el espectáculo florecen'},
+  {avgK:2000, type:'carriage',   icon:'🪄', color:'#c8a060',label:'Establo',     cost:{wood:10,stone:4}, hp:200,decay:false,decayRate:0, msg:'🐎 Establos desbloqueados — carruajes y caballos'},
+  {avgK:2200, type:'ziggurat',   icon:'🏛', color:'#c8a040',label:'Zigurat',     cost:{wood:12,stone:55},hp:1800,decay:false,decayRate:0,msg:'🏛 Zigurat desbloqueado — templo escalonado hacia los dioses'},
+  {avgK:2500, type:'aqueduct',   icon:'🌊',color:'#40c0ff',label:'Acueducto',   cost:{wood:4,stone:12}, hp:250,decay:false,decayRate:0, msg:'🌊 Acueducto desbloqueado — ingeniería hidráulica'},
+  // ── Era Clásica (avgK 2500-6000) ─────────────────────────────────────────
+  {avgK:3000, type:'pyramid',    icon:'△', color:'#d4a820',label:'Pirámide',    cost:{wood:10,stone:60},hp:2000,decay:false,decayRate:0, msg:'△ Pirámides desbloqueadas — maravillas que desafían el tiempo'},
+  {avgK:3500, type:'colosseum',  icon:'🏟',color:'#e0a040',label:'Coliseo',     cost:{wood:15,stone:20},hp:300,decay:false,decayRate:0, msg:'🏟 Coliseo desbloqueado — era de los espectáculos'},
+  {avgK:4000, type:'lighthouse', icon:'🗼',color:'#f0e080',label:'Faro Colosal',cost:{wood:20,stone:35},hp:600,decay:false,decayRate:0, msg:'🗼 Faro Colosal desbloqueado — guía a los navegantes desde lejos'},
+  {avgK:4500, type:'university', icon:'🏫',color:'#a0d0ff',label:'Universidad', cost:{wood:20,stone:20},hp:300,decay:false,decayRate:0, msg:'🏫 Universidad desbloqueada — ciencia avanzada'},
+  {avgK:5000, type:'excavator',  icon:'🚜',color:'#e8a020',label:'Excavadora',  cost:{wood:8,stone:12}, hp:300,decay:false,decayRate:0, msg:'🚜 Excavadoras desbloqueadas — extracción mecánica de minerales'},
+  {avgK:5500, type:'observatory',icon:'🔭',color:'#c0a0ff',label:'Observatorio',cost:{wood:15,stone:25},hp:300,decay:false,decayRate:0, msg:'🔭 Observatorio desbloqueado — era de la ciencia'},
+  // ── Era Medieval (avgK 6000-10000) ───────────────────────────────────────
+  {avgK:6000, type:'great_wall', icon:'🧱',color:'#a08060',label:'Gran Muralla',cost:{wood:15,stone:50},hp:1500,decay:false,decayRate:0, msg:'🧱 Gran Muralla desbloqueada — la defensa definitiva del territorio'},
+  {avgK:6500, type:'citadel',    icon:'🏰',color:'#888888',label:'Ciudadela',   cost:{wood:15,stone:25},hp:500,decay:false,decayRate:0, msg:'🏰 Ciudadela desbloqueada — fortaleza inexpugnable'},
+  {avgK:7000, type:'bulldozer',  icon:'🚧',color:'#ffaa00',label:'Bulldozer',   cost:{wood:6,stone:10}, hp:250,decay:false,decayRate:0, msg:'🚧 Bulldozers desbloqueados — remoción de tierra a gran escala'},
+  {avgK:7500, type:'drill_rig',  icon:'🔩',color:'#cc8844',label:'Torre de Perforación',cost:{wood:10,stone:18},hp:400,decay:false,decayRate:0,msg:'🔩 Torres de perforación desbloqueadas — extracción profunda'},
+  {avgK:8000, type:'cathedral',  icon:'⛪',color:'#e8d0ff',label:'Catedral',    cost:{wood:20,stone:20},hp:400,decay:false,decayRate:0, msg:'⛪ Catedral desbloqueada — era de la fe'},
+  {avgK:8500, type:'stadium',    icon:'🏟',color:'#e8c840',label:'Estadio',     cost:{wood:20,stone:40},hp:800,decay:false,decayRate:0, msg:'🏟 Estadio desbloqueado — el pueblo necesita espectáculo y gloria'},
+  {avgK:9000, type:'mining_complex',icon:'⛏️',color:'#886644',label:'Complejo Minero',cost:{wood:12,stone:20},hp:500,decay:false,decayRate:0,msg:'⛏️ Complejos mineros desbloqueados — industria extractiva'},
+  // ── Renacimiento (avgK 10000-18000) ──────────────────────────────────────
+  {avgK:10000,type:'highway',    icon:'🛣️', color:'#666688',label:'Autopista',   cost:{wood:0,stone:15}, hp:800,decay:false,decayRate:0, msg:'🛣️ Autopistas desbloqueadas — las ciudades se expanden'},
+  {avgK:11000,type:'palace',     icon:'🏯',color:'#ffd700',label:'Palacio',     cost:{wood:25,stone:30},hp:600,decay:false,decayRate:0, msg:'🏯 Palacio desbloqueado — era imperial'},
+  {avgK:12000,type:'factory',    icon:'🏭',color:'#888888',label:'Fábrica',     cost:{wood:20,stone:30},hp:400,decay:false,decayRate:0, msg:'🏭 Fábricas desbloqueadas — Revolución Industrial'},
+  {avgK:13000,type:'ore_processor',icon:'🏗',color:'#aa6633',label:'Procesadora de Mineral',cost:{wood:15,stone:25},hp:450,decay:false,decayRate:0,msg:'🏗 Procesadoras desbloqueadas — refinado industrial de minerales'},
+  {avgK:15000,type:'crane',      icon:'🏗️',color:'#ddaa44',label:'Grúa',        cost:{wood:10,stone:15},hp:350,decay:false,decayRate:0, msg:'🏗️ Grúas desbloqueadas — construcción a gran altura'},
+  // ── Era Industrial (avgK 18000-40000) ────────────────────────────────────
+  {avgK:18000,type:'railway',    icon:'🚂',color:'#555555',label:'Ferrocarril', cost:{wood:10,stone:20},hp:600,decay:false,decayRate:0, msg:'🚂 Ferrocarril desbloqueado — el mundo se encoge'},
   {avgK:22000,type:'subway',     icon:'🚇',color:'#4466aa',label:'Metro',        cost:{wood:5,stone:25}, hp:700,decay:false,decayRate:0, msg:'🚇 Metro desbloqueado — transporte subterráneo'},
+  {avgK:28000,type:'powerplant', icon:'⚡',color:'#ffff00',label:'Central Eléc.',cost:{wood:10,stone:30},hp:500,decay:false,decayRate:0, msg:'⚡ Electricidad desbloqueada — una nueva era comienza'},
   {avgK:35000,type:'skyscraper', icon:'🏙️', color:'#88aacc',label:'Rascacielos', cost:{wood:10,stone:40},hp:800,decay:false,decayRate:0, msg:'🏙️ Rascacielos desbloqueados — las ciudades tocan el cielo'},
-  {avgK:60000,type:'megacity_core',icon:'🌆',color:'#cc8800',label:'Núcleo Urbano',cost:{wood:20,stone:60},hp:1200,decay:false,decayRate:0,msg:'🌆 Núcleo Urbano desbloqueado — megaciudades emergen'},
-  {avgK:70000,type:'neon_district',icon:'🌃',color:'#ff44aa',label:'Distrito Neón',cost:{wood:15,stone:50},hp:600,decay:false,decayRate:0,msg:'🌃 Distritos Neón desbloqueados — era cyberpunk'},
-  {avgK:80000,type:'arcology',   icon:'🏗️', color:'#44aa88',label:'Arcología',   cost:{wood:30,stone:80},hp:1500,decay:false,decayRate:0,msg:'🏗️ Arcologías desbloqueadas — ciudades autosuficientes'},
-  {avgK:100000,type:'neural_hub',icon:'🧠',color:'#aa44ff',label:'Hub Neural',  cost:{wood:20,stone:60},hp:800,decay:false,decayRate:0, msg:'🧠 Hub Neural desbloqueado — la IA despierta'},
-  {avgK:120000,type:'spaceport',    icon:'🚀',color:'#aaddff',label:'Puerto Espacial',   cost:{wood:30,stone:80},hp:1000,decay:false,decayRate:0,msg:'🚀 Puerto Espacial desbloqueado — la humanidad mira las estrellas'},
-  // Mega structures
-  {avgK:400,  type:'obelisk',      icon:'▲', color:'#f0d060',label:'Obelisco',           cost:{wood:5,stone:30},  hp:500, decay:false,decayRate:0,msg:'▲ Obeliscos desbloqueados — monumentos eternos al poder'},
-  {avgK:800,  type:'amphitheater', icon:'🎭',color:'#c8a0e0',label:'Anfiteatro',         cost:{wood:18,stone:35}, hp:700, decay:false,decayRate:0,msg:'🎭 Anfiteatro desbloqueado — el arte y el espectáculo florecen'},
-  {avgK:1500, type:'ziggurat',     icon:'🏛', color:'#c8a040',label:'Zigurat',            cost:{wood:12,stone:55}, hp:1800,decay:false,decayRate:0,msg:'🏛 Zigurat desbloqueado — templo escalonado hacia los dioses'},
-  {avgK:2000, type:'pyramid',      icon:'△', color:'#d4a820',label:'Pirámide',           cost:{wood:10,stone:60}, hp:2000,decay:false,decayRate:0,msg:'△ Pirámides desbloqueadas — maravillas que desafían el tiempo'},
-  {avgK:3000, type:'lighthouse',   icon:'🗼',color:'#f0e080',label:'Faro Colosal',       cost:{wood:20,stone:35}, hp:600, decay:false,decayRate:0,msg:'🗼 Faro Colosal desbloqueado — guía a los navegantes desde lejos'},
-  {avgK:5000, type:'great_wall',   icon:'🧱',color:'#a08060',label:'Gran Muralla',       cost:{wood:15,stone:50}, hp:1500,decay:false,decayRate:0,msg:'🧱 Gran Muralla desbloqueada — la defensa definitiva del territorio'},
-  {avgK:8000, type:'stadium',      icon:'🏟',color:'#e8c840',label:'Estadio',            cost:{wood:20,stone:40}, hp:800, decay:false,decayRate:0,msg:'🏟 Estadio desbloqueado — el pueblo necesita espectáculo y gloria'},
-  // Replanting & heavy machinery
-  {avgK:200,  type:'tree_nursery', icon:'🌱',color:'#44cc44',label:'Vivero',              cost:{wood:4,stone:2},  hp:120, decay:false,decayRate:0,msg:'🌱 Viveros desbloqueados — la civilización aprende a replantar bosques'},
-  {avgK:800,  type:'greenhouse',   icon:'🏡',color:'#88ee44',label:'Invernadero',         cost:{wood:8,stone:6},  hp:200, decay:false,decayRate:0,msg:'🏡 Invernaderos desbloqueados — agricultura controlada'},
-  {avgK:2000, type:'excavator',    icon:'🚜',color:'#e8a020',label:'Excavadora',          cost:{wood:8,stone:12}, hp:300, decay:false,decayRate:0,msg:'🚜 Excavadoras desbloqueadas — extracción mecánica de minerales'},
-  {avgK:3000, type:'bulldozer',    icon:'🚧',color:'#ffaa00',label:'Bulldozer',           cost:{wood:6,stone:10}, hp:250, decay:false,decayRate:0,msg:'🚧 Bulldozers desbloqueados — remoción de tierra a gran escala'},
-  {avgK:5000, type:'drill_rig',    icon:'🔩',color:'#cc8844',label:'Torre de Perforación',cost:{wood:10,stone:18},hp:400, decay:false,decayRate:0,msg:'🔩 Torres de perforación desbloqueadas — extracción profunda'},
-  {avgK:8000, type:'mining_complex',icon:'⛏️',color:'#886644',label:'Complejo Minero',   cost:{wood:12,stone:20},hp:500, decay:false,decayRate:0,msg:'⛏️ Complejos mineros desbloqueados — industria extractiva'},
-  {avgK:12000,type:'ore_processor', icon:'🏗',color:'#aa6633',label:'Procesadora de Mineral',cost:{wood:15,stone:25},hp:450,decay:false,decayRate:0,msg:'🏗 Procesadoras desbloqueadas — refinado industrial de minerales'},
-  {avgK:15000,type:'crane',         icon:'🏗️',color:'#ddaa44',label:'Grúa',              cost:{wood:10,stone:15},hp:350, decay:false,decayRate:0,msg:'🏗️ Grúas desbloqueadas — construcción a gran altura'},
+  // ── Era Moderna (avgK 40000-90000) ───────────────────────────────────────
+  {avgK:45000,type:'airport',    icon:'✈️', color:'#aaddff',label:'Aeropuerto',  cost:{wood:20,stone:40},hp:600,decay:false,decayRate:0, msg:'✈️ Aeropuertos desbloqueados — la humanidad conquista el cielo'},
+  {avgK:55000,type:'megacity_core',icon:'🌆',color:'#cc8800',label:'Núcleo Urbano',cost:{wood:20,stone:60},hp:1200,decay:false,decayRate:0,msg:'🌆 Núcleo Urbano desbloqueado — megaciudades emergen'},
+  {avgK:65000,type:'neon_district',icon:'🌃',color:'#ff44aa',label:'Distrito Neón',cost:{wood:15,stone:50},hp:600,decay:false,decayRate:0,msg:'🌃 Distritos Neón desbloqueados — era cyberpunk'},
+  {avgK:75000,type:'arcology',   icon:'🏗️', color:'#44aa88',label:'Arcología',   cost:{wood:30,stone:80},hp:1500,decay:false,decayRate:0,msg:'🏗️ Arcologías desbloqueadas — ciudades autosuficientes'},
+  // ── Era Espacial (avgK 90000+) ────────────────────────────────────────────
+  {avgK:90000,type:'neural_hub', icon:'🧠',color:'#aa44ff',label:'Hub Neural',  cost:{wood:20,stone:60},hp:800,decay:false,decayRate:0, msg:'🧠 Hub Neural desbloqueado — la IA despierta'},
+  {avgK:110000,type:'spaceport', icon:'🚀',color:'#aaddff',label:'Puerto Espacial',cost:{wood:30,stone:80},hp:1000,decay:false,decayRate:0,msg:'🚀 Puerto Espacial desbloqueado — la humanidad mira las estrellas'},
 ];
 const _unlockedTypes=new Set(['camp','hut','farm','mine','market','temple']);
 
