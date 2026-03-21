@@ -1,4 +1,4 @@
-# 🌍 KUSOCIETY — Simulador de Civilización
+# 🌍 [KUSOCIETY](https://kusociety.netlify.app) — Simulador de Civilización
 
 **KUSOCIETY** es un simulador emergente tipo *“God Simulator”* donde una población de humanos evoluciona de forma autónoma dentro de un mundo dinámico generado en una grilla.
 
