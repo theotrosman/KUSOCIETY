@@ -874,7 +874,7 @@ function _drawStructures(){
           ctx.fillStyle='#300';ctx.fillRect(s.tx*TILE,s.ty*TILE+TILE-2,TILE,2);
           ctx.fillStyle='#f44';ctx.fillRect(s.tx*TILE,s.ty*TILE+TILE-2,TILE*(s.hp/s.maxHp),2);
         }
-        if(cam.zoom>0.5){
+        if(cam.zoom>1.2){
           const iconScale=tier>=4?1.05:tier>=2?0.92:0.82;
           ctx.font=`${Math.round(TILE*iconScale)}px serif`;
           ctx.fillText(s.icon,px,py);
@@ -1127,8 +1127,8 @@ function _drawAdvancedBuilding(ctx, s, px, py, civ, tier, t, showShadow, showHP)
   ctx.globalAlpha=1;
   ctx.restore();
 
-  // Label (no emoji, just text for advanced buildings)
-  if(cam.zoom>0.5&&cam.zoom<2.5&&s.label){
+  // Label — only at close zoom, never when zoomed out
+  if(cam.zoom>1.5&&cam.zoom<3.5&&s.label){
     const lbl=s.label;
     ctx.save();
     ctx.globalAlpha=0.8;
@@ -1386,16 +1386,16 @@ function _drawMegaStructure(s, px, py, civ, t, showShadow){
   ctx.globalAlpha=1;
   ctx.restore();
 
-  // Name label — visible at medium zoom, always for mega structures
-  if(cam.zoom>0.4&&cam.zoom<3){
+  // Name label — only at close zoom to avoid text avalanche
+  if(cam.zoom>0.9&&cam.zoom<3){
     const lbl = s.label || '';
     if(!lbl) return;
-    const labelAlpha=Math.min(1,Math.max(0,(1.8-cam.zoom)/1.4+0.3));
+    const labelAlpha=Math.min(1,Math.max(0,(2.5-cam.zoom)/1.6+0.2));
     ctx.save();
     ctx.globalAlpha=labelAlpha*0.95;
     ctx.textAlign='center';
     ctx.textBaseline='bottom';
-    const fontSize=Math.round(Math.max(9,Math.min(16,13/cam.zoom)));
+    const fontSize=Math.round(Math.max(9,Math.min(14,11/cam.zoom)));
     ctx.font=`bold ${fontSize}px sans-serif`;
     ctx.strokeStyle='rgba(0,0,0,0.9)';
     ctx.lineWidth=3/cam.zoom;
@@ -1935,7 +1935,7 @@ function _drawEpicOverlays(){
         ctx.arc(px, py, TILE*1.8*(0.9+Math.sin(t*3)*0.1), 0, Math.PI*2);
         ctx.stroke();
         // Etiqueta "MARAVILLA"
-        if(cam.zoom > 0.7){
+        if(cam.zoom > 1.4){
           ctx.globalAlpha = 0.95;
           ctx.font = `bold ${Math.round(Math.max(9, 11/cam.zoom*TILE*0.12))}px sans-serif`;
           ctx.textAlign = 'center';
