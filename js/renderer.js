@@ -484,7 +484,9 @@ function renderFrame(dt){
   _ctx.scale(cam.zoom,cam.zoom);
 
   if(terrainCanvas) _ctx.drawImage(terrainCanvas,0,0);
-  if(cam.zoom>0.6) _drawWaterShimmer();
+  if(cam.zoom>0.5) _drawWaterShimmer();
+  // Atmospheric depth haze at map edges
+  _drawMapVignette();
 
   if(resourceCanvas&&cam.zoom>0.4){
     _ctx.globalAlpha=Math.min(1,(cam.zoom-0.4)/0.3);
@@ -532,7 +534,6 @@ function renderFrame(dt){
 
   // UI overlays (screen-space)
   _drawLegend();
-  _drawWorldEvents();
   _drawIntelligenceCurve();
   _drawPandemicHUD();
   _drawClimateHUD();
@@ -2174,10 +2175,43 @@ function _drawWaterShimmer(){
   const x0=Math.floor(-cam.x/cam.zoom/TILE)-1, y0=Math.floor(-cam.y/cam.zoom/TILE)-1;
   const x1=x0+Math.ceil(_canvas.width/cam.zoom/TILE)+2;
   const y1=y0+Math.ceil(_canvas.height/cam.zoom/TILE)+2;
-  _ctx.fillStyle='rgba(120,180,240,0.07)';
+  const t=_waterPhase;
+  // Two shimmer layers for depth
+  _ctx.fillStyle='rgba(100,160,220,0.06)';
   for(const w of _waterTiles){
     if(w.tx<x0||w.tx>x1||w.ty<y0||w.ty>y1) continue;
-    if(Math.sin(_waterPhase+w.phase)>0.55)
-      _ctx.fillRect(w.tx*TILE+1,w.ty*TILE+TILE*0.4,TILE-2,2);
+    if(Math.sin(t*1.2+w.phase)>0.5)
+      _ctx.fillRect(w.tx*TILE+1,w.ty*TILE+TILE*0.35,TILE-2,2);
   }
+  _ctx.fillStyle='rgba(180,220,255,0.04)';
+  for(const w of _waterTiles){
+    if(w.tx<x0||w.tx>x1||w.ty<y0||w.ty>y1) continue;
+    if(Math.sin(t*0.8+w.phase+1.5)>0.6)
+      _ctx.fillRect(w.tx*TILE+2,w.ty*TILE+TILE*0.65,TILE-4,1);
+  }
+}
+
+// Atmospheric vignette at map edges — makes the world feel bounded and epic
+function _drawMapVignette(){
+  const W=WORLD_W*TILE, H=WORLD_H*TILE;
+  const ctx=_ctx;
+  const edgeW=Math.min(W,H)*0.06;
+  ctx.save();
+  // Top edge
+  const gt=ctx.createLinearGradient(0,0,0,edgeW);
+  gt.addColorStop(0,'rgba(0,0,0,0.55)'); gt.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=gt; ctx.fillRect(0,0,W,edgeW);
+  // Bottom edge
+  const gb=ctx.createLinearGradient(0,H-edgeW,0,H);
+  gb.addColorStop(0,'rgba(0,0,0,0)'); gb.addColorStop(1,'rgba(0,0,0,0.55)');
+  ctx.fillStyle=gb; ctx.fillRect(0,H-edgeW,W,edgeW);
+  // Left edge
+  const gl=ctx.createLinearGradient(0,0,edgeW,0);
+  gl.addColorStop(0,'rgba(0,0,0,0.55)'); gl.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=gl; ctx.fillRect(0,0,edgeW,H);
+  // Right edge
+  const gr=ctx.createLinearGradient(W-edgeW,0,W,0);
+  gr.addColorStop(0,'rgba(0,0,0,0)'); gr.addColorStop(1,'rgba(0,0,0,0.55)');
+  ctx.fillStyle=gr; ctx.fillRect(W-edgeW,0,edgeW,H);
+  ctx.restore();
 }
