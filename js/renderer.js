@@ -947,6 +947,16 @@ function _drawStructures(){
   const megaTypes=new Set(['stadium','pyramid','great_wall','lighthouse','amphitheater','ziggurat','obelisk']);
   const roadTypes=new Set(['road','highway','bridge','aqueduct','railway','subway']);
 
+  // Count visible non-road structures — suppress labels/windows when city is dense
+  let _visibleStructCount=0;
+  for(const s of structures){
+    if(roadTypes.has(s.type))continue;
+    if(s.tx>=vx0&&s.tx<=vx1&&s.ty>=vy0&&s.ty<=vy1)_visibleStructCount++;
+  }
+  // Dense = many buildings on screen → skip expensive per-building text/windows
+  const _densityHigh = _visibleStructCount > 80;
+  const _densityMed  = _visibleStructCount > 40;
+
   // ── Pass 0: roads & infrastructure (drawn as real lines) ─────────────────
   if(cam.zoom > 0.4){
     ctx.save();
@@ -989,7 +999,7 @@ function _drawStructures(){
 
       // Advanced civs get real geometry buildings
       if(k > 2000 && cam.zoom > 0.3){
-        _drawAdvancedBuilding(ctx, s, px, py, civ, tier, t, showShadow, showHP);
+        _drawAdvancedBuilding(ctx, s, px, py, civ, tier, t, showShadow, showHP, _densityHigh, _densityMed);
       } else {
         // Legacy emoji rendering for primitive civs
         ctx.globalAlpha=0.3+tier*0.07;
@@ -1004,7 +1014,8 @@ function _drawStructures(){
           ctx.fillStyle='#300';ctx.fillRect(s.tx*TILE,s.ty*TILE+TILE-2,TILE,2);
           ctx.fillStyle='#f44';ctx.fillRect(s.tx*TILE,s.ty*TILE+TILE-2,TILE*(s.hp/s.maxHp),2);
         }
-        if(cam.zoom>1.2){
+        // Emoji icon only at high zoom AND low density
+        if(cam.zoom>1.2 && !_densityMed){
           const iconScale=tier>=4?1.05:tier>=2?0.92:0.82;
           ctx.font=`${Math.round(TILE*iconScale)}px serif`;
           ctx.fillText(s.icon,px,py);
@@ -1147,7 +1158,7 @@ function _drawRoadStructure(s, t){
 }
 
 // ── Advanced building geometry for evolved civs ───────────────────────────────
-function _drawAdvancedBuilding(ctx, s, px, py, civ, tier, t, showShadow, showHP){
+function _drawAdvancedBuilding(ctx, s, px, py, civ, tier, t, showShadow, showHP, densityHigh, densityMed){
   const S=TILE;
   const civColor=civ?civ.color:'#aaaaff';
   const k=civ?(civ.knowledge||0):0;
@@ -1198,8 +1209,8 @@ function _drawAdvancedBuilding(ctx, s, px, py, civ, tier, t, showShadow, showHP)
   ctx.fillStyle=roofColor;
   ctx.fillRect(px-hw+roofInset, py-hw+roofInset, (hw-roofInset)*2, (hw-roofInset)*2);
 
-  // Windows grid for tall buildings
-  if(tier>=3&&cam.zoom>0.6){
+  // Windows grid for tall buildings — skip when many buildings on screen
+  if(tier>=3&&cam.zoom>0.6&&!densityHigh){
     const cols=Math.max(2,Math.floor(hw*2/(S*0.22)));
     const rows=Math.max(2,Math.floor(hw*2/(S*0.22)));
     const ww=(hw*2/cols)*0.45, wh=(hw*2/rows)*0.45;
@@ -1221,8 +1232,8 @@ function _drawAdvancedBuilding(ctx, s, px, py, civ, tier, t, showShadow, showHP)
   ctx.lineWidth=Math.max(0.5, S*0.05);
   ctx.strokeRect(px-hw, py-hw, hw*2, hw*2);
 
-  // Special effects for ultra-advanced structures
-  if(k>50000){
+  // Special effects for ultra-advanced structures — skip at high density
+  if(k>50000&&!densityHigh){
     // Neon glow — use cached gradient key to avoid recreating every frame
     const glowKey=`${s.type}_${Math.round(hw)}_${accentColor}`;
     ctx.globalAlpha=0.2*pulse;
@@ -1233,8 +1244,8 @@ function _drawAdvancedBuilding(ctx, s, px, py, civ, tier, t, showShadow, showHP)
     ctx.beginPath();ctx.arc(px,py,hw*2.5,0,Math.PI*2);ctx.fill();
   }
 
-  // Spire/antenna for tall buildings
-  if(tier>=5&&cam.zoom>0.4){
+  // Spire/antenna for tall buildings — skip at medium density
+  if(tier>=5&&cam.zoom>0.4&&!densityMed){
     ctx.globalAlpha=0.9;
     ctx.strokeStyle=accentColor;
     ctx.lineWidth=Math.max(0.5,S*0.04);
@@ -1258,8 +1269,8 @@ function _drawAdvancedBuilding(ctx, s, px, py, civ, tier, t, showShadow, showHP)
   ctx.globalAlpha=1;
   ctx.restore();
 
-  // Label — only at close zoom, never when zoomed out or extremely zoomed in
-  if(cam.zoom>1.5&&cam.zoom<3.0&&s.label){
+  // Label — only at close zoom, low density, never in crowded cities
+  if(cam.zoom>1.5&&cam.zoom<3.0&&s.label&&!densityMed){
     const lbl=s.label;
     ctx.save();
     ctx.globalAlpha=0.8;
@@ -1617,6 +1628,11 @@ function _drawHumans(){
   // Use _cachedAlive (already filtered to alive) to avoid iterating dead humans
   const drawList = (typeof _cachedAlive !== 'undefined' && _cachedAlive.length > 0) ? _cachedAlive : humans;
 
+  // Count visible humans for density-based LOD
+  let _visibleHumanCount=0;
+  for(const h of drawList){ if(h.alive&&h.px>=vx0&&h.px<=vx1&&h.py>=vy0&&h.py<=vy1)_visibleHumanCount++; }
+  const _humanDense = _visibleHumanCount > 120; // suppress icons when crowded
+
   for(const h of drawList){
     if(!h.alive)continue;
     const px=h.px, py=h.py;
@@ -1702,8 +1718,8 @@ function _drawHumans(){
       _ctx.fillRect(bx,by,bw*(h.health/100),3);
     }
 
-    // Icons — only at higher zoom to save draw calls
-    if(showRings){
+    // Icons — only at higher zoom to save draw calls, skip when crowded
+    if(showRings&&!_humanDense){
       if(h.isProdigy&&h.prodigyType){
         _ctx.font=`${Math.round(r*1.3)}px serif`;
         _ctx.fillText(h.prodigyType.icon,px,py-r-4);
@@ -1716,7 +1732,7 @@ function _drawHumans(){
       }
     }
 
-    if(showWeapon&&h.weaponTier>0){
+    if(showWeapon&&h.weaponTier>0&&!_humanDense){
       const wi=typeof WEAPON_ICONS!=='undefined'?WEAPON_ICONS:['','🗡️','🪓','⚔️','🔱','🛡️','💣'];
       const icon=wi[Math.min(h.weaponTier,wi.length-1)]||'⚔️';
       _ctx.font=`${Math.round(r*0.85)}px serif`;
@@ -1755,8 +1771,8 @@ function _drawHumans(){
       _ctx.stroke();
     }
 
-    // Transport icon — show when on water or high tier
-    if(showWeapon&&h.transportTier>=1){
+    // Transport icon — show when on water or high tier, skip when crowded
+    if(showWeapon&&h.transportTier>=1&&!_humanDense){
       const ti=['','⛵','🐎','🚂','🚗','✈️','🚁','🚀','🛸','🌌'];
       const icon=ti[Math.min(h.transportTier,9)];
       if(icon){
