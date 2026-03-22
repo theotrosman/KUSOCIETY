@@ -3882,23 +3882,22 @@ let _mediaTimer = 0;
 let _lastMediaBroadcast = 0;
 
 const MEDIA_UNLOCK_THRESHOLDS = {
-  printing_press: 4000,   // Era Medieval avanzada
-  radio_tower:    25000,  // Era Industrial
-  tv_station:     55000,  // Era Moderna
-  internet_hub:   85000,  // Era Digital
+  printing_press: 1500,   // Era Medieval
+  radio_tower:    12000,  // Era Industrial
+  tv_station:     30000,  // Era Moderna
+  internet_hub:   60000,  // Era Digital
 };
 
 function getMediaHeadlines() { return _mediaHeadlines; }
 
 function _getMediaLevel() {
-  if(typeof structures === 'undefined') return 0;
-  const types = _civStructureTypes;
   let best = 0;
-  for(const [,st] of types){
-    if(st.has('internet_hub')) best = Math.max(best, 4);
-    else if(st.has('tv_station')) best = Math.max(best, 3);
-    else if(st.has('radio_tower')) best = Math.max(best, 2);
-    else if(st.has('printing_press')) best = Math.max(best, 1);
+  for(const [,civ] of civilizations){
+    if(civ.population === 0) continue;
+    if(civ._hasInternetHub)   best = Math.max(best, 4);
+    else if(civ._hasTvStation) best = Math.max(best, 3);
+    else if(civ._hasRadio)     best = Math.max(best, 2);
+    else if(civ._hasPrintingPress) best = Math.max(best, 1);
   }
   return best;
 }
@@ -4011,11 +4010,8 @@ function tickMediaSystem(yearsElapsed) {
   for(const [civId, civ] of civilizations){
     if(civ.population < 5) continue;
     const avgK = _civAvgKnowledgeMedia(civId);
-    const civTypes = _civStructureTypes.get(civId);
-    if(!civTypes) continue;
 
     // Auto-build media structures when knowledge threshold reached
-    // (they appear as virtual structures tracked in civ object)
     if(avgK >= MEDIA_UNLOCK_THRESHOLDS.internet_hub && !civ._hasInternetHub){
       civ._hasInternetHub = true;
       addChronicle('science',`${civ.name} conecta al mundo`,`La red global de ${civ.name} enlaza a millones. La información fluye instantánea. El mundo nunca volverá a ser el mismo.`,'🌐');
@@ -4032,7 +4028,7 @@ function tickMediaSystem(yearsElapsed) {
   }
 
   // Generate headlines from civs that have media
-  if(year - _lastMediaBroadcast < 5) return;
+  if(year - _lastMediaBroadcast < 2) return;
   _lastMediaBroadcast = year;
 
   const mediaLevel = _getMediaLevel();

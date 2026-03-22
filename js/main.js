@@ -721,7 +721,7 @@ function _updateDetailPanel() {
   const goldenAgeLine=goldenAgeActive?`<div style="color:#ffd700;font-size:10px;margin-bottom:3px;background:rgba(255,215,0,0.08);border-radius:4px;padding:2px 5px">🌟 Edad de Oro — ${_goldenAgeCivs.get(civ.id).yearsLeft} años restantes</div>`:'';
 
   // Spy mission
-  const spyMission=typeof _activeSpies!=='undefined'?_activeSpies.find(s=>s.spyId===h.id):null;
+  const spyMission=typeof _activeSpies2!=='undefined'?_activeSpies2.find(s=>s.spyId===h.id):null;
   const spyLine=spyMission?`<div style="color:#a8f;font-size:10px;margin-bottom:3px">🕵️ En misión: ${spyMission.missionType.replace('_',' ')} — ${spyMission.yearsLeft} años</div>`:'';
 
   // Inventory — visual icons

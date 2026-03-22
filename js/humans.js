@@ -2418,24 +2418,56 @@ class Human{
     };
 
     // ── Zone-based placement ──────────────────────────────────────────────
-    // Roads: try to place between two existing structures for realistic networks
+    // Roads/highways: build along paths connecting important city nodes
     if((type==='road'||type==='highway')&&civ){
-      const civStructs=structures.filter(s=>s.civId===this.civId&&s.type!=='road'&&s.type!=='highway'&&s.type!=='camp');
-      if(civStructs.length>=2){
-        // Pick two random structures and place road tiles along the path between them
-        const rng2=this._rng;
-        const sA=civStructs[Math.floor(rng2()*civStructs.length)];
-        const sB=civStructs[Math.floor(rng2()*civStructs.length)];
-        if(sA&&sB&&(sA.tx!==sB.tx||sA.ty!==sB.ty)){
-          // Walk from sA toward sB, place road tiles
-          const steps=Math.max(Math.abs(sB.tx-sA.tx),Math.abs(sB.ty-sA.ty));
-          const maxSteps=Math.min(steps,12);
-          for(let step=1;step<=maxSteps;step++){
-            const t2=step/steps;
-            const bx=Math.round(sA.tx+(sB.tx-sA.tx)*t2);
-            const by=Math.round(sA.ty+(sB.ty-sA.ty)*t2);
-            if(tryPlace(bx,by))return;
+      const civStructs=structures.filter(s=>s.civId===this.civId&&s.type!=='road'&&s.type!=='highway'&&s.type!=='camp'&&s.type!=='railway');
+      // For highways: prefer connecting to OTHER civ city centers (trade routes) or own key buildings
+      let sA=null, sB=null;
+      if(type==='highway'){
+        // Try to connect to nearest other civ's city center
+        let bestDist=Infinity;
+        for(const [,otherCiv] of civilizations){
+          if(otherCiv.id===this.civId||otherCiv.population<5) continue;
+          if(!otherCiv.cityCenter) continue;
+          const d=Math.abs(otherCiv.cityCenter.tx-cx)+Math.abs(otherCiv.cityCenter.ty-cy);
+          if(d<bestDist&&d<80){
+            bestDist=d;
+            sA={tx:cx,ty:cy};
+            sB={tx:otherCiv.cityCenter.tx,ty:otherCiv.cityCenter.ty};
           }
+        }
+        // Fallback: connect own key buildings (palace, factory, airport)
+        if(!sA&&civStructs.length>=2){
+          const keyTypes=new Set(['palace','factory','airport','megacity_core','barracks','market']);
+          const keyStructs=civStructs.filter(s=>keyTypes.has(s.type));
+          if(keyStructs.length>=2){
+            sA=keyStructs[0]; sB=keyStructs[Math.floor(Math.random()*keyStructs.length)];
+          } else if(civStructs.length>=2){
+            sA=civStructs[0]; sB=civStructs[Math.floor(Math.random()*civStructs.length)];
+          }
+        }
+      } else {
+        // Roads: connect any two structures
+        if(civStructs.length>=2){
+          sA=civStructs[Math.floor(this._rng()*civStructs.length)];
+          sB=civStructs[Math.floor(this._rng()*civStructs.length)];
+        }
+      }
+      if(sA&&sB&&(sA.tx!==sB.tx||sA.ty!==sB.ty)){
+        // Walk from sA toward sB, hugging land tiles
+        const dx=sB.tx-sA.tx, dy=sB.ty-sA.ty;
+        const steps=Math.max(Math.abs(dx),Math.abs(dy));
+        const maxSteps=Math.min(steps, type==='highway'?20:12);
+        for(let step=1;step<=maxSteps;step++){
+          const t2=step/steps;
+          let bx=Math.round(sA.tx+dx*t2);
+          let by=Math.round(sA.ty+dy*t2);
+          // If water, try adjacent land tile
+          if(!isLand(bx,by)){
+            const alts=[[bx+1,by],[bx-1,by],[bx,by+1],[bx,by-1]];
+            for(const [ax2,ay2] of alts){ if(isLand(ax2,ay2)){bx=ax2;by=ay2;break;} }
+          }
+          if(tryPlace(bx,by))return;
         }
       }
     }
