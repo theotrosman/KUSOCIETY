@@ -3864,6 +3864,301 @@ function getActiveTradeRoutes() {
   return _activeTradeRoutes;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ── 10 NUEVAS MECÁNICAS ───────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 1. ASESINATO POLÍTICO — líderes con honor bajo pueden ser asesinados por rivales
+let _assassinTimer = 0;
+function tickPoliticalAssassination(yearsElapsed) {
+  _assassinTimer += yearsElapsed;
+  if(_assassinTimer < 40) return;
+  _assassinTimer = 0;
+  for(const [,civ] of civilizations) {
+    if(civ.population < 8 || civ.honor > 60) continue;
+    const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+    if(!leader || !leader.alive) continue;
+    // Chance inversely proportional to honor
+    const chance = (60 - civ.honor) * 0.001;
+    if(Math.random() > chance) continue;
+    // Find a rival — high aggression member
+    const rivals = [];
+    for(const id of civ.members) { const h = _hById(id); if(h && h.alive && h.id !== leader.id && h.aggression > 0.6) rivals.push(h); }
+    if(rivals.length === 0) continue;
+    const assassin = rivals.reduce((a,b) => a.aggression > b.aggression ? a : b);
+    leader._die('asesinado');
+    assassin.kills++;
+    assassin.isLeader = true;
+    civ.leaderId = assassin.id;
+    civ.honor = Math.max(0, civ.honor - 20);
+    addMajorEvent(`🗡️ ¡ASESINATO! ${leader.name.split(' ')[0]} de ${civ.name} fue asesinado por ${assassin.name.split(' ')[0]} — crisis de sucesión`);
+    addChronicle('war', `Asesinato en ${civ.name}`, `${leader.name.split(' ')[0]}, líder de ${civ.name}, cayó víctima de una conspiración. ${assassin.name.split(' ')[0]} tomó el poder entre el caos y la sangre.`, '🗡️');
+    if(typeof tickSuccessionCrisis !== 'undefined') tickSuccessionCrisis(leader, civ);
+  }
+}
+
+// 2. JUEGOS Y OLIMPIADAS — civs con coliseo/estadio organizan competiciones
+let _gamesTimer = 0;
+const _gamesHistory = []; // {year, civName, winner, event}
+function tickOlympicGames(yearsElapsed) {
+  _gamesTimer += yearsElapsed;
+  if(_gamesTimer < 80) return;
+  _gamesTimer = 0;
+  const civTypes = _civStructureTypes;
+  for(const [civId, types] of civTypes) {
+    if(!types.has('colosseum') && !types.has('stadium')) continue;
+    const civ = civilizations.get(civId);
+    if(!civ || civ.population < 10) continue;
+    if(Math.random() > 0.3) continue;
+    // Pick athletes from this civ and neighbors
+    const athletes = [];
+    for(const id of civ.members) { const h = _hById(id); if(h && h.alive && h.traits.strength > 50) athletes.push(h); }
+    if(athletes.length < 2) continue;
+    const winner = athletes.reduce((a,b) => (a.traits.strength + a.kills) > (b.traits.strength + b.kills) ? a : b);
+    const events = ['carrera','lucha','lanzamiento de jabalina','arquería','combate de gladiadores','natación'];
+    const ev = events[Math.floor(Math.random()*events.length)];
+    winner.knowledge = Math.min(99999, winner.knowledge + 30);
+    winner.social = Math.min(100, winner.social + 20);
+    civ.honor = Math.min(100, civ.honor + 5);
+    // Invite allies
+    const guestCiv = civ.allies.size > 0 ? civilizations.get([...civ.allies][0]) : null;
+    const guestStr = guestCiv ? ` — delegación de ${guestCiv.name} presente` : '';
+    _gamesHistory.push({ year, civName: civ.name, winner: winner.name.split(' ')[0], event: ev });
+    if(_gamesHistory.length > 20) _gamesHistory.shift();
+    addWorldEvent(`🏟️ ${civ.name} celebra los Juegos — ${winner.name.split(' ')[0]} gana en ${ev}${guestStr}`);
+    // Diplomatic bonus with guests
+    if(guestCiv) { civ.allies.add(guestCiv.id); guestCiv.allies.add(civ.id); }
+  }
+}
+
+// 3. REFUGIADOS DE GUERRA — humanos de civs destruidas migran a civs en paz
+let _refugeeTimer = 0;
+function tickWarRefugees(yearsElapsed) {
+  _refugeeTimer += yearsElapsed;
+  if(_refugeeTimer < 30) return;
+  _refugeeTimer = 0;
+  if(typeof _cachedAlive === 'undefined') return;
+  // Find civs at war with heavy losses
+  for(const [,civ] of civilizations) {
+    if(civ.atWarWith.size === 0 || civ.population > 5) continue;
+    // Civ is collapsing — members flee to nearest peaceful civ
+    const peacefulCivs = [];
+    for(const [,other] of civilizations) {
+      if(other.id === civ.id || other.atWarWith.size > 0 || other.population < 5) continue;
+      peacefulCivs.push(other);
+    }
+    if(peacefulCivs.length === 0) continue;
+    const target = peacefulCivs[Math.floor(Math.random()*peacefulCivs.length)];
+    let count = 0;
+    for(const id of [...civ.members]) {
+      const h = _hById(id);
+      if(!h || !h.alive || h.isLeader) continue;
+      if(Math.random() > 0.4) continue;
+      civ.removeMember(id);
+      target.addMember(h);
+      h.civId = target.id;
+      h.color = target.color;
+      if(target.cityCenter) { h.tx = target.cityCenter.tx + Math.floor(Math.random()*10-5); h.ty = target.cityCenter.ty + Math.floor(Math.random()*10-5); }
+      count++;
+      if(count >= 3) break;
+    }
+    if(count > 0) addWorldEvent(`🏳️ ${count} refugiados de ${civ.name} huyen a ${target.name} — acogidos por ${target.leaderId ? _hById(target.leaderId)?.name.split(' ')[0] : 'el pueblo'}`);
+  }
+}
+
+// 4. CULTO CARISMÁTICO — humano con alta carisma funda movimiento
+let _charismaTimer = 0;
+const _charismaMovements = new Map(); // humanId → {civId, followers, name, year}
+const _MOVEMENT_NAMES = ['Los Iluminados','El Camino Verdadero','La Hermandad del Sol','Los Hijos del Fuego','La Orden del Silencio','Los Guardianes del Umbral','La Secta del Renacimiento'];
+function tickCharismaticCult(yearsElapsed) {
+  _charismaTimer += yearsElapsed;
+  if(_charismaTimer < 50) return;
+  _charismaTimer = 0;
+  if(typeof _cachedAlive === 'undefined') return;
+  // Decay existing movements
+  for(const [id, cult] of _charismaMovements) {
+    const h = _hById(id);
+    if(!h || !h.alive) { _charismaMovements.delete(id); continue; }
+    cult.followers = Math.max(0, cult.followers - 1);
+    if(cult.followers <= 0) { _charismaMovements.delete(id); addWorldEvent(`💨 ${cult.name} se disuelve — ${h.name.split(' ')[0]} pierde influencia`); }
+  }
+  if(_charismaMovements.size >= 3) return;
+  // Find charismatic candidates
+  for(const h of _cachedAlive) {
+    if(_charismaMovements.has(h.id)) continue;
+    if(h.traits.charisma < 80 || h.knowledge < 200) continue;
+    if(Math.random() > 0.005) continue;
+    const cultName = _MOVEMENT_NAMES[Math.floor(Math.random()*_MOVEMENT_NAMES.length)];
+    _charismaMovements.set(h.id, { civId: h.civId, followers: 5 + Math.floor(Math.random()*10), name: cultName, year });
+    const civ = h.civId != null ? civilizations.get(h.civId) : null;
+    addMajorEvent(`✨ ${h.name.split(' ')[0]} funda "${cultName}" en ${civ?.name||'las tierras salvajes'} — carisma ${Math.round(h.traits.charisma)}, seguidores crecen`);
+    // Boost followers' social
+    const near = _spatialQuery(h.tx, h.ty, 15, h.id);
+    for(const n of near.slice(0,8)) { n.social = Math.min(100, n.social + 15); n.knowledge = Math.min(99999, n.knowledge + 10); }
+    break;
+  }
+}
+
+// 5. RÉCORD DE LONGEVIDAD — el humano más viejo se convierte en símbolo
+let _longevityTimer = 0;
+let _longevityRecord = 0;
+function tickLongevityRecord(yearsElapsed) {
+  _longevityTimer += yearsElapsed;
+  if(_longevityTimer < 20) return;
+  _longevityTimer = 0;
+  if(typeof _cachedAlive === 'undefined' || _cachedAlive.length === 0) return;
+  const oldest = _cachedAlive.reduce((a,b) => a.age > b.age ? a : b);
+  if(oldest.age > _longevityRecord + 10) {
+    _longevityRecord = oldest.age;
+    const civ = oldest.civId != null ? civilizations.get(oldest.civId) : null;
+    if(oldest.age > 70) {
+      addWorldEvent(`👴 ${oldest.name.split(' ')[0]} de ${civ?.name||'las tierras'} alcanza ${Math.floor(oldest.age)} años — el más anciano del mundo conocido`);
+      if(civ) { civ.honor = Math.min(100, civ.honor + 3); }
+      // Nearby humans gain wisdom
+      const near = _spatialQuery(oldest.tx, oldest.ty, 12, oldest.id);
+      for(const n of near) n.knowledge = Math.min(99999, n.knowledge + 5);
+    }
+    if(oldest.age > 90) addChronicle('culture', `${oldest.name.split(' ')[0]}: el anciano eterno`, `${oldest.name.split(' ')[0]} de ${civ?.name||'las tierras'} vivió ${Math.floor(oldest.age)} años. Vio nacer y morir civilizaciones. Su memoria era la historia viva del mundo.`, '👴');
+  }
+}
+
+// 6. BLOQUEO COMERCIAL — civs en guerra bloquean rutas del enemigo
+let _blockadeTimer = 0;
+function tickTradeBlockade(yearsElapsed) {
+  _blockadeTimer += yearsElapsed;
+  if(_blockadeTimer < 25) return;
+  _blockadeTimer = 0;
+  for(let i = _tradeRoutes.length - 1; i >= 0; i--) {
+    const route = _tradeRoutes[i];
+    const ca = civilizations.get(route.civA);
+    const cb = civilizations.get(route.civB);
+    if(!ca || !cb) { _tradeRoutes.splice(i,1); continue; }
+    // If civs are now at war, destroy the route
+    if(ca.atWarWith.has(cb.id) || cb.atWarWith.has(ca.id)) {
+      _tradeRoutes.splice(i,1);
+      addWorldEvent(`🚫 ${ca.name} bloquea rutas comerciales de ${cb.name} — guerra interrumpe el comercio`);
+      ca.tradePartners.delete(cb.id);
+      cb.tradePartners.delete(ca.id);
+    }
+  }
+}
+
+// 7. REVOLUCIÓN TECNOLÓGICA — cuando una civ inventa algo, rivales aceleran investigación
+let _techRaceTimer = 0;
+function tickTechRace(yearsElapsed) {
+  _techRaceTimer += yearsElapsed;
+  if(_techRaceTimer < 35) return;
+  _techRaceTimer = 0;
+  // Find the most advanced civ
+  let frontrunner = null, maxK = 0;
+  for(const [,civ] of civilizations) {
+    if(civ.population === 0) continue;
+    const k = civ.avgKnowledge || 0;
+    if(k > maxK) { maxK = k; frontrunner = civ; }
+  }
+  if(!frontrunner || maxK < 500) return;
+  // Lagging civs get a catch-up boost
+  for(const [,civ] of civilizations) {
+    if(civ.id === frontrunner.id || civ.population === 0) continue;
+    const gap = maxK - (civ.avgKnowledge || 0);
+    if(gap < 200) continue;
+    const boost = Math.min(gap * 0.02, 15); // catch-up proportional to gap, capped
+    for(const id of civ.members) {
+      const h = _hById(id); if(h && h.alive) h.knowledge = Math.min(99999, h.knowledge + boost * _intelModifier);
+    }
+    if(Math.random() < 0.05) addWorldEvent(`🏁 ${civ.name} acelera su investigación para alcanzar a ${frontrunner.name} — carrera tecnológica`);
+  }
+}
+
+// 8. EXILIO DE SABIOS — cuando una civ colapsa, sus sabios llevan conocimiento a otras
+let _exileTimer = 0;
+function tickScholarExile(yearsElapsed) {
+  _exileTimer += yearsElapsed;
+  if(_exileTimer < 60) return;
+  _exileTimer = 0;
+  if(typeof _cachedAlive === 'undefined') return;
+  for(const [,civ] of civilizations) {
+    if(civ.population > 3 || civ.population === 0) continue;
+    // Civ is nearly extinct — scholars flee
+    const scholars = [];
+    for(const id of civ.members) { const h = _hById(id); if(h && h.alive && h.knowledge > 500) scholars.push(h); }
+    if(scholars.length === 0) continue;
+    // Find a surviving civ to receive them
+    const hosts = [];
+    for(const [,other] of civilizations) { if(other.id !== civ.id && other.population > 5) hosts.push(other); }
+    if(hosts.length === 0) continue;
+    const host = hosts[Math.floor(Math.random()*hosts.length)];
+    for(const scholar of scholars.slice(0,2)) {
+      const knowledgeCarried = Math.floor(scholar.knowledge * 0.5);
+      civ.removeMember(scholar.id);
+      host.addMember(scholar);
+      scholar.civId = host.id;
+      scholar.color = host.color;
+      if(host.cityCenter) { scholar.tx = host.cityCenter.tx + Math.floor(Math.random()*8-4); scholar.ty = host.cityCenter.ty + Math.floor(Math.random()*8-4); }
+      // Share knowledge with host members
+      for(const id of host.members) { const h = _hById(id); if(h && h.alive) h.knowledge = Math.min(99999, h.knowledge + Math.floor(knowledgeCarried * 0.1)); }
+      addWorldEvent(`📚 ${scholar.name.split(' ')[0]} exiliado de ${civ.name} llega a ${host.name} — trae ${knowledgeCarried} pts de conocimiento`);
+    }
+  }
+}
+
+// 9. EPIDEMIA MEDIÁTICA — noticias de epidemia afectan moral de civs vecinas
+let _mediaEpidemicTimer = 0;
+function tickMediaEpidemic(yearsElapsed) {
+  _mediaEpidemicTimer += yearsElapsed;
+  if(_mediaEpidemicTimer < 45) return;
+  _mediaEpidemicTimer = 0;
+  if(_getMediaLevel() === 0) return;
+  // Check if any civ has active sick members
+  for(const [,civ] of civilizations) {
+    if(civ.population < 5) continue;
+    let sickCount = 0;
+    for(const id of civ.members) { const h = _hById(id); if(h && h.alive && h.sick) sickCount++; }
+    if(sickCount < 3) continue;
+    // News spreads fear to neighboring civs
+    for(const [,other] of civilizations) {
+      if(other.id === civ.id || other.population === 0) continue;
+      // Reduce social of nearby humans
+      for(const id of other.members) {
+        const h = _hById(id); if(!h || !h.alive) continue;
+        h.social = Math.max(0, h.social - 5);
+      }
+    }
+    if(Math.random() < 0.3) {
+      const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+      addWorldEvent(`🦠 Alerta sanitaria: epidemia en ${civ.name} — ${sickCount} enfermos, ${leader?.name.split(' ')[0]||'autoridades'} piden cuarentena`);
+    }
+    break;
+  }
+}
+
+// 10. RUMORES Y PROPAGANDA — civs con medios pueden difundir rumores que dañan honor enemigo
+let _propagandaTimer = 0;
+function tickPropaganda(yearsElapsed) {
+  _propagandaTimer += yearsElapsed;
+  if(_propagandaTimer < 55) return;
+  _propagandaTimer = 0;
+  if(_getMediaLevel() < 2) return; // necesita radio o superior
+  for(const [,civ] of civilizations) {
+    if(civ.atWarWith.size === 0 || civ.population < 5) continue;
+    if(!civ._hasRadio && !civ._hasTvStation && !civ._hasInternetHub) continue;
+    const enemyId = [...civ.atWarWith.keys()][0];
+    const enemy = civilizations.get(enemyId);
+    if(!enemy) continue;
+    if(Math.random() > 0.25) continue;
+    const honorLoss = 5 + Math.floor(Math.random()*10);
+    enemy.honor = Math.max(0, enemy.honor - honorLoss);
+    const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+    const enemyLeader = enemy.leaderId ? _hById(enemy.leaderId) : null;
+    const propaganda = [
+      `${civ.name} difunde propaganda contra ${enemy.name} — honor de ${enemyLeader?.name.split(' ')[0]||enemy.name} cae ${honorLoss} puntos`,
+      `Emisoras de ${civ.name} acusan a ${enemy.name} de crímenes de guerra — opinión pública se vuelve contra ellos`,
+      `${leader?.name.split(' ')[0]||civ.name} usa medios para desacreditar a ${enemy.name} — campaña de desinformación`,
+    ];
+    addWorldEvent(`📡 ${propaganda[Math.floor(Math.random()*propaganda.length)]}`);
+  }
+}
+
 // ── Registrar las nuevas mecánicas en tickAllFeatures ────────────────────────
 function tickNewFeatures(yearsElapsed) {
   tickEspionage2(yearsElapsed);
@@ -3871,6 +4166,16 @@ function tickNewFeatures(yearsElapsed) {
   tickMercenaries(yearsElapsed);
   tickWarTrauma(yearsElapsed);
   tickMediaSystem(yearsElapsed);
+  tickPoliticalAssassination(yearsElapsed);
+  tickOlympicGames(yearsElapsed);
+  tickWarRefugees(yearsElapsed);
+  tickCharismaticCult(yearsElapsed);
+  tickLongevityRecord(yearsElapsed);
+  tickTradeBlockade(yearsElapsed);
+  tickTechRace(yearsElapsed);
+  tickScholarExile(yearsElapsed);
+  tickMediaEpidemic(yearsElapsed);
+  tickPropaganda(yearsElapsed);
 }
 
 // ── SISTEMA DE MEDIOS DE COMUNICACIÓN ────────────────────────────────────────
@@ -3914,7 +4219,7 @@ function _civAvgKnowledgeMedia(civId) {
 }
 
 // Generate a non-generic headline using real names and events
-function _generateHeadline(type) {
+function _generateHeadline(mediaLevel) {
   const civList = [];
   for(const [,civ] of civilizations){ if(civ.population > 0) civList.push(civ); }
   if(civList.length === 0) return null;
@@ -3924,78 +4229,180 @@ function _generateHeadline(type) {
   for(const id of civ.members){ const h = _hById(id); if(h && h.alive) members.push(h); }
   if(members.length === 0) return null;
 
-  const person = members[Math.floor(Math.random() * members.length)];
+  const rnd = (arr) => arr[Math.floor(Math.random()*arr.length)];
+  const person = rnd(members);
   const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+  const lname = leader ? leader.name.split(' ')[0] : 'El líder';
+  const pname = person.name.split(' ')[0];
+  const era = civ.era || 'primitiva';
+  const inv = civ.inventions.size > 0 ? [...civ.inventions].pop() : null;
+  const invName = inv ? (INVENTION_LIST.find(i=>i.id===inv)?.name || inv) : null;
+
+  // Pick a random ally/enemy for context
+  const allyId = civ.allies.size > 0 ? [...civ.allies][0] : null;
+  const ally = allyId ? civilizations.get(allyId) : null;
+  const enemyId = civ.atWarWith.size > 0 ? [...civ.atWarWith.keys()][0] : null;
+  const enemy = enemyId ? civilizations.get(enemyId) : null;
+
+  // Sorted by knowledge — find the wisest person
+  const wisest = members.reduce((a,b) => a.knowledge > b.knowledge ? a : b, members[0]);
+  const oldest = members.reduce((a,b) => a.age > b.age ? a : b, members[0]);
+  const strongest = members.reduce((a,b) => a.kills > b.kills ? a : b, members[0]);
 
   const templates = [
-    // War headlines
+
+    // ── GUERRA ──────────────────────────────────────────────────────────────
     () => {
-      if(civ.atWarWith.size === 0) return null;
-      const enemyId = [...civ.atWarWith][0];
-      const enemy = civilizations.get(enemyId);
       if(!enemy) return null;
-      const icons = ['⚔️','🔥','💥','🛡️'];
-      const icon = icons[Math.floor(Math.random()*icons.length)];
-      const phrases = [
-        `${civ.name} lanza ofensiva contra ${enemy.name} — ${leader?leader.name.split(' ')[0]:'El líder'} ordena el avance`,
-        `Batalla campal entre ${civ.name} y ${enemy.name} — bajas en ambos bandos`,
-        `${enemy.name} resiste el asedio de ${civ.name} — la guerra continúa`,
-        `Fuerzas de ${civ.name} cruzan la frontera de ${enemy.name}`,
+      const kills = [...civ.atWarWith.values()][0];
+      const warYear = kills?.startYear ? `(año ${kills.startYear})` : '';
+      const variants = [
+        { text:`GUERRA: ${lname} de ${civ.name} ordena ofensiva total contra ${enemy.name} — tropas avanzan al amanecer`, icon:'⚔️' },
+        { text:`${civ.name} vs ${enemy.name}: batalla decisiva en la frontera — ${strongest.kills} bajas confirmadas del lado de ${civ.name}`, icon:'🔥' },
+        { text:`${enemy.name} rechaza ultimátum de ${civ.name} — ${lname} declara estado de guerra`, icon:'💥' },
+        { text:`Asedio de ${enemy.name}: fuerzas de ${civ.name} rodean la ciudad capital — sin suministros`, icon:'🛡️' },
+        { text:`Tratado de paz rechazado — ${lname} exige rendición incondicional de ${enemy.name}`, icon:'⚔️' },
       ];
-      return { text: phrases[Math.floor(Math.random()*phrases.length)], icon, civName: civ.name };
+      return { ...rnd(variants), civName: civ.name };
     },
-    // Discovery/science headlines
+
+    // ── CIENCIA / INVENCIÓN ──────────────────────────────────────────────────
     () => {
-      if(person.knowledge < 500) return null;
-      const discoveries = [
-        `${person.name.split(' ')[0]} de ${civ.name} presenta nuevo avance en conocimiento`,
-        `Sabios de ${civ.name} descubren técnica revolucionaria`,
-        `${person.name.split(' ')[0]} documenta hallazgo histórico en ${civ.name}`,
-        `Academia de ${civ.name} anuncia descubrimiento — el mundo cambia`,
+      if(wisest.knowledge < 300) return null;
+      const kStr = wisest.knowledge > 10000 ? `${Math.round(wisest.knowledge/1000)}k` : Math.round(wisest.knowledge);
+      const variants = invName ? [
+        { text:`${wisest.name.split(' ')[0]} de ${civ.name} perfecciona ${invName} — nueva aplicación revoluciona la vida cotidiana`, icon:'🔬' },
+        { text:`Academia de ${civ.name} publica tratado sobre ${invName} — copias se distribuyen por todo el mundo conocido`, icon:'📜' },
+        { text:`${civ.name} exporta conocimiento de ${invName} a ${ally?.name||'naciones vecinas'} — intercambio histórico`, icon:'🔭' },
+      ] : [
+        { text:`${wisest.name.split(' ')[0]} (${civ.name}, ${kStr} pts conocimiento) presenta descubrimiento ante el consejo de sabios`, icon:'🔬' },
+        { text:`Escuela de ${civ.name} forma a ${Math.min(members.length, 12)} nuevos estudiantes — generación más educada de la historia`, icon:'📚' },
+        { text:`${wisest.name.split(' ')[0]} de ${civ.name} documenta ${Math.floor(wisest.age)} años de observaciones — obra maestra del saber`, icon:'📜' },
       ];
-      return { text: discoveries[Math.floor(Math.random()*discoveries.length)], icon: '🔬', civName: civ.name };
+      return { ...rnd(variants), civName: civ.name };
     },
-    // Population/society headlines
+
+    // ── POLÍTICA / LIDERAZGO ─────────────────────────────────────────────────
     () => {
-      const phrases = [
-        `${civ.name} supera los ${civ.population} habitantes — ciudad en auge`,
-        `Nuevo líder en ${civ.name}: ${leader?leader.name:'desconocido'} toma el mando`,
-        `${civ.name} celebra festival — miles de personas en las calles`,
-        `Tensiones sociales en ${civ.name} — ${person.name.split(' ')[0]} lidera protesta`,
+      const dynasty = civ.dynastyName ? `la ${civ.dynastyName}` : 'la nueva dinastía';
+      const honor = civ.honor > 70 ? 'respetado' : civ.honor > 40 ? 'cuestionado' : 'impopular';
+      const variants = [
+        { text:`${lname} de ${civ.name}, ${honor} por su pueblo, anuncia nueva ley — ${civ.population} ciudadanos afectados`, icon:'👑' },
+        { text:`Crisis en ${civ.name}: facción rival desafía a ${lname} — el futuro de ${dynasty} en juego`, icon:'🏛️' },
+        { text:`${lname} cumple ${Math.floor(leader?.age||30)} años al frente de ${civ.name} — ${honor} por ${civ.population} súbditos`, icon:'👑' },
+        { text:`Consejo de ${civ.name} debate expansión territorial — ${lname} propone campaña hacia el este`, icon:'🗺️' },
+        { text:`${civ.name} reforma su sistema de gobierno — ${lname} concentra poder en ${dynasty}`, icon:'📜' },
       ];
-      return { text: phrases[Math.floor(Math.random()*phrases.length)], icon: '📢', civName: civ.name };
+      return { ...rnd(variants), civName: civ.name };
     },
-    // Trade headlines
+
+    // ── COMERCIO / ECONOMÍA ──────────────────────────────────────────────────
     () => {
-      if(civ.allies.size === 0) return null;
-      const allyId = [...civ.allies][0];
-      const ally = civilizations.get(allyId);
       if(!ally) return null;
-      const goods = ['grano','metales','especias','madera','joyas','libros','seda'];
-      const good = goods[Math.floor(Math.random()*goods.length)];
-      return {
-        text: `Acuerdo comercial: ${civ.name} y ${ally.name} intercambian ${good} — prosperidad mutua`,
-        icon: '💰', civName: civ.name
-      };
-    },
-    // Disaster/event headlines
-    () => {
-      const events = [
-        { text: `Terremoto sacude ${civ.name} — ${person.name.split(' ')[0]} lidera la reconstrucción`, icon: '🌋' },
-        { text: `Epidemia en ${civ.name} — autoridades piden calma`, icon: '🦠' },
-        { text: `Cosecha récord en ${civ.name} — el hambre retrocede`, icon: '🌾' },
-        { text: `Incendio destruye barrio de ${civ.name} — vecinos se ayudan`, icon: '🔥' },
+      const goods = ['grano','metales preciosos','especias exóticas','madera tallada','joyas','manuscritos','seda','cerámica','sal','pieles'];
+      const good = rnd(goods);
+      const routeCount = _tradeRoutes.filter(r=>r.civA===civ.id||r.civB===civ.id).length;
+      const variants = [
+        { text:`Caravana de ${civ.name} llega a ${ally.name} cargada de ${good} — acuerdo por ${10+Math.floor(Math.random()*40)} años`, icon:'💰' },
+        { text:`${civ.name} y ${ally.name} firman tratado comercial — ${routeCount} rutas activas, economía en auge`, icon:'🤝' },
+        { text:`Mercado de ${civ.name} bate récord: ${civ.population*3} transacciones en un solo día`, icon:'🏪' },
+        { text:`${pname} de ${civ.name} negocia precio del ${good} con ${ally.name} — tensión en los mercados`, icon:'💰' },
       ];
-      const ev = events[Math.floor(Math.random()*events.length)];
-      return { ...ev, civName: civ.name };
+      return { ...rnd(variants), civName: civ.name };
+    },
+
+    // ── DESASTRE NATURAL ─────────────────────────────────────────────────────
+    () => {
+      const disasters = [
+        { text:`Terremoto destruye barrio de ${civ.name} — ${lname} declara emergencia, ${Math.floor(civ.population*0.1)} desplazados`, icon:'🌋' },
+        { text:`Inundación arrasa cultivos de ${civ.name} — ${pname} organiza distribución de reservas`, icon:'🌊' },
+        { text:`Sequía severa en ${civ.name}: ${Math.floor(civ.population*0.15)} personas sin agua potable — ${lname} pide ayuda`, icon:'☀️' },
+        { text:`Plaga de langostas devasta campos de ${civ.name} — cosecha perdida, hambre inminente`, icon:'🦗' },
+        { text:`Incendio forestal rodea ${civ.name} — ${pname} lidera evacuación de ${Math.floor(civ.population*0.2)} personas`, icon:'🔥' },
+      ];
+      return { ...rnd(disasters), civName: civ.name };
+    },
+
+    // ── SOCIEDAD / CULTURA ───────────────────────────────────────────────────
+    () => {
+      const religion = civ.religion || null;
+      const variants = religion ? [
+        { text:`Festival de ${religion} en ${civ.name} — ${civ.population} fieles celebran durante 7 días`, icon:'🎉' },
+        { text:`${pname} de ${civ.name} predica ${religion} en territorios de ${ally?.name||'naciones vecinas'} — conversiones masivas`, icon:'🛕' },
+        { text:`Conflicto religioso en ${civ.name}: seguidores de ${religion} enfrentan a reformistas`, icon:'⚡' },
+      ] : [
+        { text:`${civ.name} supera ${civ.population} habitantes — la ciudad más grande de la era ${era}`, icon:'🏙️' },
+        { text:`${oldest.name.split(' ')[0]} de ${civ.name} cumple ${Math.floor(oldest.age)} años — el más anciano de su generación`, icon:'👴' },
+        { text:`Artistas de ${civ.name} crean obra monumental — ${pname} la dedica a las generaciones futuras`, icon:'🎨' },
+        { text:`${civ.name} celebra ${year - civ.founded} años de historia — ${lname} recuerda a los fundadores`, icon:'🎊' },
+      ];
+      return { ...rnd(variants), civName: civ.name };
+    },
+
+    // ── DIPLOMACIA ───────────────────────────────────────────────────────────
+    () => {
+      if(civList.length < 2) return null;
+      const other = civList.find(c=>c.id!==civ.id);
+      if(!other) return null;
+      const otherLeader = other.leaderId ? _hById(other.leaderId) : null;
+      const olname = otherLeader ? otherLeader.name.split(' ')[0] : 'su líder';
+      const variants = [
+        { text:`Cumbre histórica: ${lname} de ${civ.name} y ${olname} de ${other.name} se reúnen por primera vez`, icon:'🤝' },
+        { text:`${civ.name} ofrece asilo a refugiados de ${other.name} — ${Math.floor(other.population*0.05)} personas cruzan la frontera`, icon:'🏳️' },
+        { text:`Embajada de ${civ.name} en ${other.name} — primer intercambio diplomático formal entre ambas naciones`, icon:'🏛️' },
+        { text:`${civ.name} acusa a ${other.name} de espionaje — ${lname} exige explicaciones`, icon:'🕵️' },
+      ];
+      return { ...rnd(variants), civName: civ.name };
+    },
+
+    // ── CRIMEN / ESPIONAJE ───────────────────────────────────────────────────
+    () => {
+      if(mediaLevel < 2) return null; // solo radio o superior
+      const spies = typeof _activeSpies2 !== 'undefined' ? _activeSpies2.filter(s=>{
+        const h=_hById(s.spyId); return h && h.civId===civ.id;
+      }) : [];
+      const variants = spies.length > 0 ? [
+        { text:`Escándalo en ${civ.name}: espía capturado con documentos secretos de ${enemy?.name||'nación rival'}`, icon:'🕵️' },
+        { text:`${civ.name} desmantela red de espionaje — ${spies.length} agentes identificados`, icon:'🚨' },
+      ] : [
+        { text:`Robo en el palacio de ${civ.name} — ${pname} acusado, ${lname} ordena investigación`, icon:'🔍' },
+        { text:`Conspiración descubierta en ${civ.name} — ${Math.floor(2+Math.random()*5)} personas arrestadas`, icon:'⛓️' },
+      ];
+      return { ...rnd(variants), civName: civ.name };
+    },
+
+    // ── MILITAR / VETERANOS ──────────────────────────────────────────────────
+    () => {
+      if(strongest.kills < 3) return null;
+      const weapon = WEAPON_TIERS[Math.min(strongest.weaponTier||0, WEAPON_TIERS.length-1)];
+      const rank = strongest._veteranLevel >= 2 ? 'Leyenda Militar' : strongest._veteranLevel >= 1 ? 'Veterano' : 'Soldado';
+      const variants = [
+        { text:`${rank} ${strongest.name.split(' ')[0]} de ${civ.name} regresa con ${strongest.kills} victorias — recibido como héroe`, icon:'🎖️' },
+        { text:`${civ.name} equipa a sus tropas con ${weapon} — ${lname} promete victoria`, icon:'⚔️' },
+        { text:`${strongest.name.split(' ')[0]} (${civ.name}) lidera maniobras militares — ${civ.population > 20 ? Math.floor(civ.population*0.3) : 'varios'} soldados en ejercicio`, icon:'🪖' },
+      ];
+      return { ...rnd(variants), civName: civ.name };
+    },
+
+    // ── POBLACIÓN / DEMOGRAFÍA ───────────────────────────────────────────────
+    () => {
+      const births = Math.floor(civ.population * 0.05 + Math.random()*3);
+      const variants = [
+        { text:`Censo de ${civ.name}: ${civ.population} habitantes, ${births} nacimientos este año — crecimiento sostenido`, icon:'👶' },
+        { text:`Migración masiva hacia ${civ.name} — ${Math.floor(3+Math.random()*8)} familias llegan desde territorios en conflicto`, icon:'🚶' },
+        { text:`${civ.name} funda nuevo asentamiento — ${pname} lidera expedición de colonización`, icon:'🏕️' },
+      ];
+      return { ...rnd(variants), civName: civ.name };
     },
   ];
 
   // Try templates in random order
   const order = templates.map((_,i)=>i).sort(()=>Math.random()-0.5);
   for(const i of order){
-    const result = templates[i]();
-    if(result) return result;
+    try {
+      const result = templates[i]();
+      if(result) return result;
+    } catch(e) { /* skip broken template */ }
   }
   return null;
 }
