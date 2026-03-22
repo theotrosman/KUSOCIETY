@@ -1583,21 +1583,22 @@ class Human{
     }
 
     // Build up drives — tasa de reproducción calibrada
-    // Objetivo: ~1 hijo cada 3-4 años en era primitiva (mortalidad alta compensa)
-    // Sube a ~1 cada 2 años en eras avanzadas (más recursos, medicina)
     if(this._canReproduce&&this.age>=16&&this.age<=50&&this.reproTimer<=0){
       const popCap = typeof speedIndex!=='undefined'&&speedIndex===5&&_cachedAlive.length>=4500;
       if(!popCap){
         const kFactor = Math.min(1, this.knowledge / 5000);
-        const baseRate = 0.18 + kFactor * 0.22; // 0.18/año primitivo → 0.40/año avanzado
+        const baseRate = 0.40 + kFactor * 0.35; // 0.40/año primitivo → 0.75/año avanzado
         // Bonus si la población está muy baja (instinto de supervivencia)
-        const popBonus = _cachedAlive.length < 20 ? 0.15 : 0;
+        const popBonus = _cachedAlive.length < 30 ? 0.30 : _cachedAlive.length < 60 ? 0.15 : 0;
         this._reproUrge=Math.min(1,this._reproUrge+yearsElapsed*(baseRate+popBonus));
       }
     }
     this._exploreUrge=Math.min(1,this._exploreUrge+yearsElapsed*0.14);
     // Build urge scales with knowledge — advanced civs build constantly
-    const buildRate=0.20+Math.min(0.5,this.knowledge*0.0012);
+    // Primitive humans build shelters urgently
+    const buildRate=this.knowledge<50
+      ? 0.60  // era primitiva: construye refugio muy rápido
+      : 0.20+Math.min(0.5,this.knowledge*0.0012);
     this._buildUrge=Math.min(1,this._buildUrge+yearsElapsed*buildRate);
     // Flatten urge also scales with knowledge
     const flattenRate=0.06+Math.min(0.18,this.knowledge*0.0006);
@@ -1618,15 +1619,15 @@ class Human{
 
     this.wealth=this.inventory.food+this.inventory.wood*2+this.inventory.stone*1.5;
 
-    // Transport tier upgrade — based on knowledge, using 10-tier table
+    // Transport tier upgrade — based on knowledge AND era year
     const targetTransport=
-      this.knowledge>130000?9:  // teletransporte — Era Espacial tardía
-      this.knowledge>110000?8:  // nave orbital — Era Espacial
-      this.knowledge>90000?7:   // cohete — Era Espacial
-      this.knowledge>65000?6:   // helicóptero — Era Moderna tardía
-      this.knowledge>45000?5:   // avión — Era Moderna
-      this.knowledge>28000?4:   // automóvil — Era Industrial tardía
-      this.knowledge>18000?3:   // tren — Era Industrial
+      (this.knowledge>130000&&year>=60000)?9:  // teletransporte — Era Espacial tardía
+      (this.knowledge>110000&&year>=60000)?8:  // nave orbital — Era Espacial
+      (this.knowledge>90000 &&year>=60000)?7:  // cohete — Era Espacial
+      (this.knowledge>65000 &&year>=25000)?6:  // helicóptero — Era Moderna tardía
+      (this.knowledge>45000 &&year>=25000)?5:  // avión — Era Moderna
+      (this.knowledge>28000 &&year>=12000)?4:  // automóvil — Era Industrial tardía
+      (this.knowledge>18000 &&year>=12000)?3:  // tren — Era Industrial
       this.knowledge>2000?2:    // carruaje — Era Clásica
       this.knowledge>500?1:0;   // bote — siempre disponible con conocimiento suficiente
     if(targetTransport>this.transportTier){
@@ -1682,13 +1683,13 @@ class Human{
         if(!hasFarm){this._buildUrge=0;this._doBuild();return;}
       }
       // Reproducirse si hay pareja disponible (en crisis se relaja un poco el umbral)
-      if(this._reproUrge>0.5&&this.hunger>45&&this.energy>25&&!this.sick){
+      if(this._reproUrge>0.35&&this.hunger>40&&this.energy>20&&!this.sick){
         this._tryReproduce(nearby);return;
       }
     }
 
     // Biological imperatives — umbral más alto: necesitan estar bien alimentados
-    if(this._reproUrge>(_cachedAlive.length<15?0.55:0.75)&&this.hunger>55&&this.energy>45&&!this.sick){
+    if(this._reproUrge>(_cachedAlive.length<15?0.40:0.60)&&this.hunger>50&&this.energy>35&&!this.sick){
       this._tryReproduce(nearby);return;
     }
     // Repair crumbling structures — highest priority after survival
@@ -1696,7 +1697,8 @@ class Human{
       if(this._doRepair())return;
     }
     // Build fires much more aggressively — lower threshold, lower resource requirement
-    if(this._buildUrge>0.30&&this.hunger>35&&this.energy>25&&
+    const _buildThreshold = (typeof _season!=='undefined'&&_season===3) ? 0.15 : 0.30; // invierno: construye antes
+    if(this._buildUrge>_buildThreshold&&this.hunger>35&&this.energy>25&&
        (this.inventory.wood>=2||this.inventory.stone>=2)){
       this._buildUrge=0;this._doBuild();return;
     }
@@ -2271,8 +2273,14 @@ class Human{
     // Once knowledge is sufficient, never build camps — gather instead
     const _noCamp = this.knowledge >= 30;
 
+    // ── SHELTER FIRST: en era primitiva, construir refugio es la prioridad máxima ──
+    // Camp y hut van ANTES que cualquier otra cosa cuando el knowledge es bajo
+    if(!_noCamp&&!atCap('camp',2.0,999)&&this.inventory.wood>=2){type='camp';}
+    else if(this.knowledge<100&&!atCap('hut',1.0,60)&&this.inventory.wood>=4){type='hut';} // hut sin piedra al inicio
+    else if(this.knowledge<200&&!atCap('hut',1.0,60)&&this.inventory.wood>=4&&this.inventory.stone>=1){type='hut';}
+
     // ── Unique / very rare structures (1 per civ) ─────────────────────────
-    if(_unlockedTypes.has('spaceport')&&this.knowledge>110000&&this.inventory.wood>=30&&this.inventory.stone>=80&&this.isLeader&&civCount('spaceport')<1)type='spaceport';
+    else if(_unlockedTypes.has('spaceport')&&this.knowledge>110000&&this.inventory.wood>=30&&this.inventory.stone>=80&&this.isLeader&&civCount('spaceport')<1)type='spaceport';
     else if(_unlockedTypes.has('arcology')&&this.knowledge>75000&&this.inventory.wood>=30&&this.inventory.stone>=80&&this.isLeader&&civCount('arcology')<2)type='arcology';
     else if(_unlockedTypes.has('megacity_core')&&this.knowledge>55000&&this.inventory.wood>=20&&this.inventory.stone>=60&&this.isLeader&&civCount('megacity_core')<1)type='megacity_core';
     else if(_unlockedTypes.has('airport')&&this.knowledge>45000&&this.inventory.wood>=20&&this.inventory.stone>=40&&this.isLeader&&civCount('airport')<1)type='airport';
@@ -2343,10 +2351,8 @@ class Human{
     else if(!atCap('farm',0.33,20)&&this.inventory.wood>=1)type='farm';
     // Hut: 1 per person, max 60 — the main housing
     else if(!atCap('hut',1.0,60)&&this.inventory.wood>=4&&this.inventory.stone>=2)type='hut';
-    // Camp: ONLY if knowledge is very low (primitive era) AND no hut is possible
-    else if(!_noCamp&&this.inventory.wood>=2)type='camp';
-    // If nothing fits and we're evolved — go gather resources instead of making a campfire
-    else if(_noCamp){this.action=ACTIONS.GATHER;return;}
+    // If nothing fits — go gather resources
+    else{this.action=ACTIONS.GATHER;return;}
 
     const def=STRUCTURE_TYPES[type];
     if(!def){this.action=ACTIONS.GATHER;return;}
@@ -2941,14 +2947,14 @@ class Human{
     for(const h of candidates){
       if(h.gender===this.gender||h.age<15||h.age>50||h.reproTimer>0)continue;
       if(h.hunger<(lowPop?20:30)||h.energy<(lowPop?15:20)||h.sick)continue;
-      if(Math.hypot(h.tx-this.tx,h.ty-this.ty)<=8){partner=h;break;}
+      if(Math.hypot(h.tx-this.tx,h.ty-this.ty)<=16){partner=h;break;}
     }
     if(partner){
       this.action=ACTIONS.REPRODUCE;partner.action=ACTIONS.REPRODUCE;
-      // Cooldown entre hijos: primitivo ~2-4 años, avanzado ~1-2 años
+      // Cooldown entre hijos: primitivo ~1-2 años, avanzado ~1 año
       const kFactor = Math.min(1, this.knowledge / 5000);
-      const minCooldown = Math.round(2 - kFactor * 1); // 2 primitivo → 1 avanzado
-      const rangeCooldown = 2; // rango fijo de 2 años
+      const minCooldown = Math.round(1.5 - kFactor * 0.5); // 1.5 primitivo → 1 avanzado
+      const rangeCooldown = 1;
       this.reproTimer = minCooldown + Math.floor(this._rng() * rangeCooldown);
       partner.reproTimer = minCooldown + Math.floor(partner._rng() * rangeCooldown);
       this._reproUrge=0;partner._reproUrge=0;
@@ -3132,25 +3138,25 @@ const KNOWLEDGE_UNLOCKS=[
   {avgK:20000,type:'theme_park', icon:'🎡',color:'#ff88cc',label:'Parque Temático',cost:{wood:25,stone:35},hp:600,decay:false,decayRate:0, msg:'🎡 Parque Temático desbloqueado — la era del entretenimiento masivo'},
   {avgK:9000, type:'mining_complex',icon:'⛏️',color:'#886644',label:'Complejo Minero',cost:{wood:12,stone:20},hp:500,decay:false,decayRate:0,msg:'⛏️ Complejos mineros desbloqueados — industria extractiva'},
   // ── Renacimiento (avgK 10000-18000) ──────────────────────────────────────
-  {avgK:10000,type:'highway',    icon:'🛣️', color:'#666688',label:'Autopista',   cost:{wood:0,stone:15}, hp:800,decay:false,decayRate:0, msg:'🛣️ Autopistas desbloqueadas — las ciudades se expanden'},
-  {avgK:11000,type:'palace',     icon:'🏯',color:'#ffd700',label:'Palacio',     cost:{wood:25,stone:30},hp:600,decay:false,decayRate:0, msg:'🏯 Palacio desbloqueado — era imperial'},
-  {avgK:12000,type:'factory',    icon:'🏭',color:'#888888',label:'Fábrica',     cost:{wood:20,stone:30},hp:400,decay:false,decayRate:0, msg:'🏭 Fábricas desbloqueadas — Revolución Industrial'},
-  {avgK:13000,type:'ore_processor',icon:'🏗',color:'#aa6633',label:'Procesadora de Mineral',cost:{wood:15,stone:25},hp:450,decay:false,decayRate:0,msg:'🏗 Procesadoras desbloqueadas — refinado industrial de minerales'},
-  {avgK:15000,type:'crane',      icon:'🏗️',color:'#ddaa44',label:'Grúa',        cost:{wood:10,stone:15},hp:350,decay:false,decayRate:0, msg:'🏗️ Grúas desbloqueadas — construcción a gran altura'},
+  {avgK:10000,minYear:8000, type:'highway',    icon:'🛣️', color:'#666688',label:'Autopista',   cost:{wood:0,stone:15}, hp:800,decay:false,decayRate:0, msg:'🛣️ Autopistas desbloqueadas — las ciudades se expanden'},
+  {avgK:11000,minYear:8000, type:'palace',     icon:'🏯',color:'#ffd700',label:'Palacio',     cost:{wood:25,stone:30},hp:600,decay:false,decayRate:0, msg:'🏯 Palacio desbloqueado — era imperial'},
+  {avgK:12000,minYear:8000, type:'factory',    icon:'🏭',color:'#888888',label:'Fábrica',     cost:{wood:20,stone:30},hp:400,decay:false,decayRate:0, msg:'🏭 Fábricas desbloqueadas — Revolución Industrial'},
+  {avgK:13000,minYear:8000, type:'ore_processor',icon:'🏗',color:'#aa6633',label:'Procesadora de Mineral',cost:{wood:15,stone:25},hp:450,decay:false,decayRate:0,msg:'🏗 Procesadoras desbloqueadas — refinado industrial de minerales'},
+  {avgK:15000,minYear:8000, type:'crane',      icon:'🏗️',color:'#ddaa44',label:'Grúa',        cost:{wood:10,stone:15},hp:350,decay:false,decayRate:0, msg:'🏗️ Grúas desbloqueadas — construcción a gran altura'},
   // ── Era Industrial (avgK 18000-40000) ────────────────────────────────────
-  {avgK:18000,type:'railway',    icon:'🚂',color:'#555555',label:'Ferrocarril', cost:{wood:10,stone:20},hp:600,decay:false,decayRate:0, msg:'🚂 Ferrocarril desbloqueado — el mundo se encoge'},
-  {avgK:22000,type:'subway',     icon:'🚇',color:'#4466aa',label:'Metro',        cost:{wood:5,stone:25}, hp:700,decay:false,decayRate:0, msg:'🚇 Metro desbloqueado — transporte subterráneo'},
-  {avgK:28000,type:'powerplant', icon:'⚡',color:'#ffff00',label:'Central Eléc.',cost:{wood:10,stone:30},hp:500,decay:false,decayRate:0, msg:'⚡ Electricidad desbloqueada — una nueva era comienza'},
-  {avgK:35000,type:'skyscraper', icon:'🏙️', color:'#88aacc',label:'Rascacielos', cost:{wood:10,stone:40},hp:800,decay:false,decayRate:0, msg:'🏙️ Rascacielos desbloqueados — las ciudades tocan el cielo'},
+  {avgK:18000,minYear:12000,type:'railway',    icon:'🚂',color:'#555555',label:'Ferrocarril', cost:{wood:10,stone:20},hp:600,decay:false,decayRate:0, msg:'🚂 Ferrocarril desbloqueado — el mundo se encoge'},
+  {avgK:22000,minYear:12000,type:'subway',     icon:'🚇',color:'#4466aa',label:'Metro',        cost:{wood:5,stone:25}, hp:700,decay:false,decayRate:0, msg:'🚇 Metro desbloqueado — transporte subterráneo'},
+  {avgK:28000,minYear:12000,type:'powerplant', icon:'⚡',color:'#ffff00',label:'Central Eléc.',cost:{wood:10,stone:30},hp:500,decay:false,decayRate:0, msg:'⚡ Electricidad desbloqueada — una nueva era comienza'},
+  {avgK:35000,minYear:12000,type:'skyscraper', icon:'🏙️', color:'#88aacc',label:'Rascacielos', cost:{wood:10,stone:40},hp:800,decay:false,decayRate:0, msg:'🏙️ Rascacielos desbloqueados — las ciudades tocan el cielo'},
   // ── Era Moderna (avgK 40000-90000) ───────────────────────────────────────
-  {avgK:45000,type:'airport',    icon:'✈️', color:'#aaddff',label:'Aeropuerto',  cost:{wood:20,stone:40},hp:600,decay:false,decayRate:0, msg:'✈️ Aeropuertos desbloqueados — la humanidad conquista el cielo'},
-  {avgK:55000,type:'megacity_core',icon:'🌆',color:'#cc8800',label:'Núcleo Urbano',cost:{wood:20,stone:60},hp:1200,decay:false,decayRate:0,msg:'🌆 Núcleo Urbano desbloqueado — megaciudades emergen'},
-  {avgK:65000,type:'neon_district',icon:'🌃',color:'#ff44aa',label:'Distrito Neón',cost:{wood:15,stone:50},hp:600,decay:false,decayRate:0,msg:'🌃 Distritos Neón desbloqueados — era cyberpunk'},
-  {avgK:75000,type:'arcology',   icon:'🏗️', color:'#44aa88',label:'Arcología',   cost:{wood:30,stone:80},hp:1500,decay:false,decayRate:0,msg:'🏗️ Arcologías desbloqueadas — ciudades autosuficientes'},
+  {avgK:45000,minYear:25000,type:'airport',    icon:'✈️', color:'#aaddff',label:'Aeropuerto',  cost:{wood:20,stone:40},hp:600,decay:false,decayRate:0, msg:'✈️ Aeropuertos desbloqueados — la humanidad conquista el cielo'},
+  {avgK:55000,minYear:25000,type:'megacity_core',icon:'🌆',color:'#cc8800',label:'Núcleo Urbano',cost:{wood:20,stone:60},hp:1200,decay:false,decayRate:0,msg:'🌆 Núcleo Urbano desbloqueado — megaciudades emergen'},
+  {avgK:65000,minYear:25000,type:'neon_district',icon:'🌃',color:'#ff44aa',label:'Distrito Neón',cost:{wood:15,stone:50},hp:600,decay:false,decayRate:0,msg:'🌃 Distritos Neón desbloqueados — era cyberpunk'},
+  {avgK:75000,minYear:25000,type:'arcology',   icon:'🏗️', color:'#44aa88',label:'Arcología',   cost:{wood:30,stone:80},hp:1500,decay:false,decayRate:0,msg:'🏗️ Arcologías desbloqueadas — ciudades autosuficientes'},
   // ── Era Espacial (avgK 90000+) ────────────────────────────────────────────
-  {avgK:90000,type:'neural_hub', icon:'🧠',color:'#aa44ff',label:'Hub Neural',  cost:{wood:20,stone:60},hp:800,decay:false,decayRate:0, msg:'🧠 Hub Neural desbloqueado — la IA despierta'},
-  {avgK:70000,type:'nuclear_silo',icon:'☢️',color:'#ff4400',label:'Silo Nuclear',cost:{wood:20,stone:60},hp:800,decay:false,decayRate:0, msg:'☢️ Silos Nucleares desbloqueados — el poder de destrucción total'},
-  {avgK:110000,type:'spaceport', icon:'🚀',color:'#aaddff',label:'Puerto Espacial',cost:{wood:30,stone:80},hp:1000,decay:false,decayRate:0,msg:'🚀 Puerto Espacial desbloqueado — la humanidad mira las estrellas'},
+  {avgK:90000,minYear:60000,type:'neural_hub', icon:'🧠',color:'#aa44ff',label:'Hub Neural',  cost:{wood:20,stone:60},hp:800,decay:false,decayRate:0, msg:'🧠 Hub Neural desbloqueado — la IA despierta'},
+  {avgK:70000,minYear:25000,type:'nuclear_silo',icon:'☢️',color:'#ff4400',label:'Silo Nuclear',cost:{wood:20,stone:60},hp:800,decay:false,decayRate:0, msg:'☢️ Silos Nucleares desbloqueados — el poder de destrucción total'},
+  {avgK:110000,minYear:60000,type:'spaceport', icon:'🚀',color:'#aaddff',label:'Puerto Espacial',cost:{wood:30,stone:80},hp:1000,decay:false,decayRate:0,msg:'🚀 Puerto Espacial desbloqueado — la humanidad mira las estrellas'},
 ];
 const _unlockedTypes=new Set(['camp','hut','farm','mine','market','temple']);
 
@@ -3169,7 +3175,7 @@ function _checkKnowledgeUnlocks(){
   for(let i=0;i<alive.length;i+=step){sum+=alive[i].knowledge;count++;}
   const avgK=count>0?sum/count:0;
   for(const u of KNOWLEDGE_UNLOCKS){
-    if(avgK>=u.avgK&&!_unlockedTypes.has(u.type)){
+    if(avgK>=u.avgK&&(!u.minYear||year>=u.minYear)&&!_unlockedTypes.has(u.type)){
       _unlockedTypes.add(u.type);
       STRUCTURE_TYPES[u.type]={icon:u.icon,color:u.color,label:u.label,cost:u.cost,hp:u.hp,decay:u.decay,decayRate:u.decayRate};
       addWorldEvent(u.msg);
