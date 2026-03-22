@@ -902,56 +902,64 @@ function tickPrisonerExchange(yearsElapsed) {
 // Group 1: medium-frequency (runs every 2 ticks)
 // Group 2: low-frequency (runs every 3 ticks)
 let _featureTickIdx = 0;
+let _featureSlowIdx = 0; // separate counter for slow features
 
 function tickAllFeatures(yearsElapsed) {
   // Always run core features every tick
   _tickCoreFeatues(yearsElapsed);
-  tickKnowledgeInheritance(yearsElapsed);
-  tickGlobalPandemic(yearsElapsed);
   tickFamine(yearsElapsed);
   tickGlobalClimate(yearsElapsed);
   tickSurvivalInstinct(yearsElapsed);
 
-  // Rotate through medium-frequency features (every 2 ticks)
+  // Medium-frequency: rotate 3 groups each tick
   _featureTickIdx = (_featureTickIdx + 1) % 3;
-
   if(_featureTickIdx === 0){
     tickTradeRoutes(yearsElapsed);
-    tickDynasticLegacy(yearsElapsed);
     tickEspionage(yearsElapsed);
+    tickMilitaryAlliances(yearsElapsed);
+    tickGlobalPandemic(yearsElapsed);
+  } else if(_featureTickIdx === 1){
+    tickDiseaseMutation(yearsElapsed);
+    tickDarkAgeRenaissance(yearsElapsed);
+    tickTechCollapse(yearsElapsed);
+    tickAdvancedDiplomacy(yearsElapsed);
+  } else {
+    tickCyberpunkFeatures(yearsElapsed);
+    tickWorldWonders(yearsElapsed);
+    tickGridCities(yearsElapsed);
+    tickGlobalization(yearsElapsed);
+  }
+
+  // Slow features: rotate 4 groups, run 1 per tick
+  _featureSlowIdx = (_featureSlowIdx + 1) % 4;
+  if(_featureSlowIdx === 0){
+    tickDynasticLegacy(yearsElapsed);
     tickVolcanicEruptions(yearsElapsed);
     tickEliteExodus(yearsElapsed);
     tickGlaciation(yearsElapsed);
-    tickMilitaryAlliances(yearsElapsed);
-  } else if(_featureTickIdx === 1){
-    tickDiseaseMutation(yearsElapsed);
+    tickKnowledgeInheritance(yearsElapsed);
+  } else if(_featureSlowIdx === 1){
     tickPiracy(yearsElapsed);
     tickBattlefieldLegacy(yearsElapsed);
-    tickDarkAgeRenaissance(yearsElapsed);
     tickSecretCults(yearsElapsed);
     tickRatPlague(yearsElapsed);
-    tickTechCollapse(yearsElapsed);
-  } else {
+    tickCivDiversity(yearsElapsed);
+  } else if(_featureSlowIdx === 2){
     tickAstronomyEvents(yearsElapsed);
     tickPrisonerExchange(yearsElapsed);
-    tickCyberpunkFeatures(yearsElapsed);
-    tickWorldWonders(yearsElapsed);
     tickIrrigation(yearsElapsed);
     tickLegendaryHeroes(yearsElapsed);
+    tickTourism(yearsElapsed);
+  } else {
     tickTsunamis(yearsElapsed);
     tickForcedNomadism(yearsElapsed);
+    tickRandomChronicles(yearsElapsed);
+    tickNuclearWar(yearsElapsed);
   }
 
-  // Siempre activos — no dependen de velocidad
+  // Always active — critical systems
   tickAIPlague(yearsElapsed);
-  tickGridCities(yearsElapsed);
-  tickAdvancedDiplomacy(yearsElapsed);
-  tickTourism(yearsElapsed);
-  tickGlobalization(yearsElapsed);
   tickNewFeatures(yearsElapsed);
-  tickCivDiversity(yearsElapsed);
-  tickRandomChronicles(yearsElapsed);
-  tickNuclearWar(yearsElapsed);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

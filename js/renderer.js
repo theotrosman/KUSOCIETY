@@ -327,6 +327,8 @@ function _drawNuclearExplosions(){
 
 function _drawMetropolisEffects(dtSec){
   if(typeof structures === 'undefined' || cam.zoom < 0.6) return;
+  // Skip entirely at very high structure count — too expensive
+  if(structures.length > 800 && cam.zoom < 1.0) return;
   const ctx = _ctx;
   const t = _waterPhase;
 
@@ -344,7 +346,7 @@ function _drawMetropolisEffects(dtSec){
       s.tx>=vx0 && s.tx<=vx1 && s.ty>=vy0 && s.ty<=vy1
     );
     // Only connect if within 10 tiles — use grid proximity check
-    const MAX_ROAD_LINES = 200; // cap draw calls
+    const MAX_ROAD_LINES = structures.length > 600 ? 80 : 200; // cap draw calls
     let lineCount = 0;
     ctx.lineWidth = Math.max(0.5, 1.5/cam.zoom);
     for(let i=0; i<visRoads.length && lineCount<MAX_ROAD_LINES; i++){
@@ -818,14 +820,15 @@ function _rebuildTerritoryCanvas(){
 function _drawTerritories(){
   if(cam.zoom<0.4)return;
   _territoryFrame++;
-  if(_territoryDirty||_territoryFrame>=180){
+  // Rebuild less often at high pop — every 360 frames (~6s) instead of 180
+  const rebuildInterval = (typeof _cachedAlive !== 'undefined' && _cachedAlive.length > 200) ? 360 : 180;
+  if(_territoryDirty||_territoryFrame>=rebuildInterval){
     _territoryFrame=0;
     _rebuildTerritoryCanvas();
   }
   if(!_territoryCanvas)return;
   const alpha=Math.min(0.9,(cam.zoom-0.3)*0.7);
   _ctx.globalAlpha=alpha;
-  // Draw scaled up from half-res canvas
   _ctx.drawImage(_territoryCanvas,0,0,WORLD_W*TILE,WORLD_H*TILE);
   _ctx.globalAlpha=1;
 }
@@ -875,8 +878,9 @@ function _rebuildCityGlows(){
 
 function _drawCityGlows(){
   _cityGlowFrame++;
-  // Rebuild at most every 300 frames (~5s at 60fps), or when dirty
-  if(_cityGlowDirty||_cityGlowFrame>=300){
+  // Rebuild less often at high structure count
+  const rebuildInterval = structures && structures.length > 500 ? 600 : 300;
+  if(_cityGlowDirty||_cityGlowFrame>=rebuildInterval){
     _cityGlowFrame=0;
     _rebuildCityGlows();
   }
@@ -1698,6 +1702,7 @@ function _drawHumans(){
   let _visibleHumanCount=0;
   for(const h of drawList){ if(h.alive&&h.px>=vx0&&h.px<=vx1&&h.py>=vy0&&h.py<=vy1)_visibleHumanCount++; }
   const _humanDense = _visibleHumanCount > 120; // suppress icons when crowded
+  const _humanVeryDense = _visibleHumanCount > 300; // suppress even rings
 
   for(const h of drawList){
     if(!h.alive)continue;
@@ -1713,8 +1718,8 @@ function _drawHumans(){
       continue;
     }
 
-    // Civ ring — only at reasonable zoom
-    if(showRings&&h.civId!=null){
+    // Civ ring — only at reasonable zoom and not very dense
+    if(showRings&&!_humanVeryDense&&h.civId!=null){
       const civ=typeof civilizations!=='undefined'?civilizations.get(h.civId):null;
       if(civ){
         _ctx.beginPath();
@@ -1725,8 +1730,8 @@ function _drawHumans(){
       }
     }
 
-    // Prodigy aura — pulsing glow (skip in minimal mode)
-    if(h.isProdigy&&!minimalMode){
+    // Prodigy aura — skip in minimal mode or very dense
+    if(h.isProdigy&&!minimalMode&&!_humanVeryDense){
       const pulse=0.55+Math.sin(_waterPhase*4+h.id)*0.45;
       _ctx.beginPath();
       _ctx.arc(px,py,r+7+pulse*4,0,Math.PI*2);

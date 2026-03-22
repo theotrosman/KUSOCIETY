@@ -1373,55 +1373,99 @@ function _toggleStatsPanel(){
 // ── Settings panel ────────────────────────────────────────────────────────────
 let _popTarget = 0; // 0 = unlimited
 
+// Knowledge levels matching each era's year threshold
+const _ERA_KNOWLEDGE = {
+  1:     50,
+  100:   200,
+  400:   600,
+  1000:  1500,
+  2500:  3500,
+  5000:  7000,
+  8000:  12000,
+  12000: 20000,
+  25000: 40000,
+  60000: 80000,
+};
+
+function _jumpEra(targetYear) {
+  if (targetYear <= 0) return;
+  year = targetYear;
+  const targetKnowledge = _ERA_KNOWLEDGE[targetYear] || 50;
+  const targetResources = Math.min(50, 10 + Math.floor(targetKnowledge / 1000));
+  // Boost all alive humans to era knowledge + give them resources
+  const alive = getAlive();
+  for (const h of alive) {
+    if (!h.alive) continue;
+    h.knowledge = Math.max(h.knowledge, targetKnowledge * (0.7 + Math.random() * 0.6));
+    h.inventory.food  = Math.max(h.inventory.food,  targetResources);
+    h.inventory.wood  = Math.max(h.inventory.wood,  targetResources);
+    h.inventory.stone = Math.max(h.inventory.stone, targetResources);
+    h.hunger = 100; h.health = 100; h.energy = 100;
+  }
+  // Boost civ knowledge too
+  if (typeof civilizations !== 'undefined') {
+    for (const [, civ] of civilizations) {
+      civ.knowledge = Math.max(civ.knowledge || 0, targetKnowledge);
+    }
+  }
+  // Force intel modifier up to match era
+  if (typeof _userIntelBias !== 'undefined') {
+    _userIntelBias = Math.max(_userIntelBias, Math.min(0.8, targetKnowledge / 100000));
+  }
+  // Dirty caches
+  if (typeof markCityGlowDirty !== 'undefined') markCityGlowDirty();
+  _aliveDirty = true;
+  addWorldEvent(`⏩ Salto temporal — ${getEra(year).name} (Año ${year.toLocaleString()})`);
+}
+
+function _setSpeed(idx) {
+  speedIndex = idx;
+  _checkSpeedChange();
+  // Update button states
+  document.querySelectorAll('#set-speed-group .sg-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.val) === idx);
+  });
+}
+
+function _setPop(val) {
+  _popTarget = val;
+  document.querySelectorAll('#set-pop-group .sg-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.val) === val);
+  });
+}
+
+function _applyIntel(val) {
+  if (typeof _userIntelBias !== 'undefined') _userIntelBias = parseInt(val) / 100;
+  const v = document.getElementById('set-intel-val');
+  if (v) v.textContent = Math.round((1.2 + parseInt(val)/100) * 100) + '%';
+}
+
+function _applyDayLen(val) {
+  window._dayRealMsOverride = parseInt(val) * 1000;
+  const v = document.getElementById('set-daylen-val');
+  if (v) v.textContent = val + 's';
+}
+
 function _toggleSettingsPanel(){
   const p = document.getElementById('settings-panel');
+  const btn = document.getElementById('btn-settings');
   if(!p) return;
   const open = p.style.display === 'none' || p.style.display === '';
   p.style.display = open ? 'block' : 'none';
-  // Sync controls to current state when opening
-  if(open){
-    const spd = document.getElementById('set-speed');
-    if(spd) spd.value = speedIndex;
+  if(btn) btn.classList.toggle('active', open);
+  if (open) {
+    // Sync speed buttons
+    document.querySelectorAll('#set-speed-group .sg-btn').forEach(b => {
+      b.classList.toggle('active', parseInt(b.dataset.val) === speedIndex);
+    });
+    // Sync intel slider
     const intel = document.getElementById('set-intel');
-    if(intel && typeof _userIntelBias !== 'undefined'){
+    if (intel && typeof _userIntelBias !== 'undefined') {
       intel.value = Math.round(_userIntelBias * 100);
       const v = document.getElementById('set-intel-val');
-      if(v) v.textContent = Math.round((1.2 + _userIntelBias) * 100) + '%';
+      if (v) v.textContent = Math.round((1.2 + _userIntelBias) * 100) + '%';
     }
   }
 }
 
-function _applySettings(){
-  // Speed
-  const spd = document.getElementById('set-speed');
-  if(spd){
-    const idx = parseInt(spd.value);
-    if(!isNaN(idx) && idx !== speedIndex){
-      speedIndex = idx;
-      _checkSpeedChange();
-    }
-  }
-  // Intel bias
-  const intel = document.getElementById('set-intel');
-  if(intel && typeof _userIntelBias !== 'undefined'){
-    _userIntelBias = parseInt(intel.value) / 100;
-  }
-  // Era jump
-  const era = document.getElementById('set-era');
-  if(era){
-    const target = parseInt(era.value);
-    if(target > 0 && target > year){
-      year = target;
-      era.value = '0'; // reset after jump
-    }
-  }
-  // Population target
-  const pop = document.getElementById('set-pop');
-  if(pop) _popTarget = parseInt(pop.value) || 0;
-  // Day length
-  const daylen = document.getElementById('set-daylen');
-  if(daylen && typeof DAY_REAL_MS !== 'undefined'){
-    // DAY_REAL_MS is const in features.js — override via global
-    window._dayRealMsOverride = parseInt(daylen.value) * 1000;
-  }
-}
+function _applySettings() {} // legacy no-op — kept for safety

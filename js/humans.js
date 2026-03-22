@@ -3733,9 +3733,9 @@ function tickHumans(yearsElapsed){
   _tickProdigies(yearsElapsed);
 
   // At high speed, skip AI for a fraction of humans each tick to spread load
-  // yearsElapsed > 1 means we're running fast — process subset per tick
   const n=_cachedAlive.length;
-  const skipFactor=yearsElapsed>4?4:yearsElapsed>2?2:1; // skip more at higher speeds
+  // More aggressive skipping: at 500x skip 7/8, at 100x skip 3/4, at 20x skip 1/2
+  const skipFactor = yearsElapsed > 3 ? 8 : yearsElapsed > 1.5 ? 4 : yearsElapsed > 0.5 ? 2 : 1;
   const skipAI=skipFactor>1&&n>20;
   const tickOffset=Math.floor(year*7)%skipFactor;
 
@@ -3758,12 +3758,12 @@ function tickHumans(yearsElapsed){
     }
   }
 
-  // Passive structure effects — INVERTED LOOP: iterate structures once, push to nearby humans
-  // This is O(structures × radius) instead of O(humans × radius²)
+  // Passive structure effects — throttle more aggressively at high pop
   _passiveEffectsTimer+=yearsElapsed;
-  if(_passiveEffectsTimer>=5&&structures.length>0){
+  const _passiveInterval = _cachedAliveCount > 300 ? 15 : _cachedAliveCount > 100 ? 8 : 5;
+  if(_passiveEffectsTimer>=_passiveInterval&&structures.length>0){
     _passiveEffectsTimer=0;
-    const PASSIVE_RADIUS=12;
+    const PASSIVE_RADIUS=10; // reduced from 12 — still covers city area
     // Build a quick lookup: for each structure, find humans in radius via spatial grid
     for(const s of structures){
       const r=PASSIVE_RADIUS,r2=r*r;
