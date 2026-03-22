@@ -42,61 +42,74 @@
   <!-- Settings panel (floating) -->
   <div id="settings-panel" style="display:none;">
     <div id="settings-title">
-      <span>⚙️ Ajustes de Simulación</span>
-      <button onclick="_toggleSettingsPanel()" style="background:none;border:none;color:#f88;cursor:pointer;font-size:13px;">✕</button>
+      <span>⚙️ Ajustes</span>
+      <button onclick="_toggleSettingsPanel()" id="settings-close">✕</button>
     </div>
 
     <div class="setting-group">
       <label class="setting-label">⚡ Velocidad</label>
-      <select id="set-speed" onchange="_applySettings()">
-        <option value="0">Pausado</option>
-        <option value="1" selected>1x — Normal</option>
-        <option value="2">5x — Rápido</option>
-        <option value="3">20x — Acelerado</option>
-        <option value="4">100x — Veloz</option>
-        <option value="5">MAX — 500x</option>
-      </select>
+      <div class="btn-group" id="set-speed-group">
+        <button class="sg-btn" data-val="0" onclick="_setSpeed(0)">⏸</button>
+        <button class="sg-btn active" data-val="1" onclick="_setSpeed(1)">1×</button>
+        <button class="sg-btn" data-val="2" onclick="_setSpeed(2)">5×</button>
+        <button class="sg-btn" data-val="3" onclick="_setSpeed(3)">20×</button>
+        <button class="sg-btn" data-val="4" onclick="_setSpeed(4)">100×</button>
+        <button class="sg-btn sg-btn-max" data-val="5" onclick="_setSpeed(5)">MAX</button>
+      </div>
     </div>
 
     <div class="setting-group">
-      <label class="setting-label">🧠 Inteligencia promedio</label>
-      <input type="range" id="set-intel" min="-80" max="80" value="0" step="5" oninput="_applySettings();document.getElementById('set-intel-val').textContent=Math.round((1.2+this.value/100)*100)+'%'"/>
-      <span id="set-intel-val" class="setting-val">120%</span>
+      <div class="setting-label-row">
+        <label class="setting-label">🧠 Inteligencia</label>
+        <span id="set-intel-val" class="setting-val">120%</span>
+      </div>
+      <div class="slider-wrap">
+        <span class="slider-bound">−</span>
+        <input type="range" id="set-intel" min="-80" max="80" value="0" step="5"
+          oninput="_applyIntel(this.value)"/>
+        <span class="slider-bound">+</span>
+      </div>
     </div>
 
     <div class="setting-group">
       <label class="setting-label">🏛 Saltar a era</label>
-      <select id="set-era" onchange="_applySettings()">
-        <option value="0">— No saltar —</option>
-        <option value="1">Era Primitiva (año 1)</option>
-        <option value="100">Era de Piedra (año 100)</option>
-        <option value="400">Era del Bronce (año 400)</option>
-        <option value="1000">Era del Hierro (año 1000)</option>
-        <option value="2500">Era Clásica (año 2500)</option>
-        <option value="5000">Era Medieval (año 5000)</option>
-        <option value="8000">Renacimiento (año 8000)</option>
-        <option value="12000">Era Industrial (año 12000)</option>
-        <option value="25000">Era Moderna (año 25000)</option>
-        <option value="60000">Era Espacial (año 60000)</option>
-      </select>
+      <div class="btn-group btn-group-wrap" id="set-era-group">
+        <button class="sg-btn sg-btn-era" onclick="_jumpEra(1)">Primitiva</button>
+        <button class="sg-btn sg-btn-era" onclick="_jumpEra(100)">Piedra</button>
+        <button class="sg-btn sg-btn-era" onclick="_jumpEra(400)">Bronce</button>
+        <button class="sg-btn sg-btn-era" onclick="_jumpEra(1000)">Hierro</button>
+        <button class="sg-btn sg-btn-era" onclick="_jumpEra(2500)">Clásica</button>
+        <button class="sg-btn sg-btn-era" onclick="_jumpEra(5000)">Medieval</button>
+        <button class="sg-btn sg-btn-era" onclick="_jumpEra(8000)">Renac.</button>
+        <button class="sg-btn sg-btn-era" onclick="_jumpEra(12000)">Indust.</button>
+        <button class="sg-btn sg-btn-era" onclick="_jumpEra(25000)">Moderna</button>
+        <button class="sg-btn sg-btn-era" onclick="_jumpEra(60000)">Espacial</button>
+      </div>
     </div>
 
     <div class="setting-group">
-      <label class="setting-label">👥 Población objetivo</label>
-      <select id="set-pop" onchange="_applySettings()">
-        <option value="0">— Sin límite —</option>
-        <option value="10">Pequeña (10)</option>
-        <option value="50">Aldea (50)</option>
-        <option value="200">Ciudad (200)</option>
-        <option value="500">Metrópolis (500)</option>
-        <option value="1000">Imperio (1000)</option>
-      </select>
+      <label class="setting-label">👥 Población máxima</label>
+      <div class="btn-group" id="set-pop-group">
+        <button class="sg-btn active" data-val="0" onclick="_setPop(0)">∞</button>
+        <button class="sg-btn" data-val="10" onclick="_setPop(10)">10</button>
+        <button class="sg-btn" data-val="50" onclick="_setPop(50)">50</button>
+        <button class="sg-btn" data-val="200" onclick="_setPop(200)">200</button>
+        <button class="sg-btn" data-val="500" onclick="_setPop(500)">500</button>
+        <button class="sg-btn" data-val="1000" onclick="_setPop(1000)">1k</button>
+      </div>
     </div>
 
     <div class="setting-group">
-      <label class="setting-label">☀️ Duración del día (seg reales)</label>
-      <input type="range" id="set-daylen" min="5" max="120" value="20" step="5" oninput="_applySettings();document.getElementById('set-daylen-val').textContent=this.value+'s'"/>
-      <span id="set-daylen-val" class="setting-val">20s</span>
+      <div class="setting-label-row">
+        <label class="setting-label">☀️ Duración del día</label>
+        <span id="set-daylen-val" class="setting-val">20s</span>
+      </div>
+      <div class="slider-wrap">
+        <span class="slider-bound">5s</span>
+        <input type="range" id="set-daylen" min="5" max="120" value="20" step="5"
+          oninput="_applyDayLen(this.value)"/>
+        <span class="slider-bound">2m</span>
+      </div>
     </div>
   </div>
 
