@@ -7,6 +7,7 @@ body{background:#0a1628;overflow:hidden;font-family:'Courier New',monospace;}
 #hud{
   position:fixed;top:0;left:0;right:0;height:48px;
   display:flex;align-items:center;gap:0;
+  flex-wrap:nowrap;overflow:hidden;
   background:rgba(4,10,22,0.92);
   border-bottom:1px solid rgba(255,255,255,0.08);
   backdrop-filter:blur(8px);
@@ -15,29 +16,29 @@ body{background:#0a1628;overflow:hidden;font-family:'Courier New',monospace;}
 }
 
 #time-display{
-  display:flex;align-items:center;gap:10px;
-  padding:0 14px 0 4px;
+  display:flex;align-items:center;gap:6px;
+  padding:0 10px 0 4px;
   border-right:1px solid rgba(255,255,255,0.08);
-  flex-shrink:0;
+  flex-shrink:1;min-width:0;overflow:hidden;
 }
-#year-label{font-size:1.1rem;font-weight:bold;letter-spacing:1px;color:#e8d5a3;}
-#era-label{font-size:0.65rem;color:#a89060;letter-spacing:1px;text-transform:uppercase;white-space:nowrap;}
-#pop-label{font-size:0.78rem;color:#8cf;background:rgba(100,160,255,0.12);padding:2px 7px;border-radius:5px;white-space:nowrap;}
-#civ-label{font-size:0.78rem;color:#fda;background:rgba(255,200,100,0.12);padding:2px 7px;border-radius:5px;white-space:nowrap;}
-#phase-label{font-size:0.78rem;padding:2px 7px;border-radius:5px;background:rgba(0,0,0,0.2);white-space:nowrap;}
-#intel-label{font-size:0.75rem;background:rgba(100,160,255,0.1);padding:2px 7px;border-radius:5px;white-space:nowrap;}
-#season-label{font-size:0.75rem;white-space:nowrap;}
+#year-label{font-size:1rem;font-weight:bold;letter-spacing:1px;color:#e8d5a3;white-space:nowrap;flex-shrink:0;}
+#era-label{font-size:0.62rem;color:#a89060;letter-spacing:1px;text-transform:uppercase;white-space:nowrap;flex-shrink:1;}
+#pop-label{font-size:0.75rem;color:#8cf;background:rgba(100,160,255,0.12);padding:2px 6px;border-radius:5px;white-space:nowrap;flex-shrink:0;}
+#civ-label{font-size:0.75rem;color:#fda;background:rgba(255,200,100,0.12);padding:2px 6px;border-radius:5px;white-space:nowrap;flex-shrink:1;}
+#phase-label{font-size:0.72rem;padding:2px 6px;border-radius:5px;background:rgba(0,0,0,0.2);white-space:nowrap;flex-shrink:1;}
+#intel-label{font-size:0.72rem;background:rgba(100,160,255,0.1);padding:2px 6px;border-radius:5px;white-space:nowrap;flex-shrink:1;}
+#season-label{font-size:0.72rem;white-space:nowrap;flex-shrink:1;}
 
 #speed-controls{
-  display:flex;align-items:center;gap:4px;
-  padding:0 12px;
+  display:flex;align-items:center;gap:3px;
+  padding:0 8px;
   border-right:1px solid rgba(255,255,255,0.08);
   flex-shrink:0;
 }
 #speed-controls button{
   background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.15);
-  color:#aaa;padding:3px 10px;border-radius:6px;cursor:pointer;
-  font-family:'Courier New',monospace;font-size:0.75rem;
+  color:#aaa;padding:3px 8px;border-radius:6px;cursor:pointer;
+  font-family:'Courier New',monospace;font-size:0.72rem;
   transition:all 0.1s;white-space:nowrap;
 }
 #speed-controls button:hover{background:rgba(255,255,255,0.08);color:#fff;}
@@ -47,14 +48,14 @@ body{background:#0a1628;overflow:hidden;font-family:'Courier New',monospace;}
 
 /* Intel slider — inline in HUD */
 #intel-slider-bar{
-  display:flex;align-items:center;gap:7px;
-  padding:0 12px;
+  display:flex;align-items:center;gap:5px;
+  padding:0 8px;
   border-right:1px solid rgba(255,255,255,0.08);
   flex-shrink:0;
 }
-#intel-slider-bar span{font-size:0.7rem;color:#778;white-space:nowrap;}
-#intel-slider{width:120px;accent-color:#a8f;cursor:pointer;height:3px;}
-#intel-slider-val{font-size:0.72rem;color:#a8f;min-width:32px;font-family:'Courier New',monospace;}
+#intel-slider-bar span{font-size:0.68rem;color:#778;white-space:nowrap;}
+#intel-slider{width:90px;accent-color:#a8f;cursor:pointer;height:3px;}
+#intel-slider-val{font-size:0.7rem;color:#a8f;min-width:28px;font-family:'Courier New',monospace;}
 
 /* ── Left panel: stats — collapsible, below HUD ── */
 #stats-panel{
