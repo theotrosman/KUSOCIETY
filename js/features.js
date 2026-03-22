@@ -2,6 +2,17 @@
 // FEATURES.JS — 15 nuevas mecánicas de profundidad para la simulación
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ── Toggles globales — controlados desde el panel de ajustes ─────────────────
+window._simToggles = {
+  plagues:      true,  // epidemias, pandemias, enfermedades estacionales
+  disasters:    true,  // terremotos, erupciones volcánicas, langostas
+  famine:       true,  // hambrunas en cadena
+  wars:         true,  // guerras formales entre civs
+  extinction:   true,  // las civs pueden extinguirse
+  aiPlague:     true,  // evento de singularidad / IA
+  darkAge:      true,  // edad oscura y renacimiento
+};
+
 // Reusable civ list buffer — avoids [...civilizations.values()] spread allocations
 const _civBuf = [];
 function _fillCivBuf(minPop) {
@@ -14,6 +25,7 @@ function _fillCivBuf(minPop) {
 // Las enfermedades se propagan más en invierno y menos en verano
 let _seasonalEpidemicTimer = 0;
 function tickSeasonalEpidemics(yearsElapsed) {
+  if (!window._simToggles.plagues) return;
   if (typeof _season === 'undefined' || typeof _cachedAlive === 'undefined') return;
   _seasonalEpidemicTimer += yearsElapsed;
   if (_seasonalEpidemicTimer < 8) return;
@@ -44,6 +56,7 @@ function tickSeasonalEpidemics(yearsElapsed) {
 // Ocurren en zonas montañosas, destruyen estructuras cercanas
 let _earthquakeTimer = 0;
 function tickEarthquakes(yearsElapsed) {
+  if (!window._simToggles.disasters) return;
   _earthquakeTimer += yearsElapsed;
   if (_earthquakeTimer < 40) return;
   _earthquakeTimer = 0;
@@ -98,6 +111,7 @@ function tickEarthquakes(yearsElapsed) {
 // En verano, destruyen cultivos (farms) en una zona
 let _locustTimer = 0;
 function tickLocusts(yearsElapsed) {
+  if (!window._simToggles.disasters) return;
   _locustTimer += yearsElapsed;
   if (_locustTimer < 30) return;
   _locustTimer = 0;
@@ -1245,6 +1259,7 @@ function tickEspionage(yearsElapsed) {
 let _famineTimer = 0;
 const _famineState = new Map(); // civId → {yearsLeft, severity}
 function tickFamine(yearsElapsed) {
+  if (!window._simToggles.famine) return;
   _famineTimer += yearsElapsed;
   if (_famineTimer < 15) return;
   _famineTimer = 0;
@@ -1463,6 +1478,7 @@ const PANDEMIC_NAMES = [
   'El Mal de los Mares','La Muerte Blanca','El Flagelo del Este',
 ];
 function tickGlobalPandemic(yearsElapsed) {
+  if (!window._simToggles.plagues) return;
   _pandemicTimer += yearsElapsed;
   if (_pandemicTimer < 80) return;
   _pandemicTimer = 0;
@@ -1640,6 +1656,7 @@ function tickWorldWonders(yearsElapsed) {
 const _darkAgeState = new Map(); // civId → {popAtStart, yearsInDarkAge, prevPop}
 let _darkAgeTimer = 0;
 function tickDarkAgeRenaissance(yearsElapsed) {
+  if (!window._simToggles.darkAge) return;
   _darkAgeTimer += yearsElapsed;
   if (_darkAgeTimer < 20) return;
   _darkAgeTimer = 0;
@@ -2401,6 +2418,7 @@ function getAIPlagueState() { return { active: _aiPlagueActive, phase: _aiPlague
 
 let _aiPlagueTickTimer = 0;
 function tickAIPlague(yearsElapsed) {
+  if (!window._simToggles.aiPlague) return;
   _aiPlagueTickTimer += yearsElapsed;
   if (_aiPlagueTickTimer < 15) return;
   _aiPlagueTickTimer = 0;

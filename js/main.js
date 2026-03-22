@@ -1469,3 +1469,44 @@ function _toggleSettingsPanel(){
 }
 
 function _applySettings() {} // legacy no-op — kept for safety
+
+function _simToggle(key) {
+  if (typeof window._simToggles === 'undefined') return;
+  window._simToggles[key] = !window._simToggles[key];
+  const btn = document.querySelector(`#set-toggles [data-key="${key}"]`);
+  if (btn) btn.classList.toggle('active', window._simToggles[key]);
+  // Side effects when toggling off
+  if (!window._simToggles[key]) {
+    if (key === 'plagues' && typeof activeOutbreaks !== 'undefined') {
+      activeOutbreaks.length = 0;
+    }
+    if (key === 'wars') {
+      if (typeof humans !== 'undefined') {
+        for (const h of humans) {
+          if (!h.alive) continue;
+          if (h._warTimer > 0) h._warTimer = 0;
+          if (h.action === ACTIONS.LEAD) h.action = ACTIONS.IDLE;
+        }
+      }
+    }
+  }
+  // Side effects when toggling ON
+  if (window._simToggles[key]) {
+    if (key === 'extinction') {
+      // Restore stats so nobody dies the instant extinction is re-enabled
+      if (typeof humans !== 'undefined') {
+        for (const h of humans) {
+          if (!h.alive) continue;
+          h.health  = Math.max(h.health,  60);
+          h.hunger  = Math.max(h.hunger,  60);
+          h.energy  = Math.max(h.energy,  40);
+          h.sick    = false;
+          h.sickType = null;
+          h.sickTimer = 0;
+          // Reset age to a safe value so nobody dies of old age immediately
+          h.age = Math.min(h.age, 35);
+        }
+      }
+    }
+  }
+}

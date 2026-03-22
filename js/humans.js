@@ -587,6 +587,7 @@ function tickReligion(yearsElapsed){
 // ── Formal Wars ───────────────────────────────────────────────────────────────
 let _warTimer=0;
 function tickFormalWars(yearsElapsed){
+  if(typeof window._simToggles!=='undefined'&&!window._simToggles.wars)return;
   _warTimer+=yearsElapsed;
   if(_warTimer<20)return;
   _warTimer=0;
@@ -1519,19 +1520,28 @@ class Human{
     if(!this.alive)return;
     this.age+=yearsElapsed;
 
+    // Immortality mode — clamp stats before any death check
+    if(typeof window._simToggles!=='undefined'&&!window._simToggles.extinction){
+      if(this.health<8)  this.health=8;
+      if(this.hunger<25) this.hunger=25;
+      if(this.energy<10) this.energy=10;
+      if(this.sick){this.sick=false;this.sickType=null;this.sickTimer=0;}
+      // Don't reset age — just skip the age-death check below
+    }
+
     // Lifespan — knowledge/intellect extend life
     const maxAge=30+Math.floor(this._rng()*50)
       +Math.min(40,Math.floor(this.knowledge*0.15))
       +Math.floor(this.traits.intellect*0.15);
-    if(this.age>maxAge&&!(typeof speedIndex!=='undefined'&&speedIndex===5)){this._die('vejez');return;}
+    const _immortal=(typeof window._simToggles!=='undefined'&&!window._simToggles.extinction)||(typeof speedIndex!=='undefined'&&speedIndex===5);
+    if(this.age>maxAge&&!_immortal){this._die('vejez');return;}
 
     // Disease
     if(this.sick){
       this.sickTimer-=yearsElapsed;
       this.health=Math.max(0,this.health-this.sickType.damage*yearsElapsed);
       if(this.sickTimer<=0||this.health<=0){
-        const immortal=typeof speedIndex!=='undefined'&&speedIndex===5;
-        if(this.health<=0&&!immortal){this._die(this.sickType.name);return;}
+        if(this.health<=0&&!_immortal){this._die(this.sickType.name);return;}
         this.sick=false;this.immunity.add(this.sickType.name);
         this.health=Math.max(1,this.health);
         this.addLog(`Se recuperó de ${this.sickType.name}`);this.sickType=null;
@@ -1566,9 +1576,8 @@ class Human{
 
     if(this.hunger<=0){
       this.health=Math.max(0,this.health-yearsElapsed*5);
-      const immortal=typeof speedIndex!=='undefined'&&speedIndex===5;
-      if(this.health<=0&&!immortal){this._die('hambre');return;}
-      if(immortal) this.health=Math.max(1,this.health);
+      if(this.health<=0&&!_immortal){this._die('hambre');return;}
+      if(_immortal) this.health=Math.max(1,this.health);
     } else if(!this.sick){
       this.health=Math.min(100,this.health+yearsElapsed*6);
     }
@@ -1631,6 +1640,11 @@ class Human{
       this.ideology=Math.max(0,Math.min(1,this.ideology+(this._rng()*0.04-0.02)));
     }
     if(getSocialPhase()==='division'&&this._warTimer>0)this._warTimer-=yearsElapsed;
+    // If wars disabled, unstick any human frozen in combat state
+    if(typeof window._simToggles!=='undefined'&&!window._simToggles.wars){
+      if(this._warTimer>0){this._warTimer=0;}
+      if(this.action===ACTIONS.LEAD){this.action=ACTIONS.IDLE;}
+    }
 
     // Hard survival overrides
     if(this.sick&&this.health<35){this._doHeal();return;}
@@ -2069,9 +2083,12 @@ class Human{
       if(!sameCiv&&myCiv&&other.civId!=null){
         const theirCiv=civilizations.get(other.civId);
         if(theirCiv&&myCiv.enemies.has(other.civId)){
-          this._doConflict(other);return;
+          if(typeof window._simToggles==='undefined'||window._simToggles.wars)
+            this._doConflict(other);
+          return;
         }
-        if(ideoDiff>0.6&&this._rng()<0.001&&!myCiv.allies.has(other.civId)){
+        if(ideoDiff>0.6&&this._rng()<0.001&&!myCiv.allies.has(other.civId)&&
+           (typeof window._simToggles==='undefined'||window._simToggles.wars)){
           myCiv.enemies.add(other.civId);
           theirCiv.enemies.add(this.civId);
           myCiv.allies.delete(other.civId);
@@ -3751,8 +3768,15 @@ function tickHumans(yearsElapsed){
       h.age+=yearsElapsed;
       h.hunger=Math.max(0,h.hunger-yearsElapsed*2.5);
       h.energy=Math.max(0,h.energy-yearsElapsed*2);
-      if(h.hunger<=0){h.health=Math.max(0,h.health-yearsElapsed*2);if(h.health<=0)h._die('hambre');}
-      else if(!h.sick)h.health=Math.min(100,h.health+yearsElapsed*2);
+      const immortal=(typeof window._simToggles!=='undefined'&&!window._simToggles.extinction)||(typeof speedIndex!=='undefined'&&speedIndex===5);
+      if(immortal){
+        h.health=Math.max(8,h.health);h.hunger=Math.max(25,h.hunger);h.energy=Math.max(10,h.energy);
+        if(h.sick){h.sick=false;h.sickType=null;}
+        h.age=Math.min(h.age,60);
+      } else {
+        if(h.hunger<=0){h.health=Math.max(0,h.health-yearsElapsed*2);if(h.health<=0)h._die('hambre');}
+        else if(!h.sick)h.health=Math.min(100,h.health+yearsElapsed*2);
+      }
       continue;
     }
     h.tick(yearsElapsed);
