@@ -148,6 +148,36 @@ body{background:#0a1628;overflow:hidden;font-family:'Courier New',monospace;}
   color:#8cf;
 }
 
+/* Toggle grid for sim event toggles */
+.toggle-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:4px;
+}
+.sg-toggle{
+  flex:none;
+  font-size:0.62rem;
+  padding:5px 4px;
+  opacity:0.45;
+  transition:opacity 0.15s,background 0.15s;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  text-align:center;
+  min-width:0;
+}
+.sg-toggle.active{
+  opacity:1;
+  background:rgba(100,220,120,0.12);
+  border-color:rgba(100,220,120,0.4);
+  color:#8f8;
+}
+.sg-toggle:not(.active){
+  background:rgba(255,80,80,0.08);
+  border-color:rgba(255,80,80,0.25);
+  color:#f88;
+}
+
 /* Slider */
 .setting-group input[type=range]{
   width:100%;
