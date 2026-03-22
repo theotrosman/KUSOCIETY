@@ -410,7 +410,41 @@ function _tickMonumentBonuses(yearsElapsed){
   }
 }
 
-// ── Trade ─────────────────────────────────────────────────────────────────────
+// ── Trade goods — what civs exchange ─────────────────────────────────────────
+const TRADE_GOODS=[
+  {name:'Grano',    icon:'🌾', foodBonus:8,  knowledgeBonus:5},
+  {name:'Madera',   icon:'🪵', foodBonus:2,  knowledgeBonus:8},
+  {name:'Piedra',   icon:'🪨', foodBonus:0,  knowledgeBonus:12},
+  {name:'Especias', icon:'🌶️', foodBonus:5,  knowledgeBonus:20},
+  {name:'Telas',    icon:'🧵', foodBonus:3,  knowledgeBonus:15},
+  {name:'Metales',  icon:'⚙️', foodBonus:0,  knowledgeBonus:25},
+  {name:'Joyas',    icon:'💎', foodBonus:0,  knowledgeBonus:40},
+  {name:'Libros',   icon:'📚', foodBonus:0,  knowledgeBonus:60},
+];
+
+// ── Society tiers — based on population and structures ───────────────────────
+const SOCIETY_TIERS=[
+  {minPop:0,  minK:0,     name:'Banda Nómada',    icon:'🏕️', desc:'Pequeños grupos de cazadores-recolectores'},
+  {minPop:5,  minK:50,    name:'Tribu',            icon:'🔥', desc:'Comunidad sedentaria con rituales compartidos'},
+  {minPop:15, minK:200,   name:'Jefatura',         icon:'👑', desc:'Líder hereditario, especialización laboral'},
+  {minPop:30, minK:800,   name:'Ciudad-Estado',    icon:'🏛️', desc:'Centro urbano con leyes y comercio'},
+  {minPop:60, minK:3000,  name:'Imperio',          icon:'🏰', desc:'Dominio territorial extenso y ejército profesional'},
+  {minPop:100,minK:10000, name:'Nación',           icon:'🗺️', desc:'Identidad nacional, instituciones formales'},
+  {minPop:150,minK:30000, name:'Estado Industrial',icon:'🏭', desc:'Producción masiva, clase obrera'},
+  {minPop:200,minK:60000, name:'Superpotencia',    icon:'🌐', desc:'Influencia global, tecnología avanzada'},
+  {minPop:300,minK:100000,name:'Civilización IA',  icon:'🤖', desc:'Fusión humano-máquina, post-escasez'},
+];
+function _getSocietyTier(civ){
+  const avgK=civ.avgKnowledge||0;
+  let tier=SOCIETY_TIERS[0];
+  for(const t of SOCIETY_TIERS){
+    if(civ.population>=t.minPop&&avgK>=t.minK)tier=t;
+  }
+  return tier;
+}
+
+// ── Trade routes — visible connections between civs ───────────────────────────
+const _activeTradeRoutes=[]; // {civA,civB,good,timer}
 let _tradeTimer=0;
 // Shared per-tick cache: civId → Set<structureType> — rebuilt in tickHumans
 const _civStructureTypes=new Map();
@@ -419,11 +453,18 @@ function tickTrade(yearsElapsed){
   _tradeTimer+=yearsElapsed;
   if(_tradeTimer<15)return; // run every 15 years
   _tradeTimer=0;
+  // Clean expired routes
+  for(let i=_activeTradeRoutes.length-1;i>=0;i--){
+    _activeTradeRoutes[i].timer-=15;
+    if(_activeTradeRoutes[i].timer<=0)_activeTradeRoutes.splice(i,1);
+  }
   for(const [,civ] of civilizations){
     if(civ.population===0)continue;
     const civTypes=_civStructureTypes.get(civ.id);
     const hasMarket=civTypes&&(civTypes.has('market')||civTypes.has('harbor'));
     if(!hasMarket)continue;
+    // Update society tier
+    civ.societyTier=_getSocietyTier(civ);
     for(const alliedId of civ.allies){
       const allied=civilizations.get(alliedId);
       if(!allied||allied.population===0)continue;
@@ -432,11 +473,18 @@ function tickTrade(yearsElapsed){
       if(!alliedHasMarket)continue;
       civ.tradePartners.add(alliedId);
       allied.tradePartners.add(civ.id);
+      // Pick a trade good based on tech level
+      const goodIdx=Math.min(TRADE_GOODS.length-1,Math.floor((civ.techLevel+allied.techLevel)/2));
+      const good=TRADE_GOODS[goodIdx];
       let civMembers=0,alliedMembers=0;
-      for(const id of civ.members){const h=_hById(id);if(h&&h.alive){h.knowledge=Math.min(99999,h.knowledge+8*_intelModifier);h.inventory.food=Math.min(50,h.inventory.food+3);civMembers++;}}
-      for(const id of allied.members){const h=_hById(id);if(h&&h.alive){h.knowledge=Math.min(99999,h.knowledge+8*_intelModifier);h.inventory.food=Math.min(50,h.inventory.food+3);alliedMembers++;}}
-      if(civMembers>0&&alliedMembers>0&&Math.random()<0.15){
-        addWorldEvent(`🤝 Ruta comercial activa: ${civ.name} ↔ ${allied.name}`);
+      for(const id of civ.members){const h=_hById(id);if(h&&h.alive){h.knowledge=Math.min(99999,h.knowledge+good.knowledgeBonus*_intelModifier);h.inventory.food=Math.min(50,h.inventory.food+good.foodBonus);civMembers++;}}
+      for(const id of allied.members){const h=_hById(id);if(h&&h.alive){h.knowledge=Math.min(99999,h.knowledge+good.knowledgeBonus*_intelModifier);h.inventory.food=Math.min(50,h.inventory.food+good.foodBonus);alliedMembers++;}}
+      // Register active trade route for rendering
+      const existing=_activeTradeRoutes.find(r=>(r.civA===civ.id&&r.civB===alliedId)||(r.civA===alliedId&&r.civB===civ.id));
+      if(existing){existing.timer=60;existing.good=good;}
+      else _activeTradeRoutes.push({civA:civ.id,civB:alliedId,good,timer:60});
+      if(civMembers>0&&alliedMembers>0&&Math.random()<0.12){
+        addWorldEvent(`${good.icon} Comercio de ${good.name}: ${civ.name} ↔ ${allied.name}`);
       }
     }
   }
@@ -1267,7 +1315,113 @@ const WOOD_TYPES=['tree_oak','tree_pine','tree_palm','tree_jungle','bush'];
 const STONE_TYPES=['rock','iron_ore','clay'];
 
 // Weapon tiers — unlocked by tech level
-const WEAPON_TIERS=['Puños','Lanza de Madera','Hacha de Piedra','Espada de Bronce','Espada de Hierro','Acero','Pólvora'];
+// ── Weapon tiers — expanded with era-appropriate weapons ─────────────────────
+const WEAPON_TIERS=['Puños','Lanza de Madera','Hacha de Piedra','Espada de Bronce','Espada de Hierro','Acero y Ballesta','Pólvora y Mosquete','Rifle y Artillería','Ametralladora','Misil Guiado','Arma Láser'];
+const WEAPON_ICONS=['👊','🏹','🪓','⚔️','🗡️','🏹','💣','🔫','💥','🚀','⚡'];
+const WEAPON_ERA_MIN_TECH=[0,0,0,1,2,3,4,5,6,7,8]; // min techLevel to use
+
+// ── Army formation types by era ───────────────────────────────────────────────
+// Formations define how soldiers position relative to their rally point
+const FORMATION_TYPES={
+  0:{name:'Horda',       icon:'👥', desc:'Sin orden, atacan en masa'},
+  1:{name:'Falange',     icon:'🛡️', desc:'Línea compacta de escudos'},
+  2:{name:'Legión',      icon:'⚔️', desc:'Cuadrícula romana disciplinada'},
+  3:{name:'Caballería',  icon:'🐎', desc:'Flanqueo rápido a caballo'},
+  4:{name:'Tercio',      icon:'🔫', desc:'Piqueros y arcabuceros'},
+  5:{name:'Línea',       icon:'🎖️', desc:'Líneas de fusileros napoleónicas'},
+  6:{name:'Trinchera',   icon:'🪖', desc:'Defensa en trincheras'},
+  7:{name:'Blindado',    icon:'🚗', desc:'Avance mecanizado'},
+  8:{name:'Drones',      icon:'🤖', desc:'Enjambre de drones autónomos'},
+};
+function _getFormationType(techLevel){
+  if(techLevel>=8)return FORMATION_TYPES[8];
+  if(techLevel>=7)return FORMATION_TYPES[7];
+  if(techLevel>=6)return FORMATION_TYPES[6];
+  if(techLevel>=5)return FORMATION_TYPES[5];
+  if(techLevel>=4)return FORMATION_TYPES[4];
+  if(techLevel>=3)return FORMATION_TYPES[3];
+  if(techLevel>=2)return FORMATION_TYPES[2];
+  if(techLevel>=1)return FORMATION_TYPES[1];
+  return FORMATION_TYPES[0];
+}
+
+// ── Army rally points — per civ, soldiers converge here during war ────────────
+const _armyRallyPoints=new Map(); // civId → {tx,ty,formationIdx}
+let _armyFormationTimer=0;
+
+function tickArmyFormations(yearsElapsed){
+  _armyFormationTimer+=yearsElapsed;
+  if(_armyFormationTimer<5)return;
+  _armyFormationTimer=0;
+  for(const [,civ] of civilizations){
+    if(civ.population===0||civ.atWarWith.size===0)continue;
+    // Find or update rally point near barracks/citadel or leader
+    let rallyTx=-1,rallyTy=-1;
+    // Prefer barracks location
+    for(const s of structures){
+      if((s.type==='barracks'||s.type==='citadel'||s.type==='watchtower')&&s.civId===civ.id){
+        rallyTx=s.tx;rallyTy=s.ty;break;
+      }
+    }
+    // Fallback: leader position
+    if(rallyTx<0){
+      const leader=_hById(civ.leaderId);
+      if(leader&&leader.alive){rallyTx=leader.tx;rallyTy=leader.ty;}
+    }
+    if(rallyTx<0)continue;
+    const techLevel=civ.techLevel||0;
+    _armyRallyPoints.set(civ.id,{tx:rallyTx,ty:rallyTy,techLevel});
+    // Position soldiers in formation around rally point
+    const soldiers=[];
+    for(const id of civ.members){
+      const h=_hById(id);
+      if(h&&h.alive&&h.isSoldier)soldiers.push(h);
+    }
+    if(soldiers.length===0)continue;
+    // Upgrade weapon tier based on civ tech
+    const weaponTier=Math.min(WEAPON_TIERS.length-1,techLevel+1);
+    // Formation offsets — different patterns per era
+    for(let i=0;i<soldiers.length;i++){
+      const s=soldiers[i];
+      if(s.weaponTier<weaponTier)s.weaponTier=weaponTier;
+      // Only reposition if not actively fighting
+      if(s._warTimer>0)continue;
+      let offX=0,offY=0;
+      if(techLevel<=1){
+        // Horde: random cluster
+        offX=Math.floor(Math.random()*10-5);
+        offY=Math.floor(Math.random()*10-5);
+      } else if(techLevel===2){
+        // Phalanx: single line
+        offX=i-Math.floor(soldiers.length/2);
+        offY=0;
+      } else if(techLevel===3){
+        // Legion: grid
+        offX=(i%4)-2;
+        offY=Math.floor(i/4)-1;
+      } else if(techLevel===4){
+        // Cavalry: V-shape flanks
+        const side=i%2===0?1:-1;
+        offX=side*(2+Math.floor(i/2));
+        offY=-Math.floor(i/2);
+      } else if(techLevel===5){
+        // Tercio: front line + rear support
+        offX=(i%6)-3;
+        offY=i<6?0:2;
+      } else if(techLevel>=6){
+        // Modern: spread formation
+        offX=(i%5)-2;
+        offY=Math.floor(i/5)*3;
+      }
+      const destTx=Math.max(0,Math.min(WORLD_W-1,rallyTx+offX));
+      const destTy=Math.max(0,Math.min(WORLD_H-1,rallyTy+offY));
+      if(Math.hypot(s.tx-destTx,s.ty-destTy)>8){
+        s._setDest(destTx,destTy);
+        s.action=ACTIONS.PATROL;
+      }
+    }
+  }
+}
 
 class Human{
   constructor(tx,ty,rng,gender,parentA,parentB){
@@ -2898,16 +3052,17 @@ function _checkKnowledgeUnlocks(){
     const civ=civilizations.get(civId);
     if(!civ||e.count===0)continue;
     const avgCivK=e.total/e.count;
-    const newTech=avgCivK>10000?5:avgCivK>3000?4:avgCivK>800?3:avgCivK>200?2:avgCivK>50?1:0;
+    const newTech=avgCivK>80000?9:avgCivK>50000?8:avgCivK>25000?7:avgCivK>10000?6:avgCivK>5000?5:avgCivK>3000?4:avgCivK>800?3:avgCivK>200?2:avgCivK>50?1:0;
     if(newTech>civ.techLevel){
       civ.techLevel=newTech;
-      const weaponName=WEAPON_TIERS[newTech]||'Arma Avanzada';
-      const techEvents=['🗡️','⚔️','🔱','🛡️','💣'];
-      addWorldEvent(`${techEvents[newTech-1]||'⚔️'} ${civ.name} dominó: ${weaponName} — nueva era militar`);
+      const weaponName=WEAPON_TIERS[Math.min(newTech+1,WEAPON_TIERS.length-1)]||'Arma Avanzada';
+      const weaponIcon=WEAPON_ICONS[Math.min(newTech+1,WEAPON_ICONS.length-1)]||'⚔️';
+      const formation=_getFormationType(newTech);
+      addWorldEvent(`${weaponIcon} ${civ.name} dominó: ${weaponName} — Formación: ${formation.name} (${formation.desc})`);
       // Update all members
       for(const id of civ.members){
         const h=_hById(id);
-        if(h&&h.alive&&h.weaponTier<newTech)h.weaponTier=newTech;
+        if(h&&h.alive&&h.weaponTier<newTech+1)h.weaponTier=Math.min(WEAPON_TIERS.length-1,newTech+1);
       }
     }
   }
@@ -3611,6 +3766,7 @@ function tickHumans(yearsElapsed){
   tickInventions(yearsElapsed);
   tickReligion(yearsElapsed);
   tickFormalWars(yearsElapsed);
+  tickArmyFormations(yearsElapsed);
   tickMassiveMigration(yearsElapsed);
   _tickReplanting(yearsElapsed);
   _tickExcavation(yearsElapsed);

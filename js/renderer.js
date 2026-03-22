@@ -602,6 +602,12 @@ function renderFrame(dt){
   // Humans
   if(typeof humans!=='undefined') _drawHumans();
 
+  // Trade routes (drawn on top of terrain, below humans)
+  _drawTradeRoutes();
+
+  // Army rally points
+  _drawArmyFormations();
+
   // Epic battle effects (world-space, drawn on top of humans)
   _drawBattleFX(dtSec);
 
@@ -1693,9 +1699,42 @@ function _drawHumans(){
     }
 
     if(showWeapon&&h.weaponTier>0){
-      const wi=['','🗡️','🪓','⚔️','🔱','🛡️','💣'];
+      const wi=typeof WEAPON_ICONS!=='undefined'?WEAPON_ICONS:['','🗡️','🪓','⚔️','🔱','🛡️','💣'];
+      const icon=wi[Math.min(h.weaponTier,wi.length-1)]||'⚔️';
       _ctx.font=`${Math.round(r*0.85)}px serif`;
-      _ctx.fillText(wi[Math.min(h.weaponTier,6)]||'⚔️',px-r-1,py-r);
+      _ctx.fillText(icon,px-r-1,py-r);
+    }
+
+    // Soldier formation ring — square for soldiers in formation
+    if(h.isSoldier&&showRings){
+      const civ2=typeof civilizations!=='undefined'&&h.civId!=null?civilizations.get(h.civId):null;
+      if(civ2&&civ2.atWarWith&&civ2.atWarWith.size>0){
+        _ctx.strokeStyle='rgba(255,80,80,0.7)';
+        _ctx.lineWidth=1.5;
+        _ctx.strokeRect(px-r-2,py-r-2,(r+2)*2,(r+2)*2);
+      }
+    }
+
+    // Veteran glow
+    if(h._veteranLevel>=2&&showRings){
+      const pulse=0.5+Math.sin(_waterPhase*3+h.id*0.7)*0.5;
+      _ctx.beginPath();
+      _ctx.arc(px,py,r+6+pulse*3,0,Math.PI*2);
+      _ctx.strokeStyle='rgba(255,215,0,0.6)';
+      _ctx.lineWidth=2;
+      _ctx.globalAlpha=0.6+pulse*0.3;
+      _ctx.stroke();
+      _ctx.globalAlpha=1;
+    }
+
+    // Golden age shimmer
+    if(typeof _goldenAgeCivs!=='undefined'&&h.civId!=null&&_goldenAgeCivs.has(h.civId)&&showRings){
+      const pulse=0.4+Math.sin(_waterPhase*2+h.id*0.3)*0.4;
+      _ctx.beginPath();
+      _ctx.arc(px,py,r+4,0,Math.PI*2);
+      _ctx.strokeStyle=`rgba(255,215,0,${0.3+pulse*0.3})`;
+      _ctx.lineWidth=1;
+      _ctx.stroke();
     }
 
     // Transport icon — show when on water or high tier
@@ -2337,5 +2376,95 @@ function _drawMapVignette(){
   const gr=ctx.createLinearGradient(W-edgeW,0,W,0);
   gr.addColorStop(0,'rgba(0,0,0,0)'); gr.addColorStop(1,'rgba(0,0,0,0.55)');
   ctx.fillStyle=gr; ctx.fillRect(W-edgeW,0,edgeW,H);
+  ctx.restore();
+}
+
+// ── Trade Routes ──────────────────────────────────────────────────────────────
+function _drawTradeRoutes(){
+  if(cam.zoom < 0.4) return;
+  if(typeof getActiveTradeRoutes === 'undefined') return;
+  const routes = getActiveTradeRoutes();
+  if(!routes || routes.length === 0) return;
+  const ctx = _ctx;
+  ctx.save();
+  // Find leader positions for each civ as route endpoints
+  const civPos = new Map();
+  if(typeof civilizations !== 'undefined'){
+    for(const [,civ] of civilizations){
+      if(civ.population === 0) continue;
+      const leader = typeof _hById !== 'undefined' ? _hById(civ.leaderId) : null;
+      if(leader && leader.alive){
+        civPos.set(civ.id, {px: leader.px, py: leader.py, color: civ.color});
+      }
+    }
+  }
+  const t = _waterPhase;
+  for(const route of routes){
+    const posA = civPos.get(route.civA);
+    const posB = civPos.get(route.civB);
+    if(!posA || !posB) continue;
+    const dx = posB.px - posA.px, dy = posB.py - posA.py;
+    const dist = Math.hypot(dx, dy);
+    if(dist < 2 || dist > WORLD_W * TILE * 0.6) continue;
+    // Animated dashed line
+    const alpha = 0.25 + Math.sin(t * 2) * 0.1;
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = route.good ? '#f0c040' : '#40c0f0';
+    ctx.lineWidth = Math.max(0.5, 1.5 / cam.zoom);
+    ctx.setLineDash([TILE * 0.8, TILE * 0.5]);
+    ctx.lineDashOffset = -t * TILE * 3;
+    ctx.beginPath();
+    ctx.moveTo(posA.px, posA.py);
+    ctx.lineTo(posB.px, posB.py);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Trade good icon at midpoint
+    if(cam.zoom > 0.8 && route.good){
+      const mx = (posA.px + posB.px) / 2, my = (posA.py + posB.py) / 2;
+      ctx.globalAlpha = 0.9;
+      ctx.font = `${Math.round(TILE * 0.9)}px serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(route.good.icon, mx, my);
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ── Army Formations ───────────────────────────────────────────────────────────
+function _drawArmyFormations(){
+  if(cam.zoom < 0.5) return;
+  if(typeof _armyRallyPoints === 'undefined') return;
+  const ctx = _ctx;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for(const [civId, rally] of _armyRallyPoints){
+    const civ = typeof civilizations !== 'undefined' ? civilizations.get(civId) : null;
+    if(!civ || civ.atWarWith.size === 0) continue;
+    const px = rally.tx * TILE + TILE / 2;
+    const py = rally.ty * TILE + TILE / 2;
+    // Rally point marker
+    const pulse = 0.5 + Math.sin(_waterPhase * 4 + civId) * 0.5;
+    ctx.globalAlpha = 0.4 + pulse * 0.3;
+    ctx.strokeStyle = civ.color;
+    ctx.lineWidth = Math.max(1, 2 / cam.zoom);
+    ctx.beginPath();
+    ctx.arc(px, py, TILE * 1.5 + pulse * TILE * 0.5, 0, Math.PI * 2);
+    ctx.stroke();
+    // Formation name
+    if(cam.zoom > 1.0 && typeof _getFormationType !== 'undefined'){
+      const formation = _getFormationType(rally.techLevel);
+      ctx.globalAlpha = 0.8;
+      ctx.font = `bold ${Math.round(TILE * 0.55)}px sans-serif`;
+      ctx.fillStyle = civ.color;
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.lineWidth = 2 / cam.zoom;
+      ctx.strokeText(formation.icon + ' ' + formation.name, px, py - TILE * 2);
+      ctx.fillText(formation.icon + ' ' + formation.name, px, py - TILE * 2);
+    }
+  }
+  ctx.globalAlpha = 1;
   ctx.restore();
 }

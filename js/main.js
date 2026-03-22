@@ -593,7 +593,7 @@ function _ensureDetailPanel() {
   if(!p){
     p=document.createElement('div');
     p.id='human-panel';
-    p.style.cssText='position:fixed;bottom:14px;right:234px;width:240px;background:rgba(8,16,32,0.93);color:#dde;border-radius:10px;padding:12px 14px;font-size:12px;font-family:monospace;border:1px solid rgba(100,160,255,0.25);z-index:100;display:none;';
+    p.style.cssText='position:fixed;bottom:14px;right:234px;width:280px;max-height:85vh;overflow-y:auto;background:rgba(8,16,32,0.95);color:#dde;border-radius:10px;padding:12px 14px;font-size:12px;font-family:monospace;border:1px solid rgba(100,160,255,0.25);z-index:100;display:none;scrollbar-width:thin;scrollbar-color:#334 #111;';
     document.body.appendChild(p);
   }
   return p;
@@ -606,35 +606,130 @@ function _updateDetailPanel() {
   if(!h){ panel.style.display='none'; return; }
   panel.style.display='block';
 
-  const bar=(v,col='#4f4')=>`<div style="background:#1a2030;border-radius:3px;height:5px;margin:2px 0 4px"><div style="width:${Math.round(Math.max(0,Math.min(100,v)))}%;height:100%;background:${col};border-radius:3px"></div></div>`;
+  const bar=(v,col='#4f4',label='')=>`<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px"><span style="color:#888;font-size:9px;width:52px;flex-shrink:0">${label}</span><div style="flex:1;background:#1a2030;border-radius:3px;height:6px"><div style="width:${Math.round(Math.max(0,Math.min(100,v)))}%;height:100%;background:${col};border-radius:3px;transition:width 0.3s"></div></div><span style="color:#aaa;font-size:9px;width:26px;text-align:right">${Math.round(v)}%</span></div>`;
   const civ=typeof civilizations!=='undefined'&&h.civId!=null?civilizations.get(h.civId):null;
   const badges=_getHumanBadges(h);
   const badgeHtml=badges.map(b=>`<span style="font-size:9px;background:rgba(0,0,0,0.5);border:1px solid ${b.color}55;color:${b.color};border-radius:3px;padding:1px 4px;margin-right:2px">${b.icon} ${b.label}</span>`).join('');
-  const weaponName=typeof WEAPON_TIERS!=='undefined'?WEAPON_TIERS[Math.min(h.weaponTier,WEAPON_TIERS.length-1)]:'?';
-  const civLine=civ?`<div style="color:${civ.color};font-size:11px;margin-bottom:4px">🏛 ${civ.name} <span style="color:#888">(${civ.era})</span> · Tech ${civ.techLevel}</div>`:'<div style="color:#666;font-size:11px;margin-bottom:4px">Sin civilización</div>';
-  const diseaseLine=h.sick?`<div style="color:#f88;font-size:11px;margin-bottom:4px">🦠 ${h.sickType?.name||'Enfermo'} (${Math.ceil(h.sickTimer)}a)</div>`:'';
+  const weaponIdx=Math.min(h.weaponTier,typeof WEAPON_TIERS!=='undefined'?WEAPON_TIERS.length-1:6);
+  const weaponName=typeof WEAPON_TIERS!=='undefined'?WEAPON_TIERS[weaponIdx]:'?';
+  const weaponIcon=typeof WEAPON_ICONS!=='undefined'?WEAPON_ICONS[weaponIdx]:'⚔️';
+
+  // Civ info with society tier
+  const societyTier=civ?.societyTier;
+  const civLine=civ
+    ?`<div style="color:${civ.color};font-size:11px;margin-bottom:3px;display:flex;align-items:center;gap:4px">
+        <span style="width:8px;height:8px;border-radius:50%;background:${civ.color};display:inline-block"></span>
+        <b>${civ.name}</b>
+        ${societyTier?`<span style="color:#aaa;font-size:9px">${societyTier.icon} ${societyTier.name}</span>`:''}
+        <span style="color:#666;font-size:9px;margin-left:auto">Tech ${civ.techLevel}</span>
+      </div>`
+    :'<div style="color:#666;font-size:11px;margin-bottom:3px">Sin civilización</div>';
+
+  // Formation info if soldier
+  const formationInfo=h.isSoldier&&civ&&typeof _getFormationType!=='undefined'
+    ?`<div style="color:#f88;font-size:10px;margin-bottom:3px">⚔️ Soldado · ${_getFormationType(civ.techLevel).name} · ${weaponIcon} ${weaponName}</div>`
+    :'';
+
+  // Disease
+  const diseaseLine=h.sick?`<div style="color:#f88;font-size:10px;margin-bottom:3px;background:rgba(255,50,50,0.1);border-radius:4px;padding:2px 5px">🦠 ${h.sickType?.name||'Enfermo'} — ${Math.ceil(h.sickTimer)} años restantes</div>`:'';
+
+  // Trauma
+  const traumaLine=h._trauma>30?`<div style="color:#f8a;font-size:10px;margin-bottom:3px">💔 Trauma de guerra: ${Math.round(h._trauma)}% ${h._veteranLevel>=2?'🏆 Leyenda':h._veteranLevel>=1?'🎖️ Veterano':''}</div>`:'';
+
+  // Golden age
+  const goldenAgeActive=typeof _goldenAgeCivs!=='undefined'&&civ&&_goldenAgeCivs.has(civ.id);
+  const goldenAgeLine=goldenAgeActive?`<div style="color:#ffd700;font-size:10px;margin-bottom:3px;background:rgba(255,215,0,0.08);border-radius:4px;padding:2px 5px">🌟 Edad de Oro — ${_goldenAgeCivs.get(civ.id).yearsLeft} años restantes</div>`:'';
+
+  // Spy mission
+  const spyMission=typeof _activeSpies!=='undefined'?_activeSpies.find(s=>s.spyId===h.id):null;
+  const spyLine=spyMission?`<div style="color:#a8f;font-size:10px;margin-bottom:3px">🕵️ En misión: ${spyMission.missionType.replace('_',' ')} — ${spyMission.yearsLeft} años</div>`:'';
+
+  // Inventory — visual icons
+  const invItems=[];
+  if(h.inventory.food>0) invItems.push(`<span title="Comida">🍖×${h.inventory.food}</span>`);
+  if(h.inventory.wood>0) invItems.push(`<span title="Madera">🪵×${h.inventory.wood}</span>`);
+  if(h.inventory.stone>0) invItems.push(`<span title="Piedra">🪨×${h.inventory.stone}</span>`);
+  if(h.isSoldier) invItems.push(`<span title="Arma">${weaponIcon}</span>`);
+  if(h.sick) invItems.push(`<span title="Enfermo">🦠</span>`);
+  if(h.partner) invItems.push(`<span title="Tiene pareja">💑</span>`);
+  if(h._isBandit) invItems.push(`<span title="Bandido">🗡️</span>`);
+  if(h._isMercenary) invItems.push(`<span title="Mercenario">💰</span>`);
+  if(h._veteranLevel>=2) invItems.push(`<span title="Leyenda">🏆</span>`);
+  else if(h._veteranLevel>=1) invItems.push(`<span title="Veterano">🎖️</span>`);
+  const invHtml=invItems.length>0
+    ?`<div style="background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.08);border-radius:5px;padding:4px 6px;margin-bottom:4px;display:flex;flex-wrap:wrap;gap:5px;font-size:13px">${invItems.join('')}</div>`
+    :'';
+
+  // Life story — rich narrative
+  const lifeStory=_buildLifeStory(h,civ);
+
+  // Personality summary
+  const personality=_getPersonalityDesc(h);
+
+  // Recent log
+  const logHtml=h.log.slice(0,6).map(l=>`<div style="color:#667;font-size:9px;line-height:1.4;border-bottom:1px solid rgba(255,255,255,0.03);padding:1px 0">${l}</div>`).join('')||'<div style="color:#445;font-size:9px">Sin eventos aún</div>';
 
   panel.innerHTML=`
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
-      <span style="width:13px;height:13px;border-radius:50%;background:${h.color};display:inline-block;${civ?`box-shadow:0 0 0 2px ${civ.color}`:''}"></span>
-      <b style="color:#adf;font-size:13px">${h.name}</b>
-      <span style="color:#888;margin-left:auto">${h.gender==='M'?'♂':'♀'} ${Math.floor(h.age)}a</span>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span style="width:14px;height:14px;border-radius:50%;background:${h.color};display:inline-block;flex-shrink:0;${civ?`box-shadow:0 0 0 2px ${civ.color}`:''}"></span>
+      <div>
+        <b style="color:#adf;font-size:13px">${h.name}</b>
+        <span style="color:#888;font-size:10px;margin-left:4px">${h.gender==='M'?'♂':'♀'} · ${Math.floor(h.age)} años</span>
+      </div>
     </div>
     ${badges.length?`<div style="margin-bottom:5px;flex-wrap:wrap;display:flex;gap:2px">${badgeHtml}</div>`:''}
-    ${civLine}${diseaseLine}
-    <div style="color:#8ac;font-size:10px;margin-bottom:4px">💪${h.traits.strength} 🗣${h.traits.charisma} 🧠${h.traits.intellect} 🌱${h.traits.fertility}</div>
-    <div style="color:#8c8;font-style:italic;margin-bottom:5px;font-size:11px">${h.action}</div>
-    ❤️ Salud ${bar(h.health, h.health>60?'#4f4':h.health>30?'#fa0':'#f44')}
-    🍖 Hambre ${bar(h.hunger,'#f90')}
-    ⚡ Energía ${bar(h.energy,'#48f')}
-    🧠 Conocimiento: <b style="color:#a8f">${Math.floor(h.knowledge)}</b>
-    <div style="color:#aaa;margin:5px 0 2px;font-size:11px">🎒 Comida:<b>${h.inventory.food}</b> Madera:<b>${h.inventory.wood}</b> Piedra:<b>${h.inventory.stone}</b></div>
-    <div style="color:#8ac;font-size:11px;margin-bottom:4px">👶 ${h.children} hijos · ⚔️ ${h.kills} victorias · 🗡️ ${weaponName}</div>
-    <div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:5px;color:#777;font-size:10px;line-height:1.5">
-      ${h.log.slice(0,5).join('<br>')||'Sin eventos aún'}
+    ${civLine}${formationInfo}${diseaseLine}${traumaLine}${goldenAgeLine}${spyLine}
+    <div style="color:#8ac;font-size:10px;margin-bottom:4px;font-style:italic">${personality}</div>
+    <div style="color:#8c8;font-style:italic;margin-bottom:5px;font-size:11px;background:rgba(0,255,100,0.05);border-radius:4px;padding:2px 5px">${h.action}</div>
+    ${bar(h.health,'#4f4','❤️ Salud')}
+    ${bar(h.hunger,'#f90','🍖 Hambre')}
+    ${bar(h.energy,'#48f','⚡ Energía')}
+    ${bar(h.social,'#f4a','🗣️ Social')}
+    <div style="margin:4px 0 2px;color:#a8f;font-size:10px">🧠 Conocimiento: <b>${Math.floor(h.knowledge).toLocaleString()}</b> · 💰 Riqueza: <b>${Math.floor(h.wealth)}</b></div>
+    <div style="color:#8ac;font-size:10px;margin-bottom:4px">💪${h.traits.strength} 🗣${h.traits.charisma} 🧠${h.traits.intellect} 🌱${h.traits.fertility} · 🎯${h.aggression.toFixed(2)}</div>
+    <div style="color:#aaa;font-size:10px;margin-bottom:4px">👶 ${h.children} hijos · ⚔️ ${h.kills} victorias · 🏠 ${h.homeBase?h.homeBase.label:'Sin hogar'}</div>
+    <div style="font-size:10px;color:#888;margin-bottom:3px">🎒 Inventario:</div>
+    ${invHtml}
+    <div style="font-size:10px;color:#7a9;margin-bottom:3px;font-style:italic;line-height:1.4">${lifeStory}</div>
+    <div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:4px;margin-top:2px">
+      <div style="color:#556;font-size:9px;margin-bottom:2px;text-transform:uppercase;letter-spacing:1px">Historial reciente</div>
+      ${logHtml}
     </div>
     <button onclick="focusHuman(${h.id})" style="margin-top:7px;width:100%;background:rgba(100,160,255,0.15);border:1px solid rgba(100,160,255,0.3);color:#adf;border-radius:5px;padding:4px;cursor:pointer;font-size:11px">📍 Centrar cámara</button>
   `;
+}
+
+function _buildLifeStory(h, civ) {
+  const parts=[];
+  if(h.isLeader) parts.push(`Lidera ${civ?.name||'su pueblo'}`);
+  if(h.kills>20) parts.push(`Legendario guerrero con ${h.kills} victorias`);
+  else if(h.kills>5) parts.push(`Veterano de ${h.kills} batallas`);
+  if(h.children>5) parts.push(`Padre/madre de ${h.children} hijos`);
+  if(h.partner){const p=getHuman(h.partner);if(p)parts.push(`Unido a ${p.name.split(' ')[0]}`);}
+  if(h.sick) parts.push(`Lucha contra ${h.sickType?.name||'enfermedad'}`);
+  if(h._isBandit) parts.push(`Vive fuera de la ley`);
+  if(h._isMercenary) parts.push(`Mercenario de alquiler`);
+  if(h._veteranLevel>=2) parts.push(`Leyenda militar reconocida`);
+  if(h.knowledge>50000) parts.push(`Mente brillante del ${getEra(year).name}`);
+  if(h.age>60) parts.push(`Anciano sabio de ${Math.floor(h.age)} años`);
+  if(civ?.religion) parts.push(`Fiel de ${civ.religion}`);
+  if(parts.length===0) parts.push(`Sobrevive día a día en el ${getEra(year).name}`);
+  return parts.slice(0,3).join(' · ');
+}
+
+function _getPersonalityDesc(h) {
+  const traits=[];
+  if(h.aggression>0.7) traits.push('Agresivo');
+  else if(h.aggression<0.2) traits.push('Pacífico');
+  if(h.traits.charisma>75) traits.push('Carismático');
+  if(h.traits.intellect>75) traits.push('Inteligente');
+  if(h.traits.strength>75) traits.push('Fuerte');
+  if(h.traits.fertility>75) traits.push('Fértil');
+  if(h.ideology>0.7) traits.push('Conservador');
+  else if(h.ideology<0.3) traits.push('Progresista');
+  if(h.social>80) traits.push('Sociable');
+  else if(h.social<20) traits.push('Solitario');
+  return traits.length>0?traits.slice(0,3).join(' · '):'Personalidad equilibrada';
 }
 
 // ── Extinction cause tracking ─────────────────────────────────────────────────
@@ -1168,17 +1263,25 @@ function _updateStatsPanel(){
     for(const c of sorted){
       const leader = typeof _hById!=='undefined'?_hById(c.leaderId):null;
       const atWar = c.atWarWith&&c.atWarWith.size>0;
+      const inGoldenAge = typeof _goldenAgeCivs!=='undefined'&&_goldenAgeCivs.has(c.id);
+      const societyTier = typeof _getSocietyTier!=='undefined'?_getSocietyTier(c):null;
+      const formation = typeof _getFormationType!=='undefined'?_getFormationType(c.techLevel):null;
       const invIcons={'escritura':'📝','rueda':'⚙️','imprenta':'📖','brujula':'🧭','telescopio':'🔭','vapor':'♨️','electricidad':'⚡','radio':'📡'};
-      civHtml+=`<div class="civ-row" style="border-left-color:${c.color}">
-        <div class="civ-row-name" style="color:${c.color}">${c.name} ${atWar?'⚔️':c.allies.size>2?'🤝':''}</div>
+      const weaponName=typeof WEAPON_TIERS!=='undefined'?WEAPON_TIERS[Math.min((c.techLevel||0)+1,WEAPON_TIERS.length-1)]:'?';
+      civHtml+=`<div class="civ-row" style="border-left-color:${c.color}${inGoldenAge?';box-shadow:0 0 6px rgba(255,215,0,0.3)':''}">
+        <div class="civ-row-name" style="color:${c.color}">${c.name} ${atWar?'⚔️':c.allies.size>2?'🤝':''} ${inGoldenAge?'🌟':''}</div>
+        ${societyTier?`<div style="color:#888;font-size:9px;margin-bottom:2px">${societyTier.icon} ${societyTier.name} · ${societyTier.desc}</div>`:''}
         <div class="civ-row-stats">
           <span>👥${c.population}</span>
           <span>🧠${Math.round(c.avgKnowledge||0)}</span>
           <span>🏅${Math.round(c.honor)}</span>
+          ${c.tradePartners&&c.tradePartners.size>0?`<span>🤝${c.tradePartners.size}</span>`:''}
           ${c.religion?`<span style="color:#d0a0ff">🛕</span>`:''}
+          ${formation?`<span title="Formación militar">${formation.icon}</span>`:''}
           ${c.inventions&&c.inventions.size>0?`<span>${[...c.inventions].slice(0,3).map(id=>invIcons[id]||'💡').join('')}</span>`:''}
           ${leader&&leader.alive?`<span style="color:#ffd700">👑${leader.name.split(' ')[0]}</span>`:''}
         </div>
+        <div style="font-size:9px;color:#666;margin-top:1px">${weaponName} · Tech ${c.techLevel||0}</div>
       </div>`;
     }
     html += section('🌍 Civilizaciones', civHtml);

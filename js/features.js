@@ -948,6 +948,7 @@ function tickAllFeatures(yearsElapsed) {
   tickAdvancedDiplomacy(yearsElapsed);
   tickTourism(yearsElapsed);
   tickGlobalization(yearsElapsed);
+  tickNewFeatures(yearsElapsed);
   tickCivDiversity(yearsElapsed);
   tickRandomChronicles(yearsElapsed);
   tickNuclearWar(yearsElapsed);
@@ -3617,3 +3618,257 @@ function tickCivDiversity(yearsElapsed) {
     `Un grupo de disidentes liderados por ${founder.name.split(' ')[0]} abandonó ${biggestCiv.name} en busca de su propio destino. Cargando sus pertenencias y sus sueños, fundaron ${newCiv.name} en tierras nuevas.`, '🏳️');
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 5 NUEVAS MECÁNICAS — Espionaje, Edad de Oro, Mercenarios, Trauma de Guerra, Comercio de Rutas
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── NUEVA 1: ESPIONAJE ────────────────────────────────────────────────────────
+// Civs avanzadas pueden enviar espías a robar tecnología o sabotear enemigos
+let _espionageTimer2 = 0;
+const _activeSpies = []; // {spyId, targetCivId, missionType, yearsLeft}
+const SPY_MISSIONS = ['robo_tecnologia','sabotaje','asesinato','diplomacia_secreta'];
+function tickEspionage2(yearsElapsed) {
+  _espionageTimer2 += yearsElapsed;
+  if (_espionageTimer2 < 30) return;
+  _espionageTimer2 = 0;
+  if (typeof _cachedAlive === 'undefined') return;
+  // Limpiar misiones expiradas
+  for (let i = _activeSpies.length - 1; i >= 0; i--) {
+    _activeSpies[i].yearsLeft -= 30;
+    if (_activeSpies[i].yearsLeft <= 0) {
+      const spy = _activeSpies[i];
+      const spyH = _hById(spy.spyId);
+      const targetCiv = civilizations.get(spy.targetCivId);
+      if (spyH && spyH.alive && targetCiv) {
+        const success = Math.random() < 0.5 + spyH.knowledge * 0.00002;
+        if (success) {
+          if (spy.missionType === 'robo_tecnologia') {
+            const myCiv = civilizations.get(spyH.civId);
+            if (myCiv && targetCiv.techLevel > myCiv.techLevel) {
+              myCiv.techLevel = Math.min(myCiv.techLevel + 1, targetCiv.techLevel);
+              spyH.knowledge = Math.min(99999, spyH.knowledge + 500 * _intelModifier);
+              addMajorEvent(`🕵️ ${spyH.name.split(' ')[0]} robó tecnología de ${targetCiv.name} — ¡${WEAPON_TIERS[Math.min(myCiv.techLevel+1,WEAPON_TIERS.length-1)]} obtenido!`);
+            }
+          } else if (spy.missionType === 'sabotaje') {
+            // Destruir una estructura del enemigo
+            const enemyStructs = structures.filter(s => s.civId === spy.targetCivId);
+            if (enemyStructs.length > 0) {
+              const target = enemyStructs[Math.floor(Math.random() * enemyStructs.length)];
+              target.hp = Math.max(0, target.hp - target.maxHp * 0.6);
+              addWorldEvent(`💣 Sabotaje: ${spyH.name.split(' ')[0]} dañó ${target.label} de ${targetCiv.name}`);
+            }
+          } else if (spy.missionType === 'asesinato') {
+            // Intentar eliminar al líder enemigo
+            const leader = _hById(targetCiv.leaderId);
+            if (leader && leader.alive) {
+              leader.health = Math.max(5, leader.health - 40);
+              addMajorEvent(`🗡️ ¡Intento de asesinato! El líder de ${targetCiv.name} fue herido por un espía`);
+            }
+          } else if (spy.missionType === 'diplomacia_secreta') {
+            // Crear alianza secreta
+            const myCiv = civilizations.get(spyH.civId);
+            if (myCiv) {
+              myCiv.allies.add(spy.targetCivId);
+              targetCiv.allies.add(spyH.civId);
+              myCiv.enemies.delete(spy.targetCivId);
+              targetCiv.enemies.delete(spyH.civId);
+              addWorldEvent(`🤝 Diplomacia secreta: ${myCiv.name} y ${targetCiv.name} firmaron un pacto oculto`);
+            }
+          }
+        } else {
+          // Espía capturado
+          spyH.health = Math.max(0, spyH.health - 50);
+          addWorldEvent(`🚨 ¡Espía capturado! ${spyH.name.split(' ')[0]} fue descubierto en ${targetCiv.name}`);
+          if (spyH.health <= 0) spyH._die('capturado como espía');
+        }
+      }
+      _activeSpies.splice(i, 1);
+    }
+  }
+  // Enviar nuevos espías
+  for (const [, civ] of civilizations) {
+    if (civ.population < 10 || civ.techLevel < 2) continue;
+    if (civ.enemies.size === 0 && civ.atWarWith.size === 0) continue;
+    if (Math.random() > 0.08) continue;
+    // Elegir el miembro más inteligente como espía
+    let spy = null;
+    for (const id of civ.members) {
+      const h = _hById(id);
+      if (!h || !h.alive || h.isLeader || h.isSoldier) continue;
+      if (!spy || h.knowledge > spy.knowledge) spy = h;
+    }
+    if (!spy || spy.knowledge < 200) continue;
+    // Elegir objetivo
+    const enemyIds = [...civ.enemies, ...civ.atWarWith.keys()];
+    if (enemyIds.length === 0) continue;
+    const targetCivId = enemyIds[Math.floor(Math.random() * enemyIds.length)];
+    const mission = SPY_MISSIONS[Math.floor(Math.random() * SPY_MISSIONS.length)];
+    _activeSpies.push({ spyId: spy.id, targetCivId, missionType: mission, yearsLeft: 60 });
+    spy.addLog(`Misión de espionaje: ${mission.replace('_', ' ')} en ${civilizations.get(targetCivId)?.name || '?'}`);
+    addWorldEvent(`🕵️ ${spy.name.split(' ')[0]} parte en misión secreta contra ${civilizations.get(targetCivId)?.name || '?'}`);
+  }
+}
+
+// ── NUEVA 2: EDAD DE ORO CULTURAL ────────────────────────────────────────────
+// Civs con alta cultura (templos + alianzas + inventos) entran en una Edad de Oro
+// que acelera todo: conocimiento, reproducción, construcción
+let _goldenAgeTimer = 0;
+const _goldenAgeCivs = new Map(); // civId → yearsLeft
+function tickGoldenAge(yearsElapsed) {
+  _goldenAgeTimer += yearsElapsed;
+  if (_goldenAgeTimer < 40) return;
+  _goldenAgeTimer = 0;
+  // Actualizar civs en Edad de Oro
+  for (const [civId, data] of _goldenAgeCivs) {
+    data.yearsLeft -= 40;
+    if (data.yearsLeft <= 0) {
+      _goldenAgeCivs.delete(civId);
+      const civ = civilizations.get(civId);
+      if (civ) addMajorEvent(`🌅 La Edad de Oro de ${civ.name} llega a su fin — pero su legado perdura`);
+    }
+  }
+  // Aplicar bonuses a civs en Edad de Oro
+  for (const [civId] of _goldenAgeCivs) {
+    const civ = civilizations.get(civId);
+    if (!civ || civ.population === 0) continue;
+    for (const id of civ.members) {
+      const h = _hById(id);
+      if (!h || !h.alive) continue;
+      h.knowledge = Math.min(99999, h.knowledge + yearsElapsed * 5 * _intelModifier);
+      h.health = Math.min(100, h.health + yearsElapsed * 1);
+      h._reproUrge = Math.min(1, h._reproUrge + yearsElapsed * 0.05);
+      h._buildUrge = Math.min(1, h._buildUrge + yearsElapsed * 0.1);
+    }
+    civ.honor = Math.min(100, civ.honor + yearsElapsed * 0.5);
+  }
+  // Detectar nuevas Edades de Oro
+  for (const [, civ] of civilizations) {
+    if (civ.population < 15) continue;
+    if (_goldenAgeCivs.has(civ.id)) continue;
+    const civTypes = _civStructureTypes.get(civ.id);
+    if (!civTypes) continue;
+    // Condiciones: templo/catedral + mercado + alianzas + inventos
+    const hasTemple = civTypes.has('temple') || civTypes.has('cathedral');
+    const hasMarket = civTypes.has('market') || civTypes.has('harbor');
+    const hasKnowledge = civTypes.has('library') || civTypes.has('academy') || civTypes.has('university');
+    const richInAllies = civ.allies.size >= 2;
+    const richInInventions = civ.inventions.size >= 3;
+    if (hasTemple && hasMarket && (hasKnowledge || richInAllies) && richInInventions && Math.random() < 0.04) {
+      const duration = 100 + Math.floor(Math.random() * 150);
+      _goldenAgeCivs.set(civ.id, { yearsLeft: duration });
+      addMajorEvent(`✨🌟 ¡${civ.name} entra en una EDAD DE ORO! Arte, ciencia y comercio florecen durante ${duration} años`);
+      addChronicle('culture', `Edad de Oro de ${civ.name}`, `Los astros se alinearon. Los templos rebosaban de fieles, los mercados de riqueza, y las academias de ideas. ${civ.name} vivió su momento más glorioso. Los poetas cantaron, los arquitectos construyeron, los filósofos soñaron.`, '🌟');
+    }
+  }
+}
+
+// ── NUEVA 3: MERCENARIOS ──────────────────────────────────────────────────────
+// Civs en guerra pueden contratar mercenarios (humanos sin civ) para reforzar ejércitos
+let _mercenaryTimer = 0;
+const _mercenaryBands = []; // {leaderId, members[], hireCost, tx, ty}
+function tickMercenaries(yearsElapsed) {
+  _mercenaryTimer += yearsElapsed;
+  if (_mercenaryTimer < 25) return;
+  _mercenaryTimer = 0;
+  if (typeof _cachedAlive === 'undefined') return;
+  // Formar bandas de mercenarios con humanos sin civ y alta agresión
+  const loners = _cachedAlive.filter(h => h.civId === null && h.aggression > 0.5 && h.kills > 0 && !h._isMercenary);
+  if (loners.length >= 3 && _mercenaryBands.length < 5 && Math.random() < 0.15) {
+    const leader = loners.reduce((a, b) => a.kills > b.kills ? a : b);
+    const band = loners.slice(0, Math.min(5, loners.length));
+    for (const m of band) { m._isMercenary = true; m.color = '#cc8800'; }
+    _mercenaryBands.push({ leaderId: leader.id, members: band.map(m => m.id), hireCost: 20 + band.length * 5, tx: leader.tx, ty: leader.ty });
+    addWorldEvent(`⚔️💰 Banda de mercenarios formada: ${leader.name.split(' ')[0]} lidera ${band.length} guerreros de alquiler`);
+  }
+  // Civs en guerra contratan mercenarios
+  for (let i = _mercenaryBands.length - 1; i >= 0; i--) {
+    const band = _mercenaryBands[i];
+    const leader = _hById(band.leaderId);
+    if (!leader || !leader.alive) { _mercenaryBands.splice(i, 1); continue; }
+    // Buscar civ que quiera contratarlos
+    for (const [, civ] of civilizations) {
+      if (civ.atWarWith.size === 0) continue;
+      if (civ.foodReserve < band.hireCost) continue;
+      if (Math.random() > 0.1) continue;
+      // Contratar
+      civ.foodReserve -= band.hireCost;
+      for (const mId of band.members) {
+        const m = _hById(mId);
+        if (!m || !m.alive) continue;
+        m.civId = civ.id;
+        m.color = civ.color;
+        m.isSoldier = true;
+        m._isMercenary = false;
+        m.weaponTier = Math.max(m.weaponTier, civ.techLevel);
+        civ.addMember(m);
+      }
+      addMajorEvent(`💰⚔️ ${civ.name} contrató mercenarios — ${band.members.length} guerreros se unen a sus filas`);
+      _mercenaryBands.splice(i, 1);
+      break;
+    }
+  }
+}
+
+// ── NUEVA 4: TRAUMA DE GUERRA (MORAL Y PTSD) ─────────────────────────────────
+// Soldados con muchas muertes acumulan trauma que reduce su efectividad
+// pero también pueden convertirse en veteranos legendarios
+let _traumaTimer = 0;
+function tickWarTrauma(yearsElapsed) {
+  _traumaTimer += yearsElapsed;
+  if (_traumaTimer < 10) return;
+  _traumaTimer = 0;
+  if (typeof _cachedAlive === 'undefined') return;
+  for (const h of _cachedAlive) {
+    if (!h.isSoldier) continue;
+    // Acumular trauma con cada muerte
+    if (!h._trauma) h._trauma = 0;
+    if (!h._veteranLevel) h._veteranLevel = 0;
+    // Trauma sube con kills, baja con tiempo y descanso
+    if (h.kills > 0) h._trauma = Math.min(100, h._trauma + h.kills * 0.1 * yearsElapsed);
+    if (h.action === ACTIONS.SLEEP || h.action === ACTIONS.IDLE) {
+      h._trauma = Math.max(0, h._trauma - yearsElapsed * 2);
+    }
+    // Efectos del trauma
+    if (h._trauma > 70) {
+      h.aggression = Math.max(0.1, h.aggression - yearsElapsed * 0.02);
+      h.social = Math.max(0, h.social - yearsElapsed * 3);
+      if (Math.random() < 0.01) {
+        h.addLog(`Sufre pesadillas de guerra — el trauma pesa`);
+        h.health = Math.max(1, h.health - 5);
+      }
+    }
+    // Veteranos legendarios: kills altos + trauma superado
+    if (h.kills >= 15 && h._trauma < 30 && h._veteranLevel === 0) {
+      h._veteranLevel = 1;
+      h.weaponTier = Math.min(WEAPON_TIERS.length - 1, h.weaponTier + 1);
+      h.traits.strength = Math.min(99, h.traits.strength + 10);
+      h.addLog(`Se convirtió en Veterano de Guerra — forjado por el combate`);
+      addWorldEvent(`🎖️ ${h.name.split(' ')[0]} se convirtió en Veterano de Guerra — ${h.kills} victorias, acero en el alma`);
+    }
+    if (h.kills >= 30 && h._veteranLevel === 1) {
+      h._veteranLevel = 2;
+      h.weaponTier = Math.min(WEAPON_TIERS.length - 1, h.weaponTier + 1);
+      h.addLog(`Leyenda militar — los enemigos huyen al verle`);
+      addMajorEvent(`🏆 ${h.name.split(' ')[0]} alcanzó el rango de LEYENDA MILITAR — ${h.kills} victorias en combate`);
+    }
+  }
+}
+
+// ── NUEVA 5: RUTAS COMERCIALES VISIBLES EN EL MAPA ───────────────────────────
+// Las rutas de comercio activas se dibujan como líneas animadas en el renderer
+// Esta función expone los datos para que renderer.js los use
+function getActiveTradeRoutes() {
+  if (typeof _activeTradeRoutes === 'undefined') return [];
+  return _activeTradeRoutes;
+}
+
+// ── Registrar las nuevas mecánicas en tickAllFeatures ────────────────────────
+// Se llaman desde el grupo rotativo existente
+const _origTickAllFeatures = typeof tickAllFeatures !== 'undefined' ? tickAllFeatures : null;
+function tickNewFeatures(yearsElapsed) {
+  tickEspionage2(yearsElapsed);
+  tickGoldenAge(yearsElapsed);
+  tickMercenaries(yearsElapsed);
+  tickWarTrauma(yearsElapsed);
+}
