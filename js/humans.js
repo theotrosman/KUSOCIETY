@@ -1585,7 +1585,7 @@ class Human{
         this._reproUrge=Math.min(1,this._reproUrge+yearsElapsed*(baseRate+popBonus));
       }
     }
-    this._exploreUrge=Math.min(1,this._exploreUrge+yearsElapsed*0.10);
+    this._exploreUrge=Math.min(1,this._exploreUrge+yearsElapsed*0.14);
     // Build urge scales with knowledge — advanced civs build constantly
     const buildRate=0.20+Math.min(0.5,this.knowledge*0.0012);
     this._buildUrge=Math.min(1,this._buildUrge+yearsElapsed*buildRate);
@@ -1618,7 +1618,7 @@ class Human{
       this.knowledge>28000?4:   // automóvil — Era Industrial tardía
       this.knowledge>18000?3:   // tren — Era Industrial
       this.knowledge>2000?2:    // carruaje — Era Clásica
-      (this.knowledge>500&&_unlockedTypes.has('shipyard'))?1:0; // bote — Era del Hierro
+      this.knowledge>500?1:0;   // bote — siempre disponible con conocimiento suficiente
     if(targetTransport>this.transportTier){
       this.transportTier=targetTransport;
       const td=TRANSPORT_TIERS[targetTransport];
@@ -2440,7 +2440,7 @@ class Human{
           if(otherCiv.id===this.civId||otherCiv.population<5) continue;
           if(!otherCiv.cityCenter) continue;
           const d=Math.abs(otherCiv.cityCenter.tx-cx)+Math.abs(otherCiv.cityCenter.ty-cy);
-          if(d<bestDist&&d<80){
+          if(d<bestDist){
             bestDist=d;
             sA={tx:cx,ty:cy};
             sB={tx:otherCiv.cityCenter.tx,ty:otherCiv.cityCenter.ty};
@@ -2467,15 +2467,17 @@ class Human{
         // Walk from sA toward sB, hugging land tiles
         const dx=sB.tx-sA.tx, dy=sB.ty-sA.ty;
         const steps=Math.max(Math.abs(dx),Math.abs(dy));
-        const maxSteps=Math.min(steps, type==='highway'?20:12);
+        const maxSteps=Math.min(steps, type==='highway'?60:15);
         for(let step=1;step<=maxSteps;step++){
           const t2=step/steps;
           let bx=Math.round(sA.tx+dx*t2);
           let by=Math.round(sA.ty+dy*t2);
-          // If water, try adjacent land tile
+          // If water, try adjacent land tile (up to 3 tiles away)
           if(!isLand(bx,by)){
-            const alts=[[bx+1,by],[bx-1,by],[bx,by+1],[bx,by-1]];
-            for(const [ax2,ay2] of alts){ if(isLand(ax2,ay2)){bx=ax2;by=ay2;break;} }
+            const alts=[[bx+1,by],[bx-1,by],[bx,by+1],[bx,by-1],[bx+2,by],[bx-2,by],[bx,by+2],[bx,by-2]];
+            let found=false;
+            for(const [ax2,ay2] of alts){ if(isLand(ax2,ay2)){bx=ax2;by=ay2;found=true;break;} }
+            if(!found)continue; // skip water tiles that can't be routed around
           }
           if(tryPlace(bx,by))return;
         }
@@ -2592,23 +2594,83 @@ class Human{
   // ── Sail to a distant island ──────────────────────────────────────────────
   _doSailToIsland(){
     if(this.transportTier<1)return;
-    // Pick a random land tile far away
     const rng=this._rng;
+    // First: if not near water, walk toward nearest coast
+    if(!this._nearWater()){
+      // Find nearest water tile and head there
+      let bestTx=-1,bestTy=-1,bestD=Infinity;
+      const r=40;
+      for(let dy=-r;dy<=r;dy+=3)for(let dx=-r;dx<=r;dx+=3){
+        const tx=Math.max(0,Math.min(WORLD_W-1,this.tx+dx));
+        const ty=Math.max(0,Math.min(WORLD_H-1,this.ty+dy));
+        const cell=getCell(tx,ty);
+        if(cell&&(cell.biome==='sea'||cell.biome==='shore')){
+          const d=Math.hypot(dx,dy);
+          if(d<bestD){bestD=d;bestTx=tx;bestTy=ty;}
+        }
+      }
+      if(bestTx>=0){this._navigateTo(bestTx,bestTy);this.action=ACTIONS.MIGRATE;return;}
+    }
+    // Pick a random land tile far away — prefer other civ territories
     const angle=rng()*Math.PI*2;
-    const dist=60+Math.floor(rng()*120);
+    const dist=80+Math.floor(rng()*150);
     const tx=Math.max(0,Math.min(WORLD_W-1,this.tx+Math.round(Math.cos(angle)*dist)));
     const ty=Math.max(0,Math.min(WORLD_H-1,this.ty+Math.round(Math.sin(angle)*dist)));
     // Find nearest land near that point
-    for(let r=0;r<=15;r++){
+    for(let r=0;r<=20;r++){
       for(let a=0;a<8;a++){
         const lx=tx+Math.round(Math.cos(a/8*Math.PI*2)*r);
         const ly=ty+Math.round(Math.sin(a/8*Math.PI*2)*r);
         if(isLand(lx,ly)){
           this._navigateTo(lx,ly);
           this.action=ACTIONS.MIGRATE;
+          if(Math.random()<0.05){
+            const civ=this.civId?civilizations.get(this.civId):null;
+            addWorldEvent(`⛵ ${this.name.split(' ')[0]} de ${civ?.name||'?'} zarpa hacia tierras desconocidas`);
+          }
           return;
         }
       }
+    }
+  }
+
+  // ── Fly to another nation's city ──────────────────────────────────────────
+  _doFlyToNation(){
+    if(this.transportTier<5)return;
+    // Find another civ with an airport or city center
+    let destTx=-1,destTy=-1,destCivName='';
+    let bestScore=-1;
+    for(const [,otherCiv] of civilizations){
+      if(otherCiv.id===this.civId||otherCiv.population<3)continue;
+      const hasAirport=structures.some(s=>s.civId===otherCiv.id&&s.type==='airport');
+      const cc=otherCiv.cityCenter;
+      if(!cc)continue;
+      // Prefer civs with airports, allies, or trade partners
+      let score=hasAirport?3:1;
+      if(this.civId){
+        const myCiv=civilizations.get(this.civId);
+        if(myCiv&&myCiv.allies.has(otherCiv.id))score+=2;
+        if(myCiv&&myCiv.tradePartners.has(otherCiv.id))score+=1;
+      }
+      score+=Math.random()*2; // some randomness
+      if(score>bestScore){bestScore=score;destTx=cc.tx;destTy=cc.ty;destCivName=otherCiv.name;}
+    }
+    if(destTx<0){
+      // No other civ — just fly far away
+      const angle=this._rng()*Math.PI*2;
+      const dist=100+Math.floor(this._rng()*150);
+      destTx=Math.max(0,Math.min(WORLD_W-1,this.tx+Math.round(Math.cos(angle)*dist)));
+      destTy=Math.max(0,Math.min(WORLD_H-1,this.ty+Math.round(Math.sin(angle)*dist)));
+    }
+    // Teleport-style fast travel (planes skip terrain)
+    this.tx=destTx;this.ty=destTy;
+    this.px=destTx*TILE+TILE/2;this.py=destTy*TILE+TILE/2;
+    this.destPx=this.px;this.destPy=this.py;
+    this._settleTx=destTx;this._settleTy=destTy;
+    this.action=ACTIONS.MIGRATE;
+    if(destCivName&&Math.random()<0.15){
+      const myCiv=this.civId?civilizations.get(this.civId):null;
+      addWorldEvent(`✈️ ${this.name.split(' ')[0]} de ${myCiv?.name||'?'} vuela a ${destCivName}`);
     }
   }
 
