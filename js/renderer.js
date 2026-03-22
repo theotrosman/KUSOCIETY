@@ -1851,11 +1851,11 @@ function _buildLegendDOM(){
     el = document.createElement('div');
     el.id = 'legend-panel';
     el.style.cssText = `
-      position:fixed;bottom:60px;left:14px;width:190px;max-height:calc(100vh - 120px);
-      background:rgba(0,0,0,0.72);border:1px solid rgba(255,255,255,0.1);
+      position:fixed;bottom:10px;left:210px;width:180px;max-height:280px;
+      background:rgba(4,10,22,0.92);border:1px solid rgba(255,255,255,0.1);
       border-radius:8px;z-index:25;display:flex;flex-direction:column;
       font-family:'Courier New',monospace;font-size:10px;color:#ddd;
-      backdrop-filter:blur(4px);overflow:hidden;
+      backdrop-filter:blur(6px);overflow:hidden;
     `;
     document.body.appendChild(el);
   }

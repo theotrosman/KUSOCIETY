@@ -175,7 +175,7 @@ function _ensureNewsPanel(){
   if(!p){
     p=document.createElement('div');
     p.id='news-panel';
-    p.style.cssText='position:fixed;top:60px;left:14px;width:300px;max-height:70vh;overflow-y:auto;background:rgba(8,16,28,0.96);color:#dde;border-radius:10px;padding:12px 14px;font-size:12px;font-family:monospace;border:1px solid rgba(255,200,50,0.3);z-index:100;display:none;scrollbar-width:thin;scrollbar-color:#443 #111;';
+    p.style.display='none';
     document.body.appendChild(p);
   }
   return p;
@@ -674,7 +674,6 @@ function _ensureDetailPanel() {
   if(!p){
     p=document.createElement('div');
     p.id='human-panel';
-    p.style.cssText='position:fixed;bottom:14px;right:234px;width:280px;max-height:85vh;overflow-y:auto;background:rgba(8,16,32,0.95);color:#dde;border-radius:10px;padding:12px 14px;font-size:12px;font-family:monospace;border:1px solid rgba(100,160,255,0.25);z-index:100;display:none;scrollbar-width:thin;scrollbar-color:#334 #111;';
     document.body.appendChild(p);
   }
   return p;
@@ -1034,16 +1033,7 @@ function _ensureStructurePanel(){
   if(_structurePanelEl) return _structurePanelEl;
   const p = document.createElement('div');
   p.id = 'structure-panel';
-  p.style.cssText = [
-    'position:fixed','bottom:14px','left:50%','transform:translateX(-50%)',
-    'width:320px','max-width:90vw',
-    'background:rgba(6,12,24,0.96)',
-    'color:#dde','border-radius:12px','padding:14px 16px',
-    'font-size:12px','font-family:monospace',
-    'border:1px solid rgba(255,215,0,0.2)',
-    'z-index:200','display:none',
-    'box-shadow:0 4px 32px rgba(0,0,0,0.7)',
-  ].join(';');
+  p.style.display = 'none';
   document.body.appendChild(p);
   _structurePanelEl = p;
   return p;

@@ -3865,8 +3865,6 @@ function getActiveTradeRoutes() {
 }
 
 // ── Registrar las nuevas mecánicas en tickAllFeatures ────────────────────────
-// Se llaman desde el grupo rotativo existente
-const _origTickAllFeatures = typeof tickAllFeatures !== 'undefined' ? tickAllFeatures : null;
 function tickNewFeatures(yearsElapsed) {
   tickEspionage2(yearsElapsed);
   tickGoldenAge(yearsElapsed);
