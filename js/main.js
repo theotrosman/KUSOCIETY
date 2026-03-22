@@ -169,6 +169,87 @@ document.getElementById('btn-history').addEventListener('click',()=>{
   }
 });
 
+// ── News Panel (NOTICIAS) ─────────────────────────────────────────────────────
+function _ensureNewsPanel(){
+  let p=document.getElementById('news-panel');
+  if(!p){
+    p=document.createElement('div');
+    p.id='news-panel';
+    p.style.cssText='position:fixed;top:60px;left:14px;width:300px;max-height:70vh;overflow-y:auto;background:rgba(8,16,28,0.96);color:#dde;border-radius:10px;padding:12px 14px;font-size:12px;font-family:monospace;border:1px solid rgba(255,200,50,0.3);z-index:100;display:none;scrollbar-width:thin;scrollbar-color:#443 #111;';
+    document.body.appendChild(p);
+  }
+  return p;
+}
+
+function _renderNewsPanel(){
+  const p=_ensureNewsPanel();
+  if(typeof getMediaHeadlines==='undefined'){ p.innerHTML='<div style="color:#666;text-align:center;padding:20px">Sin medios de comunicación aún</div>'; return; }
+  const headlines=getMediaHeadlines();
+
+  // Check if any civ has media
+  let hasMedia=false;
+  if(typeof civilizations!=='undefined'){
+    for(const [,civ] of civilizations){
+      if(civ._hasPrintingPress||civ._hasRadio||civ._hasTvStation||civ._hasInternetHub){ hasMedia=true; break; }
+    }
+  }
+
+  if(!hasMedia){
+    p.innerHTML=`<div style="color:#888;text-align:center;padding:20px;line-height:1.6">
+      <div style="font-size:20px;margin-bottom:8px">📰</div>
+      <div>Los medios de comunicación se desbloquean cuando las civilizaciones alcancen suficiente conocimiento.</div>
+      <div style="margin-top:8px;color:#556;font-size:10px">Imprenta: ~4.000 conocimiento promedio</div>
+    </div>`;
+    return;
+  }
+
+  const mediaLevelIcons=['','📰','📻','📺','🌐'];
+  const mediaLevelNames=['','Imprenta','Radio','Televisión','Internet'];
+
+  let html=`<div style="font-size:14px;font-weight:bold;color:#ffd700;margin-bottom:10px;border-bottom:1px solid #443;padding-bottom:6px">📡 NOTICIAS DEL MUNDO</div>`;
+
+  if(headlines.length===0){
+    html+=`<div style="color:#666;text-align:center;padding:10px">Esperando noticias...</div>`;
+  } else {
+    for(const h of headlines.slice(0,20)){
+      const mediaIcon=mediaLevelIcons[h.mediaLevel]||'📰';
+      const mediaName=mediaLevelNames[h.mediaLevel]||'Imprenta';
+      const yearStr=typeof formatYear!=='undefined'?formatYear(h.year):`Año ${h.year}`;
+      html+=`<div style="margin-bottom:8px;padding:7px 8px;background:rgba(255,200,50,0.05);border-left:2px solid rgba(255,200,50,0.3);border-radius:0 5px 5px 0">
+        <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px">
+          <span style="font-size:14px">${h.icon}</span>
+          <span style="color:#aaa;font-size:9px">${mediaIcon} ${mediaName} · ${yearStr}</span>
+        </div>
+        <div style="color:#dde;font-size:11px;line-height:1.4">${h.text}</div>
+        <div style="color:#556;font-size:9px;margin-top:2px">${h.civName}</div>
+      </div>`;
+    }
+  }
+
+  p.innerHTML=html;
+}
+
+// Add news button to toolbar
+(function _addNewsButton(){
+  const histBtn=document.getElementById('btn-history');
+  if(!histBtn) return;
+  const btn=document.createElement('button');
+  btn.id='btn-news';
+  btn.textContent='📡 Noticias';
+  btn.style.cssText=histBtn.style.cssText||'';
+  btn.className=histBtn.className;
+  histBtn.parentNode.insertBefore(btn,histBtn.nextSibling);
+  btn.addEventListener('click',()=>{
+    const p=_ensureNewsPanel();
+    if(p.style.display==='none'){
+      _renderNewsPanel();
+      p.style.display='block';
+    } else {
+      p.style.display='none';
+    }
+  });
+})();
+
 function _renderChronicle(content){
     const alive=getAlive();
     const civList=[...civilizations.values()].filter(c=>c.population>0).sort((a,b)=>b.population-a.population);
@@ -934,6 +1015,12 @@ function loop(ts){
 
   updateHUD();
   _maybeUpdateUI(ts);
+
+  // Refresh news panel if visible
+  const _newsPanelEl=document.getElementById('news-panel');
+  if(_newsPanelEl&&_newsPanelEl.style.display!=='none'&&Math.floor(ts/3000)!==Math.floor((ts-dt)/3000)){
+    _renderNewsPanel();
+  }
 
   renderFrame(dt);
   requestAnimationFrame(loop);

@@ -608,6 +608,9 @@ function renderFrame(dt){
   // Army rally points
   _drawArmyFormations();
 
+  // Media structures (printing press, radio, TV, internet)
+  if(typeof getMediaHeadlines !== 'undefined') _drawMediaStructures();
+
   // Epic battle effects (world-space, drawn on top of humans)
   _drawBattleFX(dtSec);
 
@@ -806,8 +809,8 @@ function _rebuildCityGlows(){
 
 function _drawCityGlows(){
   _cityGlowFrame++;
-  // Rebuild at most every 120 frames (~2s at 60fps), or when dirty
-  if(_cityGlowDirty||_cityGlowFrame>=120){
+  // Rebuild at most every 300 frames (~5s at 60fps), or when dirty
+  if(_cityGlowDirty||_cityGlowFrame>=300){
     _cityGlowFrame=0;
     _rebuildCityGlows();
   }
@@ -1220,7 +1223,8 @@ function _drawAdvancedBuilding(ctx, s, px, py, civ, tier, t, showShadow, showHP)
 
   // Special effects for ultra-advanced structures
   if(k>50000){
-    // Neon glow
+    // Neon glow — use cached gradient key to avoid recreating every frame
+    const glowKey=`${s.type}_${Math.round(hw)}_${accentColor}`;
     ctx.globalAlpha=0.2*pulse;
     const grd=ctx.createRadialGradient(px,py,0,px,py,hw*2.5);
     grd.addColorStop(0,accentColor);
@@ -1254,8 +1258,8 @@ function _drawAdvancedBuilding(ctx, s, px, py, civ, tier, t, showShadow, showHP)
   ctx.globalAlpha=1;
   ctx.restore();
 
-  // Label — only at close zoom, never when zoomed out
-  if(cam.zoom>1.5&&cam.zoom<3.5&&s.label){
+  // Label — only at close zoom, never when zoomed out or extremely zoomed in
+  if(cam.zoom>1.5&&cam.zoom<3.0&&s.label){
     const lbl=s.label;
     ctx.save();
     ctx.globalAlpha=0.8;
@@ -1606,6 +1610,9 @@ function _drawHumans(){
   const showName=false; // names removed — too cluttered at zoom
   const showWeapon=cam.zoom>1.5;
   const showRings=cam.zoom>0.7;
+  // LOD: at very low zoom just draw colored dots — massive perf win
+  const dotOnly=cam.zoom<0.5;
+  const minimalMode=cam.zoom<0.8;
 
   // Use _cachedAlive (already filtered to alive) to avoid iterating dead humans
   const drawList = (typeof _cachedAlive !== 'undefined' && _cachedAlive.length > 0) ? _cachedAlive : humans;
@@ -1614,6 +1621,15 @@ function _drawHumans(){
     if(!h.alive)continue;
     const px=h.px, py=h.py;
     if(px<vx0||px>vx1||py<vy0||py>vy1)continue;
+
+    // Dot-only mode at extreme zoom-out
+    if(dotOnly){
+      _ctx.beginPath();
+      _ctx.arc(px,py,Math.max(1.5,r*0.5),0,Math.PI*2);
+      _ctx.fillStyle=h.color;
+      _ctx.fill();
+      continue;
+    }
 
     // Civ ring — only at reasonable zoom
     if(showRings&&h.civId!=null){
@@ -1627,8 +1643,8 @@ function _drawHumans(){
       }
     }
 
-    // Prodigy aura — pulsing glow
-    if(h.isProdigy){
+    // Prodigy aura — pulsing glow (skip in minimal mode)
+    if(h.isProdigy&&!minimalMode){
       const pulse=0.55+Math.sin(_waterPhase*4+h.id)*0.45;
       _ctx.beginPath();
       _ctx.arc(px,py,r+7+pulse*4,0,Math.PI*2);
@@ -1659,11 +1675,13 @@ function _drawHumans(){
     _ctx.fillStyle=h.color;
     _ctx.fill();
 
-    // Gender dot
-    _ctx.beginPath();
-    _ctx.arc(px,py,r*0.38,0,Math.PI*2);
-    _ctx.fillStyle=h.gender==='F'?'#ffaacc':'#aaccff';
-    _ctx.fill();
+    if(!minimalMode){
+      // Gender dot
+      _ctx.beginPath();
+      _ctx.arc(px,py,r*0.38,0,Math.PI*2);
+      _ctx.fillStyle=h.gender==='F'?'#ffaacc':'#aaccff';
+      _ctx.fill();
+    }
 
     // War flash
     if(h._warFlash>0){
@@ -1715,8 +1733,8 @@ function _drawHumans(){
       }
     }
 
-    // Veteran glow
-    if(h._veteranLevel>=2&&showRings){
+    // Veteran glow (skip in minimal mode)
+    if(h._veteranLevel>=2&&showRings&&!minimalMode){
       const pulse=0.5+Math.sin(_waterPhase*3+h.id*0.7)*0.5;
       _ctx.beginPath();
       _ctx.arc(px,py,r+6+pulse*3,0,Math.PI*2);
@@ -1727,8 +1745,8 @@ function _drawHumans(){
       _ctx.globalAlpha=1;
     }
 
-    // Golden age shimmer
-    if(typeof _goldenAgeCivs!=='undefined'&&h.civId!=null&&_goldenAgeCivs.has(h.civId)&&showRings){
+    // Golden age shimmer (skip in minimal mode)
+    if(typeof _goldenAgeCivs!=='undefined'&&h.civId!=null&&_goldenAgeCivs.has(h.civId)&&showRings&&!minimalMode){
       const pulse=0.4+Math.sin(_waterPhase*2+h.id*0.3)*0.4;
       _ctx.beginPath();
       _ctx.arc(px,py,r+4,0,Math.PI*2);
@@ -1748,7 +1766,7 @@ function _drawHumans(){
     }
 
     // Water ripple effect when sailing
-    if(h._onWater&&showRings){
+    if(h._onWater&&showRings&&!minimalMode){
       _ctx.beginPath();
       _ctx.arc(px,py,r+3+Math.sin(_waterPhase*5+h.id)*2,0,Math.PI*2);
       _ctx.strokeStyle='rgba(80,160,255,0.5)';
@@ -2463,6 +2481,66 @@ function _drawArmyFormations(){
       ctx.lineWidth = 2 / cam.zoom;
       ctx.strokeText(formation.icon + ' ' + formation.name, px, py - TILE * 2);
       ctx.fillText(formation.icon + ' ' + formation.name, px, py - TILE * 2);
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ── Media Structures (printing press, radio, TV, internet) ───────────────────
+function _drawMediaStructures(){
+  if(typeof civilizations === 'undefined') return;
+  if(cam.zoom < 0.5) return;
+  const ctx = _ctx;
+  const t = _waterPhase;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const vx0=Math.floor(-cam.x/cam.zoom/TILE)-2, vy0=Math.floor(-cam.y/cam.zoom/TILE)-2;
+  const vx1=vx0+Math.ceil(_canvas.width/cam.zoom/TILE)+4;
+  const vy1=vy0+Math.ceil(_canvas.height/cam.zoom/TILE)+4;
+
+  for(const [,civ] of civilizations){
+    if(!civ._hasPrintingPress && !civ._hasRadio && !civ._hasTvStation && !civ._hasInternetHub) continue;
+    // Find a representative structure for this civ to anchor the media icon
+    let anchor = null;
+    for(const s of structures){
+      if(s.civId === civ.id && ['palace','citadel','university','academy','library','megacity_core','neural_hub'].includes(s.type)){
+        anchor = s; break;
+      }
+    }
+    if(!anchor) continue;
+    if(anchor.tx<vx0||anchor.tx>vx1||anchor.ty<vy0||anchor.ty>vy1) continue;
+
+    const px = anchor.tx * TILE + TILE / 2;
+    const py = anchor.ty * TILE + TILE / 2;
+
+    // Determine media icon and signal color
+    let mediaIcon, sigColor, sigRings;
+    if(civ._hasInternetHub){ mediaIcon='🌐'; sigColor='#44ffff'; sigRings=4; }
+    else if(civ._hasTvStation){ mediaIcon='📺'; sigColor='#ff8844'; sigRings=3; }
+    else if(civ._hasRadio){ mediaIcon='📻'; sigColor='#88ff44'; sigRings=2; }
+    else { mediaIcon='📰'; sigColor='#ffdd44'; sigRings=1; }
+
+    // Animated signal waves
+    for(let ring=0; ring<sigRings; ring++){
+      const phase = (t * 1.5 + ring * 0.6) % 2;
+      const ringR = TILE * (1.5 + phase * 3);
+      const alpha = (1 - phase / 2) * 0.35;
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = sigColor;
+      ctx.lineWidth = Math.max(0.5, 1.5 / cam.zoom);
+      ctx.beginPath();
+      ctx.arc(px, py - TILE * 1.5, ringR, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Media icon above structure
+    if(cam.zoom > 0.7){
+      ctx.globalAlpha = 0.9;
+      ctx.font = `${Math.round(TILE * 0.9)}px serif`;
+      ctx.fillText(mediaIcon, px, py - TILE * 2.2);
     }
   }
   ctx.globalAlpha = 1;

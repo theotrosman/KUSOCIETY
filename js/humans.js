@@ -852,7 +852,7 @@ function tickDiseases(yearsElapsed, alive){
 
 // ── World events ──────────────────────────────────────────────────────────────
 const worldEvents=[];
-function addWorldEvent(text){worldEvents.unshift({year,text});if(worldEvents.length>60)worldEvents.pop();}
+function addWorldEvent(text){worldEvents.unshift({year,text});if(worldEvents.length>120)worldEvents.length=120;}
 
 // ── Chronicle — epic narrative entries ───────────────────────────────────────
 // Each entry has: {year, category, title, body, icon, color}
@@ -867,7 +867,7 @@ const CHRON_COLORS={
 function addChronicle(category, title, body, icon){
   const color=CHRON_COLORS[category]||CHRON_COLORS.default;
   chronicle.unshift({year, category, title, body, icon, color});
-  if(chronicle.length>60) chronicle.pop();
+  if(chronicle.length>80) chronicle.length=80;
   // Also push a short version to worldEvents feed
   addWorldEvent(`${icon} ${title}`);
 }
@@ -876,7 +876,7 @@ function addChronicle(category, title, body, icon){
 const majorEvents=[];
 function addMajorEvent(text){
   majorEvents.unshift({year,text});
-  if(majorEvents.length>40)majorEvents.pop();
+  if(majorEvents.length>60)majorEvents.length=60;
   addWorldEvent(text);
 }
 
@@ -1874,7 +1874,14 @@ class Human{
       this._wanderAngle+=(this._rng()-0.5)*1.2;
       this._wanderDrift=0;
     }
-    const dist=12+Math.floor(this._rng()*18);
+    // Far-explore mode: when urge is high, send human 50-100 tiles away
+    let dist;
+    if(this._exploreUrge>0.85){
+      dist=50+Math.floor(this._rng()*50);
+      this._exploreUrge=Math.max(0,this._exploreUrge-0.15);
+    } else {
+      dist=12+Math.floor(this._rng()*18);
+    }
     this._navigateTo(
       Math.round(this.tx+Math.cos(this._wanderAngle)*dist),
       Math.round(this.ty+Math.sin(this._wanderAngle)*dist)
@@ -1897,12 +1904,13 @@ class Human{
     for(const h of nearby){ax+=h.tx;ay+=h.ty;}
     ax/=nearby.length;ay/=nearby.length;
     const awayAngle=Math.atan2(this.ty-ay,this.tx-ax)+(this._rng()-0.5)*0.8;
-    const dist=10+Math.floor(this._rng()*15);
+    const dist=30+Math.floor(this._rng()*40); // was 10-25, now 30-70
     this._navigateTo(
       Math.round(this.tx+Math.cos(awayAngle)*dist),
       Math.round(this.ty+Math.sin(awayAngle)*dist)
     );
     this._wanderAngle=awayAngle;
+    this._exploreUrge=Math.min(1,this._exploreUrge+0.3);
   }
 
   // ── Flatten terrain for city building ─────────────────────────────────────
@@ -3114,6 +3122,40 @@ function _checkCivSplits(){
     }
     newCiv.enemies.add(civId);
     civ.enemies.add(newCiv.id);
+
+    // Scatter splinters far from parent civ centroid — use the whole map
+    let cx=0,cy=0,cnt=0;
+    for(const h of members){cx+=h.tx;cy+=h.ty;cnt++;}
+    if(cnt>0){cx=Math.round(cx/cnt);cy=Math.round(cy/cnt);}
+    // Pick a random direction away from parent centroid
+    const scatterAngle=founder._rng()*Math.PI*2;
+    const scatterDist=40+Math.floor(founder._rng()*60); // 40–100 tiles away
+    const targetTx=Math.round(cx+Math.cos(scatterAngle)*scatterDist);
+    const targetTy=Math.round(cy+Math.sin(scatterAngle)*scatterDist);
+    for(const h of splinters){
+      // Each splinter gets a slightly different landing spot
+      const jitter=20;
+      let tx=Math.max(2,Math.min(WORLD_W-2,targetTx+Math.floor(h._rng()*jitter*2-jitter)));
+      let ty=Math.max(2,Math.min(WORLD_H-2,targetTy+Math.floor(h._rng()*jitter*2-jitter)));
+      // Find nearest land tile
+      let found=false;
+      for(let r=0;r<=15&&!found;r++){
+        for(let dy=-r;dy<=r&&!found;dy++){
+          for(let dx=-r;dx<=r&&!found;dx++){
+            if(Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
+            const nx=Math.max(0,Math.min(WORLD_W-1,tx+dx));
+            const ny=Math.max(0,Math.min(WORLD_H-1,ty+dy));
+            if(isLand(nx,ny)){tx=nx;ty=ny;found=true;}
+          }
+        }
+      }
+      if(found){
+        h._navigateTo(tx,ty);
+        h._settleTx=tx;h._settleTy=ty;
+        h._exploreUrge=0.8; // keep exploring after scatter
+      }
+    }
+
     addWorldEvent(`✊ Escisión: ${newCiv.name} se separó de ${civ.name} (${splinters.length} disidentes)`);
     addChronicle('war',`Escisión: nace ${newCiv.name}`,`Las diferencias ideológicas dentro de ${civ.name} llegaron a un punto de ruptura. ${splinters.length} disidentes, liderados por ${founder.name.split(' ')[0]}, abandonaron el seno de su pueblo y fundaron ${newCiv.name}. Dos pueblos donde antes había uno. Dos destinos donde antes había un solo camino.`,'✊');
   }
@@ -3127,6 +3169,7 @@ const prodigyLegacies=[]; // {name,icon,tx,ty,year,civName,prodigyName,prodigyIc
 function _registerLegacy(h,structLabel,structIcon){
   const civ=h.civId!=null?civilizations.get(h.civId):null;
   prodigyLegacies.push({name:`${structLabel} de ${h.name.split(' ')[0]}`,icon:structIcon,tx:h.tx,ty:h.ty,year,civName:civ?civ.name:'?',prodigyName:h.name,prodigyIcon:h.prodigyType?.icon||'✨'});
+  if(prodigyLegacies.length>50)prodigyLegacies.length=50;
   addMajorEvent(`${structIcon} ${h.name.split(' ')[0]} erigió ${structLabel} — legado eterno en ${civ?civ.name:'el mundo'}`);
 }
 
@@ -3523,6 +3566,36 @@ function tickHumans(yearsElapsed){
   }
   _cachedAliveCount=_cachedAlive.length;
 
+  // Quick inheritance pass — before removing dead humans, transfer knowledge to children
+  if(humans.length > _cachedAliveCount){
+    for(const h of humans){
+      if(h.alive || h._inheritanceDone) continue;
+      h._inheritanceDone = true;
+      if(h.knowledge < 100) continue;
+      for(const child of _cachedAlive){
+        if(!child.parentIds) continue;
+        if(child.parentIds[0] !== h.id && child.parentIds[1] !== h.id) continue;
+        const bonus = Math.floor(h.knowledge * 0.35);
+        child.knowledge = Math.min(99999, child.knowledge + bonus);
+      }
+    }
+  }
+
+  // Compact humans array — remove dead humans when they pile up to prevent memory leak
+  // Only compact when dead count exceeds threshold to avoid frequent GC pressure
+  const deadCount = humans.length - _cachedAliveCount;
+  if(deadCount > 200){
+    let w=0;
+    for(let i=0;i<humans.length;i++){
+      if(humans[i].alive){
+        humans[w++]=humans[i];
+      } else {
+        _humanById.delete(humans[i].id);
+      }
+    }
+    humans.length=w;
+  }
+
   // Hard population cap — cull excess to prevent crash
   const HARD_MAX = 4500;
   if(_cachedAliveCount > HARD_MAX){
@@ -3745,16 +3818,6 @@ function tickHumans(yearsElapsed){
             addChronicle('science',`${civ.name} entra en ${labels[t]||'una nueva era'}`,`El conocimiento acumulado de ${civ.name} ha alcanzado un nuevo umbral. Sus pensadores, artesanos y líderes han transformado la manera en que su pueblo entiende el mundo. Una nueva era comienza para ellos.`,'🔬');
           }
         }
-      }
-    }
-  }
-
-  // Prune dead humans aggressively — no cap, clear all dead each tick
-  if(humans.length>_cachedAliveCount){
-    for(let i=humans.length-1;i>=0;i--){
-      if(!humans[i].alive){
-        _humanById.delete(humans[i].id);
-        humans.splice(i,1);
       }
     }
   }

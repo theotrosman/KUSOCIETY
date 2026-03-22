@@ -392,7 +392,7 @@ function tickBigGame(yearsElapsed) {
   if (_bigGameTimer < 12) return;
   _bigGameTimer = 0;
   // Spawn nuevos animales grandes
-  if (_bigGameAnimals.length < 5 && Math.random() < 0.4) {
+  if (_bigGameAnimals.length < 8 && Math.random() < 0.4) {
     const rng = mulberry32(WORLD_SEED ^ year ^ 0xB166);
     for (let attempt = 0; attempt < 20; attempt++) {
       const tx = Math.floor(rng() * WORLD_W);
@@ -3626,7 +3626,7 @@ function tickCivDiversity(yearsElapsed) {
 // ── NUEVA 1: ESPIONAJE ────────────────────────────────────────────────────────
 // Civs avanzadas pueden enviar espías a robar tecnología o sabotear enemigos
 let _espionageTimer2 = 0;
-const _activeSpies = []; // {spyId, targetCivId, missionType, yearsLeft}
+const _activeSpies2 = []; // {spyId, targetCivId, missionType, yearsLeft}
 const SPY_MISSIONS = ['robo_tecnologia','sabotaje','asesinato','diplomacia_secreta'];
 function tickEspionage2(yearsElapsed) {
   _espionageTimer2 += yearsElapsed;
@@ -3634,10 +3634,10 @@ function tickEspionage2(yearsElapsed) {
   _espionageTimer2 = 0;
   if (typeof _cachedAlive === 'undefined') return;
   // Limpiar misiones expiradas
-  for (let i = _activeSpies.length - 1; i >= 0; i--) {
-    _activeSpies[i].yearsLeft -= 30;
-    if (_activeSpies[i].yearsLeft <= 0) {
-      const spy = _activeSpies[i];
+  for (let i = _activeSpies2.length - 1; i >= 0; i--) {
+    _activeSpies2[i].yearsLeft -= 30;
+    if (_activeSpies2[i].yearsLeft <= 0) {
+      const spy = _activeSpies2[i];
       const spyH = _hById(spy.spyId);
       const targetCiv = civilizations.get(spy.targetCivId);
       if (spyH && spyH.alive && targetCiv) {
@@ -3683,7 +3683,7 @@ function tickEspionage2(yearsElapsed) {
           if (spyH.health <= 0) spyH._die('capturado como espía');
         }
       }
-      _activeSpies.splice(i, 1);
+      _activeSpies2.splice(i, 1);
     }
   }
   // Enviar nuevos espías
@@ -3704,7 +3704,8 @@ function tickEspionage2(yearsElapsed) {
     if (enemyIds.length === 0) continue;
     const targetCivId = enemyIds[Math.floor(Math.random() * enemyIds.length)];
     const mission = SPY_MISSIONS[Math.floor(Math.random() * SPY_MISSIONS.length)];
-    _activeSpies.push({ spyId: spy.id, targetCivId, missionType: mission, yearsLeft: 60 });
+    _activeSpies2.push({ spyId: spy.id, targetCivId, missionType: mission, yearsLeft: 60 });
+    if(_activeSpies2.length > 12) _activeSpies2.shift(); // cap to prevent unbounded growth
     spy.addLog(`Misión de espionaje: ${mission.replace('_', ' ')} en ${civilizations.get(targetCivId)?.name || '?'}`);
     addWorldEvent(`🕵️ ${spy.name.split(' ')[0]} parte en misión secreta contra ${civilizations.get(targetCivId)?.name || '?'}`);
   }
@@ -3774,7 +3775,7 @@ function tickMercenaries(yearsElapsed) {
   if (typeof _cachedAlive === 'undefined') return;
   // Formar bandas de mercenarios con humanos sin civ y alta agresión
   const loners = _cachedAlive.filter(h => h.civId === null && h.aggression > 0.5 && h.kills > 0 && !h._isMercenary);
-  if (loners.length >= 3 && _mercenaryBands.length < 5 && Math.random() < 0.15) {
+  if (loners.length >= 3 && _mercenaryBands.length < 8 && Math.random() < 0.15) {
     const leader = loners.reduce((a, b) => a.kills > b.kills ? a : b);
     const band = loners.slice(0, Math.min(5, loners.length));
     for (const m of band) { m._isMercenary = true; m.color = '#cc8800'; }
@@ -3871,4 +3872,201 @@ function tickNewFeatures(yearsElapsed) {
   tickGoldenAge(yearsElapsed);
   tickMercenaries(yearsElapsed);
   tickWarTrauma(yearsElapsed);
+  tickMediaSystem(yearsElapsed);
+}
+
+// ── SISTEMA DE MEDIOS DE COMUNICACIÓN ────────────────────────────────────────
+// Imprentas, radios, televisiones e internet que difunden noticias y conocimiento
+// Se desbloquean progresivamente según el nivel de conocimiento promedio
+
+const _mediaHeadlines = []; // {year, text, icon, civName, type}
+let _mediaTimer = 0;
+let _lastMediaBroadcast = 0;
+
+const MEDIA_UNLOCK_THRESHOLDS = {
+  printing_press: 4000,   // Era Medieval avanzada
+  radio_tower:    25000,  // Era Industrial
+  tv_station:     55000,  // Era Moderna
+  internet_hub:   85000,  // Era Digital
+};
+
+function getMediaHeadlines() { return _mediaHeadlines; }
+
+function _getMediaLevel() {
+  if(typeof structures === 'undefined') return 0;
+  const types = _civStructureTypes;
+  let best = 0;
+  for(const [,st] of types){
+    if(st.has('internet_hub')) best = Math.max(best, 4);
+    else if(st.has('tv_station')) best = Math.max(best, 3);
+    else if(st.has('radio_tower')) best = Math.max(best, 2);
+    else if(st.has('printing_press')) best = Math.max(best, 1);
+  }
+  return best;
+}
+
+function _civAvgKnowledgeMedia(civId) {
+  const civ = civilizations.get(civId);
+  if(!civ || civ.population === 0) return 0;
+  let sum = 0, cnt = 0;
+  for(const id of civ.members){
+    const h = _hById(id);
+    if(h && h.alive){ sum += h.knowledge; cnt++; }
+  }
+  return cnt > 0 ? sum / cnt : 0;
+}
+
+// Generate a non-generic headline using real names and events
+function _generateHeadline(type) {
+  const civList = [];
+  for(const [,civ] of civilizations){ if(civ.population > 0) civList.push(civ); }
+  if(civList.length === 0) return null;
+
+  const civ = civList[Math.floor(Math.random() * civList.length)];
+  const members = [];
+  for(const id of civ.members){ const h = _hById(id); if(h && h.alive) members.push(h); }
+  if(members.length === 0) return null;
+
+  const person = members[Math.floor(Math.random() * members.length)];
+  const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+
+  const templates = [
+    // War headlines
+    () => {
+      if(civ.atWarWith.size === 0) return null;
+      const enemyId = [...civ.atWarWith][0];
+      const enemy = civilizations.get(enemyId);
+      if(!enemy) return null;
+      const icons = ['⚔️','🔥','💥','🛡️'];
+      const icon = icons[Math.floor(Math.random()*icons.length)];
+      const phrases = [
+        `${civ.name} lanza ofensiva contra ${enemy.name} — ${leader?leader.name.split(' ')[0]:'El líder'} ordena el avance`,
+        `Batalla campal entre ${civ.name} y ${enemy.name} — bajas en ambos bandos`,
+        `${enemy.name} resiste el asedio de ${civ.name} — la guerra continúa`,
+        `Fuerzas de ${civ.name} cruzan la frontera de ${enemy.name}`,
+      ];
+      return { text: phrases[Math.floor(Math.random()*phrases.length)], icon, civName: civ.name };
+    },
+    // Discovery/science headlines
+    () => {
+      if(person.knowledge < 500) return null;
+      const discoveries = [
+        `${person.name.split(' ')[0]} de ${civ.name} presenta nuevo avance en conocimiento`,
+        `Sabios de ${civ.name} descubren técnica revolucionaria`,
+        `${person.name.split(' ')[0]} documenta hallazgo histórico en ${civ.name}`,
+        `Academia de ${civ.name} anuncia descubrimiento — el mundo cambia`,
+      ];
+      return { text: discoveries[Math.floor(Math.random()*discoveries.length)], icon: '🔬', civName: civ.name };
+    },
+    // Population/society headlines
+    () => {
+      const phrases = [
+        `${civ.name} supera los ${civ.population} habitantes — ciudad en auge`,
+        `Nuevo líder en ${civ.name}: ${leader?leader.name:'desconocido'} toma el mando`,
+        `${civ.name} celebra festival — miles de personas en las calles`,
+        `Tensiones sociales en ${civ.name} — ${person.name.split(' ')[0]} lidera protesta`,
+      ];
+      return { text: phrases[Math.floor(Math.random()*phrases.length)], icon: '📢', civName: civ.name };
+    },
+    // Trade headlines
+    () => {
+      if(civ.allies.size === 0) return null;
+      const allyId = [...civ.allies][0];
+      const ally = civilizations.get(allyId);
+      if(!ally) return null;
+      const goods = ['grano','metales','especias','madera','joyas','libros','seda'];
+      const good = goods[Math.floor(Math.random()*goods.length)];
+      return {
+        text: `Acuerdo comercial: ${civ.name} y ${ally.name} intercambian ${good} — prosperidad mutua`,
+        icon: '💰', civName: civ.name
+      };
+    },
+    // Disaster/event headlines
+    () => {
+      const events = [
+        { text: `Terremoto sacude ${civ.name} — ${person.name.split(' ')[0]} lidera la reconstrucción`, icon: '🌋' },
+        { text: `Epidemia en ${civ.name} — autoridades piden calma`, icon: '🦠' },
+        { text: `Cosecha récord en ${civ.name} — el hambre retrocede`, icon: '🌾' },
+        { text: `Incendio destruye barrio de ${civ.name} — vecinos se ayudan`, icon: '🔥' },
+      ];
+      const ev = events[Math.floor(Math.random()*events.length)];
+      return { ...ev, civName: civ.name };
+    },
+  ];
+
+  // Try templates in random order
+  const order = templates.map((_,i)=>i).sort(()=>Math.random()-0.5);
+  for(const i of order){
+    const result = templates[i]();
+    if(result) return result;
+  }
+  return null;
+}
+
+function tickMediaSystem(yearsElapsed) {
+  if(typeof civilizations === 'undefined' || typeof structures === 'undefined') return;
+  _mediaTimer += yearsElapsed;
+  if(_mediaTimer < 8) return;
+  _mediaTimer = 0;
+
+  // Check which media structures exist and unlock them based on avg knowledge
+  for(const [civId, civ] of civilizations){
+    if(civ.population < 5) continue;
+    const avgK = _civAvgKnowledgeMedia(civId);
+    const civTypes = _civStructureTypes.get(civId);
+    if(!civTypes) continue;
+
+    // Auto-build media structures when knowledge threshold reached
+    // (they appear as virtual structures tracked in civ object)
+    if(avgK >= MEDIA_UNLOCK_THRESHOLDS.internet_hub && !civ._hasInternetHub){
+      civ._hasInternetHub = true;
+      addChronicle('science',`${civ.name} conecta al mundo`,`La red global de ${civ.name} enlaza a millones. La información fluye instantánea. El mundo nunca volverá a ser el mismo.`,'🌐');
+    } else if(avgK >= MEDIA_UNLOCK_THRESHOLDS.tv_station && !civ._hasTvStation){
+      civ._hasTvStation = true;
+      addChronicle('culture',`Primera televisión en ${civ.name}`,`Las pantallas iluminan los hogares de ${civ.name}. Por primera vez, todos ven el mundo al mismo tiempo.`,'📺');
+    } else if(avgK >= MEDIA_UNLOCK_THRESHOLDS.radio_tower && !civ._hasRadio){
+      civ._hasRadio = true;
+      addChronicle('culture',`Radio en ${civ.name}`,`Las ondas de radio llevan la voz de ${civ.name} a todos los rincones. La distancia ya no separa.`,'📻');
+    } else if(avgK >= MEDIA_UNLOCK_THRESHOLDS.printing_press && !civ._hasPrintingPress){
+      civ._hasPrintingPress = true;
+      addChronicle('science',`Imprenta en ${civ.name}`,`${civ.name} domina el arte de la imprenta. Las ideas se multiplican. El conocimiento ya no es privilegio de pocos.`,'📰');
+    }
+  }
+
+  // Generate headlines from civs that have media
+  if(year - _lastMediaBroadcast < 5) return;
+  _lastMediaBroadcast = year;
+
+  const mediaLevel = _getMediaLevel();
+  if(mediaLevel === 0) return;
+
+  // Generate 1-2 headlines per broadcast
+  const count = mediaLevel >= 3 ? 2 : 1;
+  for(let i = 0; i < count; i++){
+    const headline = _generateHeadline(mediaLevel);
+    if(!headline) continue;
+    const mediaIcons = ['','📰','📻','📺','🌐'];
+    const mediaIcon = mediaIcons[mediaLevel] || '📰';
+    _mediaHeadlines.unshift({
+      year,
+      text: headline.text,
+      icon: headline.icon,
+      civName: headline.civName,
+      mediaIcon,
+      mediaLevel,
+    });
+    if(_mediaHeadlines.length > 50) _mediaHeadlines.length = 50;
+
+    // Knowledge boost to humans near media structures
+    if(typeof _cachedAlive !== 'undefined'){
+      const boost = mediaLevel * 0.3;
+      for(const h of _cachedAlive){
+        const civ = h.civId != null ? civilizations.get(h.civId) : null;
+        if(!civ) continue;
+        const hasMedia = civ._hasInternetHub || civ._hasTvStation || civ._hasRadio || civ._hasPrintingPress;
+        if(!hasMedia) continue;
+        h.knowledge = Math.min(99999, h.knowledge + boost * _intelModifier);
+      }
+    }
+  }
 }

@@ -117,23 +117,24 @@ function tickResourceGrowth(yearsElapsed) {
   }
 
   // Spawn new resources — sample random tiles instead of full world scan
-  if(resources.length < (typeof MAX_RESOURCES !== 'undefined' ? MAX_RESOURCES : 8000)){
-  const attempts=Math.ceil(yearsElapsed*8);
-  for(let i=0;i<attempts;i++){
-    const tx=Math.floor(rng()*WORLD_W);
-    const ty=Math.floor(rng()*WORLD_H);
-    if(resourceGrid[ty][tx])continue;
-    const cell=getCell(tx,ty);
-    if(!cell||cell.h<T.SHORE)continue;
-    for(const [type,def] of Object.entries(RESOURCE_DEFS)){
-      if(!def.biomes.includes(cell.biome))continue;
-      if(rng()>def.density)continue;
-      const res2={type,tx,ty,amount:20,maxAmount:100};
-      resources.push(res2);
-      resourceGrid[ty][tx]=res2;
-      _drawResource(ctx,res2);
-      break;
+  const MAX_RES = typeof MAX_RESOURCES !== 'undefined' ? MAX_RESOURCES : 5000;
+  if(resources.length < MAX_RES){
+    const attempts=Math.ceil(yearsElapsed*8);
+    for(let i=0;i<attempts;i++){
+      const tx=Math.floor(rng()*WORLD_W);
+      const ty=Math.floor(rng()*WORLD_H);
+      if(resourceGrid[ty][tx])continue;
+      const cell=getCell(tx,ty);
+      if(!cell||cell.h<T.SHORE)continue;
+      for(const [type,def] of Object.entries(RESOURCE_DEFS)){
+        if(!def.biomes.includes(cell.biome))continue;
+        if(rng()>def.density)continue;
+        const res2={type,tx,ty,amount:20,maxAmount:100};
+        resources.push(res2);
+        resourceGrid[ty][tx]=res2;
+        _drawResource(ctx,res2);
+        break;
+      }
     }
-  }
   }
 }
