@@ -846,7 +846,7 @@ function _rebuildCityGlows(){
   if(!structures||structures.length===0)return;
   const epicTypes=new Set(['citadel','palace','cathedral','colosseum','university','observatory','academy',
     'megacity_core','arcology','neural_hub','skyscraper','neon_district','spaceport',
-    'stadium','pyramid','great_wall','lighthouse','amphitheater','ziggurat','obelisk']);
+    'stadium','pyramid','great_wall','lighthouse','amphitheater','ziggurat','obelisk','theme_park']);
   const CELL=20;
   const cellMap=new Map();
   for(const s of structures){
@@ -999,7 +999,7 @@ const STRUCTURE_HEIGHT={
   excavator:2,mining_complex:3,drill_rig:4,ore_processor:3,bulldozer:1,crane:5,
   tree_nursery:0,greenhouse:1,
   // Mega structures
-  stadium:6,pyramid:8,great_wall:5,lighthouse:9,amphitheater:5,ziggurat:7,obelisk:6,
+  stadium:6,pyramid:8,great_wall:5,lighthouse:9,amphitheater:5,ziggurat:7,obelisk:6,theme_park:5,
 };
 
 function _drawStructures(){
@@ -1014,7 +1014,7 @@ function _drawStructures(){
   const showShadow=cam.zoom>0.8;
   const showHP=cam.zoom>0.8;
   const t=_waterPhase;
-  const megaTypes=new Set(['stadium','pyramid','great_wall','lighthouse','amphitheater','ziggurat','obelisk']);
+  const megaTypes=new Set(['stadium','pyramid','great_wall','lighthouse','amphitheater','ziggurat','obelisk','theme_park']);
   const roadTypes=new Set(['road','highway','bridge','aqueduct','railway','subway']);
 
   // Count visible non-road structures — suppress labels/windows when city is dense
@@ -1404,6 +1404,102 @@ function _drawMegaStructure(s, px, py, civ, t, showShadow){
       ctx.beginPath();
       ctx.ellipse(px,py,rx*1.15,ry*1.15,0,0,Math.PI*2);
       ctx.stroke();
+      // Live battle effects inside colosseum/stadium
+      if(typeof _colosseumBattle !== 'undefined' && _colosseumBattle && _colosseumBattle.structureTx === s.tx && _colosseumBattle.structureTy === s.ty){
+        const b = _colosseumBattle;
+        const bpulse = 0.5 + Math.sin(t*8)*0.5;
+        // Crowd roar ring
+        ctx.globalAlpha = 0.18 * bpulse;
+        ctx.strokeStyle = '#ffdd00';
+        ctx.lineWidth = Math.max(2, S*0.15);
+        ctx.beginPath(); ctx.ellipse(px,py,rx*0.95,ry*0.95,0,0,Math.PI*2); ctx.stroke();
+        // Fighter A (red dot)
+        const ax = px + Math.cos(t*2.1) * rx*0.35;
+        const ay = py + Math.sin(t*2.1) * ry*0.35;
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = '#ff4444';
+        ctx.beginPath(); ctx.arc(ax, ay, Math.max(2, S*0.18), 0, Math.PI*2); ctx.fill();
+        // Fighter B (blue dot)
+        const bx = px + Math.cos(t*2.1 + Math.PI) * rx*0.35;
+        const by = py + Math.sin(t*2.1 + Math.PI) * ry*0.35;
+        ctx.fillStyle = '#4488ff';
+        ctx.beginPath(); ctx.arc(bx, by, Math.max(2, S*0.18), 0, Math.PI*2); ctx.fill();
+        // Clash spark when close
+        const dist = Math.hypot(ax-bx, ay-by);
+        if(dist < S*0.5){
+          ctx.globalAlpha = bpulse;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc((ax+bx)/2,(ay+by)/2, Math.max(1,S*0.12),0,Math.PI*2); ctx.fill();
+        }
+        // Battle label
+        if(cam.zoom > 0.8 && b.nameA && b.nameB){
+          ctx.globalAlpha = 0.9;
+          ctx.font = `bold ${Math.max(7, Math.round(S*0.28))}px monospace`;
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#ffdd00';
+          ctx.fillText(`⚔️ ${b.nameA} vs ${b.nameB}`, px, py - ry*1.35);
+        }
+      }
+      break;
+    }
+
+    case 'theme_park':{
+      // Colorful park — ferris wheel + paths + attractions
+      const r2 = S*1.6;
+      // Ground (grass)
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = '#44bb44';
+      ctx.beginPath(); ctx.ellipse(px,py,r2,r2*0.75,0,0,Math.PI*2); ctx.fill();
+      // Paths (cross)
+      ctx.globalAlpha = 0.7;
+      ctx.strokeStyle = '#eecc88';
+      ctx.lineWidth = Math.max(1.5, S*0.12);
+      ctx.beginPath(); ctx.moveTo(px-r2*0.8,py); ctx.lineTo(px+r2*0.8,py); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(px,py-r2*0.6); ctx.lineTo(px,py+r2*0.6); ctx.stroke();
+      // Ferris wheel (spinning circle)
+      const fwR = S*0.55;
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = '#ff88cc';
+      ctx.lineWidth = Math.max(1.5, S*0.1);
+      ctx.beginPath(); ctx.arc(px, py-S*0.3, fwR, 0, Math.PI*2); ctx.stroke();
+      // Spokes (rotating)
+      const spokeAngle = t * 0.8;
+      ctx.lineWidth = Math.max(1, S*0.06);
+      ctx.strokeStyle = '#ffaadd';
+      for(let i=0;i<6;i++){
+        const a = spokeAngle + i*Math.PI/3;
+        ctx.beginPath();
+        ctx.moveTo(px, py-S*0.3);
+        ctx.lineTo(px + Math.cos(a)*fwR, py-S*0.3 + Math.sin(a)*fwR);
+        ctx.stroke();
+      }
+      // Gondolas on ferris wheel
+      ctx.globalAlpha = 0.95;
+      for(let i=0;i<6;i++){
+        const a = spokeAngle + i*Math.PI/3;
+        const gx = px + Math.cos(a)*fwR;
+        const gy = py-S*0.3 + Math.sin(a)*fwR;
+        const colors=['#ff4488','#44aaff','#ffdd00','#44ff88','#ff8844','#aa44ff'];
+        ctx.fillStyle = colors[i];
+        ctx.beginPath(); ctx.arc(gx,gy,Math.max(1.5,S*0.1),0,Math.PI*2); ctx.fill();
+      }
+      // Colorful tents
+      const tentColors=['#ff4444','#4488ff','#ffdd00','#44cc44'];
+      const tentPos=[[-0.55,-0.35],[0.55,-0.35],[-0.55,0.35],[0.55,0.35]];
+      for(let i=0;i<4;i++){
+        const tx2=px+tentPos[i][0]*r2*0.7, ty2=py+tentPos[i][1]*r2*0.55;
+        ctx.globalAlpha=0.85;
+        ctx.fillStyle=tentColors[i];
+        ctx.beginPath();
+        ctx.moveTo(tx2,ty2-S*0.28);
+        ctx.lineTo(tx2-S*0.22,ty2+S*0.18);
+        ctx.lineTo(tx2+S*0.22,ty2+S*0.18);
+        ctx.closePath(); ctx.fill();
+      }
+      // Pulsing happy glow
+      ctx.globalAlpha = 0.15 * pulse;
+      ctx.fillStyle = '#ffaaff';
+      ctx.beginPath(); ctx.ellipse(px,py,r2*1.3,r2,0,0,Math.PI*2); ctx.fill();
       break;
     }
 

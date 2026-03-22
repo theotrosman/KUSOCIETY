@@ -5635,6 +5635,11 @@ function tickNewFeatures(yearsElapsed) {
   tickUnionsAndStrikes(yearsElapsed);
   tickResourceDepletion(yearsElapsed);
   tickVisiblePollution(yearsElapsed);
+  // Tanda 6
+  tickChronicler(yearsElapsed);
+  tickTerraforming(yearsElapsed);
+  tickDreams(yearsElapsed);
+  tickColosseumBattles(yearsElapsed);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -6369,3 +6374,289 @@ function tickVisiblePollution(yearsElapsed) {
 function getPollutionAt(tx, ty) { return _pollutionGrid.get(`${tx},${ty}`) || 0; }
 
 // ── Wire Tanda 5 into tickNewFeatures ────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TANDA 6 — CRONISTA, TERRAFORMACIÓN, SUEÑOS
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── CRONISTA ──────────────────────────────────────────────────────────────────
+// Un humano especial que narra lo que presencia. Su crónica personal aparece
+// en noticias. Cuando muere, su libro queda como reliquia.
+let _chronicler = null; // human id
+let _chroniclerTimer = 0;
+let _chroniclerLog = []; // {year, text}
+const _CHRONICLER_PHRASES = [
+  h => `${h.name.split(' ')[0]} observa desde la colina: el mundo cambia más rápido de lo que puede escribir.`,
+  h => `En el diario de ${h.name.split(' ')[0]}: "Hoy vi arder tres aldeas. Mañana quizás sea la mía."`,
+  h => `${h.name.split(' ')[0]} escribe: "La gente ya no recuerda cómo era antes. Yo sí."`,
+  h => `Las memorias de ${h.name.split(' ')[0]}: "Nací en guerra. Viví en paz. Moriré en guerra otra vez."`,
+  h => `${h.name.split(' ')[0]} anota: "El líder prometió prosperidad. El granero está vacío."`,
+  h => `Crónica de ${h.name.split(' ')[0]}: "Vi nacer una ciudad donde antes había bosque. El progreso tiene un precio."`,
+  h => `${h.name.split(' ')[0]} registra: "Hoy murió el último que conocía el idioma antiguo."`,
+  h => `En las páginas de ${h.name.split(' ')[0]}: "Los jóvenes ya no temen a los dioses. Temen a las máquinas."`,
+];
+
+function _addNewsHeadline(text, icon, civName, type) {
+  _mediaHeadlines.unshift({ year, text, icon, civName: civName || 'Mundo', type: type || 'event', mediaLevel: Math.max(1, _getMediaLevel()) });
+  if (_mediaHeadlines.length > 50) _mediaHeadlines.length = 50;
+}
+
+function tickChronicler(yearsElapsed) {
+  _chroniclerTimer += yearsElapsed;
+  if (_chroniclerTimer < 30) return;
+  _chroniclerTimer = 0;
+  if (typeof _cachedAlive === 'undefined' || _cachedAlive.length === 0) return;
+
+  // Find or assign chronicler
+  if (_chronicler !== null) {
+    const h = _hById(_chronicler);
+    if (!h || !h.alive) {
+      // Chronicler died — publish obituary
+      if (h) {
+        const obit = `📖 El cronista ${h.name} ha muerto. Su libro, "${h._chronicleTitle || 'Memorias del Mundo'}", queda como reliquia de ${_chroniclerLog.length} entradas.`;
+        addMajorEvent(obit);
+        _addNewsHeadline(obit, '📖', h._civName || 'Mundo', 'chronicler');
+      }
+      _chronicler = null;
+      _chroniclerLog = [];
+    }
+  }
+
+  if (_chronicler === null) {
+    // Pick a new chronicler — prefer high knowledge, not a soldier
+    const candidates = _cachedAlive.filter(h => h.knowledge > 200 && !h.isSoldier && h.age > 10);
+    if (candidates.length === 0) return;
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+    _chronicler = chosen.id;
+    chosen._isChronicler = true;
+    const titles = ['Memorias del Mundo', 'Crónica de los Tiempos', 'El Gran Libro', 'Anales de la Humanidad', 'Lo Que Vi'];
+    chosen._chronicleTitle = titles[Math.floor(Math.random() * titles.length)];
+    chosen._civName = civilizations.get(chosen.civId)?.name || 'Mundo';
+    const announce = `✍️ ${chosen.name} fue designado cronista — comenzó a escribir "${chosen._chronicleTitle}"`;
+    addMajorEvent(announce);
+    _addNewsHeadline(announce, '✍️', chosen._civName, 'chronicler');
+    return;
+  }
+
+  // Chronicler writes an entry
+  const h = _hById(_chronicler);
+  if (!h || !h.alive) return;
+  const phrase = _CHRONICLER_PHRASES[Math.floor(Math.random() * _CHRONICLER_PHRASES.length)](h);
+  _chroniclerLog.push({ year, text: phrase });
+  if (_chroniclerLog.length > 40) _chroniclerLog.shift();
+  _addNewsHeadline(`✍️ ${phrase}`, '✍️', h._civName || civilizations.get(h.civId)?.name || 'Mundo', 'chronicler');
+}
+
+function getChroniclerLog() { return _chroniclerLog; }
+function getChronilcerId() { return _chronicler; }
+
+// ── TERRAFORMACIÓN INVERSA ────────────────────────────────────────────────────
+// Civs muy avanzadas pueden convertir desiertos en praderas y secar zonas.
+// El mapa cambia permanentemente.
+let _terraformTimer = 0;
+const _terraformedTiles = new Set(); // "tx,ty" keys
+
+function tickTerraforming(yearsElapsed) {
+  _terraformTimer += yearsElapsed;
+  if (_terraformTimer < 200) return;
+  _terraformTimer = 0;
+  if (typeof civilizations === 'undefined' || typeof getCell === 'undefined') return;
+
+  for (const [, civ] of civilizations) {
+    if (civ.population < 5) continue;
+    // Need high knowledge to terraform
+    const avgK = civ.knowledge || 0;
+    if (avgK < 15000) continue;
+
+    // Find a desert/tundra tile near this civ's members
+    const members = [...civ.members].map(id => _hById(id)).filter(h => h && h.alive);
+    if (members.length === 0) continue;
+    const ref = members[Math.floor(Math.random() * members.length)];
+
+    // Scan nearby tiles for terraformable terrain
+    const radius = 20;
+    let changed = false;
+    for (let dy = -radius; dy <= radius && !changed; dy++) {
+      for (let dx = -radius; dx <= radius && !changed; dx++) {
+        const tx = ref.tx + dx, ty = ref.ty + dy;
+        if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) continue;
+        const key = `${tx},${ty}`;
+        if (_terraformedTiles.has(key)) continue;
+        const cell = getCell(tx, ty);
+        if (!cell) continue;
+        // Convert desert/tundra → grassland
+        if (cell.biome === 'desert' || cell.biome === 'tundra' || cell.biome === 'dry_grass') {
+          cell.biome = 'grass';
+          cell.fertility = Math.max(cell.fertility || 0, 0.6);
+          _terraformedTiles.add(key);
+          changed = true;
+          const msg = `🌱 ${civ.name} terraformó una zona árida — el desierto se convierte en pradera (${tx},${ty})`;
+          addMajorEvent(msg);
+          _addNewsHeadline(msg, '🌱', civ.name, 'terraform');
+          // Rebuild terrain canvas
+          if (typeof buildResourceCanvas !== 'undefined') buildResourceCanvas();
+        }
+      }
+    }
+  }
+}
+
+function getTerraformedCount() { return _terraformedTiles.size; }
+
+// ── HUMANOS QUE SUEÑAN ────────────────────────────────────────────────────────
+// Durante la noche, algunos humanos tienen sueños que generan inventos aleatorios,
+// cambian de civ, o pierden/ganan conocimiento.
+let _dreamTimer = 0;
+const _DREAM_INVENTIONS = [
+  { name: 'Rueda de Agua', knowledge: 300, msg: h => `💧 ${h.name.split(' ')[0]} soñó con una rueda de agua — inventó irrigación avanzada` },
+  { name: 'Arco Compuesto', knowledge: 200, msg: h => `🏹 ${h.name.split(' ')[0]} soñó con un arco perfecto — su civ gana ventaja militar` },
+  { name: 'Escritura Fonética', knowledge: 500, msg: h => `📝 ${h.name.split(' ')[0]} soñó con símbolos — inventó un sistema de escritura` },
+  { name: 'Medicina Herbal', knowledge: 250, msg: h => `🌿 ${h.name.split(' ')[0]} soñó con plantas que curan — descubrió medicina herbal` },
+  { name: 'Navegación Estelar', knowledge: 400, msg: h => `⭐ ${h.name.split(' ')[0]} soñó con las estrellas — aprendió a navegar de noche` },
+  { name: 'Metalurgia', knowledge: 600, msg: h => `⚒️ ${h.name.split(' ')[0]} soñó con fuego y metal — descubrió la metalurgia` },
+  { name: 'Filosofía', knowledge: 800, msg: h => `🧠 ${h.name.split(' ')[0]} soñó con el cosmos — fundó una escuela de pensamiento` },
+];
+const _DREAM_NIGHTMARES = [
+  h => `😱 ${h.name.split(' ')[0]} tuvo una pesadilla — despertó aterrorizado y huyó de su aldea`,
+  h => `🌑 ${h.name.split(' ')[0]} soñó con el fin del mundo — pasó días sin trabajar, paralizado por el miedo`,
+  h => `👁️ ${h.name.split(' ')[0]} soñó que su líder lo traicionaba — sembró desconfianza en la civ`,
+];
+
+function tickDreams(yearsElapsed) {
+  if (typeof isNightTime === 'undefined' || !isNightTime()) return;
+  _dreamTimer += yearsElapsed;
+  if (_dreamTimer < 15) return;
+  _dreamTimer = 0;
+  if (typeof _cachedAlive === 'undefined' || _cachedAlive.length === 0) return;
+
+  // Only a few humans dream each night
+  const dreamCount = Math.max(1, Math.floor(_cachedAlive.length * 0.02));
+  for (let i = 0; i < dreamCount; i++) {
+    const h = _cachedAlive[Math.floor(Math.random() * _cachedAlive.length)];
+    if (!h || !h.alive) continue;
+    const roll = Math.random();
+
+    if (roll < 0.5) {
+      // Positive dream — invention
+      const inv = _DREAM_INVENTIONS[Math.floor(Math.random() * _DREAM_INVENTIONS.length)];
+      h.knowledge = Math.min(99999, h.knowledge + inv.knowledge);
+      // Share with nearby humans
+      const near = _spatialQuery(h.tx, h.ty, 8, h.id);
+      for (const n of near) {
+        if (n.alive && n.civId === h.civId) n.knowledge = Math.min(99999, n.knowledge + Math.floor(inv.knowledge * 0.3));
+      }
+      const msg = inv.msg(h);
+      addWorldEvent(msg);
+      _addNewsHeadline(msg, '💤', civilizations.get(h.civId)?.name || 'Mundo', 'dream');
+    } else if (roll < 0.75) {
+      // Nightmare
+      const nightmare = _DREAM_NIGHTMARES[Math.floor(Math.random() * _DREAM_NIGHTMARES.length)](h);
+      h.energy = Math.max(0, h.energy - 30);
+      h.health = Math.max(10, h.health - 10);
+      addWorldEvent(nightmare);
+      _addNewsHeadline(nightmare, '😱', civilizations.get(h.civId)?.name || 'Mundo', 'dream');
+    } else {
+      // Prophetic dream — human changes civ or gains massive knowledge
+      if (Math.random() < 0.3 && civilizations.size > 1) {
+        // Defect to another civ
+        const civList = [...civilizations.values()].filter(c => c.id !== h.civId && c.population > 0);
+        if (civList.length > 0) {
+          const newCiv = civList[Math.floor(Math.random() * civList.length)];
+          const oldCivName = civilizations.get(h.civId)?.name || '?';
+          const oldCiv = civilizations.get(h.civId);
+          if (oldCiv) oldCiv.members.delete(h.id);
+          h.civId = newCiv.id;
+          newCiv.members.add(h.id);
+          const msg = `🌀 ${h.name.split(' ')[0]} soñó con otra vida — desertó de ${oldCivName} y se unió a ${newCiv.name}`;
+          addWorldEvent(msg);
+          _addNewsHeadline(msg, '🌀', newCiv.name, 'dream');
+        }
+      } else {
+        h.knowledge = Math.min(99999, h.knowledge * 1.5);
+        const msg = `✨ ${h.name.split(' ')[0]} tuvo una visión profética — su conocimiento se multiplicó de golpe`;
+        addWorldEvent(msg);
+        _addNewsHeadline(msg, '✨', civilizations.get(h.civId)?.name || 'Mundo', 'dream');
+      }
+    }
+  }
+}
+
+// ── BATALLAS DE COLISEO ───────────────────────────────────────────────────────
+// Civs con coliseo o estadio organizan combates de gladiadores visibles en tiempo real.
+// window._colosseumBattle se usa por el renderer para dibujar la pelea en vivo.
+let _colosseumBattleTimer = 0;
+let _colosseumBattleState = null; // {structureTx, structureTy, nameA, nameB, hpA, hpB, timer, civName, resolved}
+
+window._colosseumBattle = null;
+
+function tickColosseumBattles(yearsElapsed) {
+  _colosseumBattleTimer += yearsElapsed;
+
+  // Tick active battle
+  if (_colosseumBattleState) {
+    _colosseumBattleState.timer -= yearsElapsed;
+    // Simulate HP drain
+    _colosseumBattleState.hpA = Math.max(0, _colosseumBattleState.hpA - yearsElapsed * (8 + Math.random() * 6));
+    _colosseumBattleState.hpB = Math.max(0, _colosseumBattleState.hpB - yearsElapsed * (8 + Math.random() * 6));
+    // Update global for renderer
+    window._colosseumBattle = _colosseumBattleState;
+
+    // Resolve when timer runs out or one fighter is down
+    if (_colosseumBattleState.timer <= 0 || _colosseumBattleState.hpA <= 0 || _colosseumBattleState.hpB <= 0) {
+      const b = _colosseumBattleState;
+      const winner = b.hpA > b.hpB ? b.nameA : b.nameB;
+      const loser  = b.hpA > b.hpB ? b.nameB : b.nameA;
+      const msg = `🏟️ ¡${winner} venció a ${loser} en el coliseo de ${b.civName}! La multitud enloquece.`;
+      addMajorEvent(msg);
+      if (typeof _addNewsHeadline !== 'undefined') _addNewsHeadline(msg, '🏟️', b.civName, 'battle');
+      // Boost civ honor
+      const civ = [...civilizations.values()].find(c => c.name === b.civName);
+      if (civ) civ.honor = Math.min(100, civ.honor + 8);
+      _colosseumBattleState = null;
+      window._colosseumBattle = null;
+    }
+    return;
+  }
+
+  if (_colosseumBattleTimer < 60) return;
+  _colosseumBattleTimer = 0;
+
+  // Find a civ with a colosseum or stadium
+  for (const [, civ] of civilizations) {
+    if (civ.population < 4) continue;
+    const arena = structures.find(s => s.civId === civ.id && (s.type === 'colosseum' || s.type === 'stadium'));
+    if (!arena) continue;
+    if (Math.random() > 0.35) continue;
+
+    // Pick 2 fighters from the civ
+    const members = [...civ.members].map(id => _hById(id)).filter(h => h && h.alive);
+    if (members.length < 2) continue;
+
+    // Prefer soldiers or high-knowledge humans
+    members.sort((a, b) => (b.kills + b.knowledge * 0.01) - (a.kills + a.knowledge * 0.01));
+    const fighterA = members[0];
+    const fighterB = members[Math.min(1 + Math.floor(Math.random() * Math.min(4, members.length - 1)), members.length - 1)];
+    if (!fighterA || !fighterB || fighterA.id === fighterB.id) continue;
+
+    const nameA = fighterA.name.split(' ')[0];
+    const nameB = fighterB.name.split(' ')[0];
+
+    _colosseumBattleState = {
+      structureTx: arena.tx,
+      structureTy: arena.ty,
+      nameA,
+      nameB,
+      hpA: 80 + Math.random() * 40,
+      hpB: 80 + Math.random() * 40,
+      timer: 25 + Math.random() * 20, // battle lasts 25-45 years
+      civName: civ.name,
+      resolved: false,
+    };
+    window._colosseumBattle = _colosseumBattleState;
+
+    const announce = `🏟️ ¡BATALLA en el coliseo de ${civ.name}! ${nameA} vs ${nameB} — el pueblo llena las gradas`;
+    addWorldEvent(announce);
+    if (typeof _addNewsHeadline !== 'undefined') _addNewsHeadline(announce, '🏟️', civ.name, 'battle');
+    break; // one battle at a time
+  }
+}

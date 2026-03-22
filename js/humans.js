@@ -57,6 +57,7 @@ const STRUCTURE_TYPES={
   nuclear_silo: {icon:'☢️', color:'#ff4400',label:'Silo Nuclear',       cost:{wood:20,stone:60},hp:800,  decay:true, decayRate:0.02},
   // Mega structures
   stadium:      {icon:'🏟',color:'#e8c840',label:'Estadio',           cost:{wood:20,stone:40},hp:800,  decay:true, decayRate:0.05},
+  theme_park:   {icon:'🎡',color:'#ff88cc',label:'Parque Temático',   cost:{wood:25,stone:20},hp:600,  decay:true, decayRate:0.08},
   pyramid:      {icon:'△', color:'#d4a820',label:'Pirámide',          cost:{wood:10,stone:60},hp:2000, decay:true, decayRate:0.01},
   great_wall:   {icon:'🧱',color:'#a08060',label:'Gran Muralla',      cost:{wood:15,stone:50},hp:1500, decay:true, decayRate:0.02},
   lighthouse:   {icon:'🗼',color:'#f0e080',label:'Faro Colosal',      cost:{wood:20,stone:35},hp:600,  decay:true, decayRate:0.06},
@@ -2264,6 +2265,7 @@ class Human{
     else if(_unlockedTypes.has('colosseum')&&this.knowledge>3500&&this.inventory.wood>=15&&this.inventory.stone>=20&&civCount('colosseum')<1)type='colosseum';
     // ── Mega structures (1 per civ, require leader) ───────────────────────
     else if(_unlockedTypes.has('stadium')&&this.knowledge>8500&&this.inventory.wood>=20&&this.inventory.stone>=40&&this.isLeader&&civCount('stadium')<1)type='stadium';
+    else if(_unlockedTypes.has('theme_park')&&this.knowledge>20000&&this.inventory.wood>=25&&this.inventory.stone>=35&&this.isLeader&&civCount('theme_park')<1)type='theme_park';
     else if(_unlockedTypes.has('great_wall')&&this.knowledge>6000&&this.inventory.wood>=15&&this.inventory.stone>=50&&this.isLeader&&civCount('great_wall')<1)type='great_wall';
     else if(_unlockedTypes.has('pyramid')&&this.knowledge>3000&&this.inventory.wood>=10&&this.inventory.stone>=60&&this.isLeader&&civCount('pyramid')<1)type='pyramid';
     else if(_unlockedTypes.has('ziggurat')&&this.knowledge>2200&&this.inventory.wood>=12&&this.inventory.stone>=55&&this.isLeader&&civCount('ziggurat')<1)type='ziggurat';
@@ -2383,6 +2385,7 @@ class Human{
       spaceport: {rMin:12,rMax:22},
       // Mega structures — placed near city center for visibility
       stadium:      {rMin:3, rMax:10},
+      theme_park:   {rMin:4, rMax:12},
       pyramid:      {rMin:2, rMax:8},
       great_wall:   {rMin:12,rMax:24},
       lighthouse:   {rMin:4, rMax:14},
@@ -3109,6 +3112,7 @@ const KNOWLEDGE_UNLOCKS=[
   {avgK:7500, type:'drill_rig',  icon:'🔩',color:'#cc8844',label:'Torre de Perforación',cost:{wood:10,stone:18},hp:400,decay:false,decayRate:0,msg:'🔩 Torres de perforación desbloqueadas — extracción profunda'},
   {avgK:8000, type:'cathedral',  icon:'⛪',color:'#e8d0ff',label:'Catedral',    cost:{wood:20,stone:20},hp:400,decay:false,decayRate:0, msg:'⛪ Catedral desbloqueada — era de la fe'},
   {avgK:8500, type:'stadium',    icon:'🏟',color:'#e8c840',label:'Estadio',     cost:{wood:20,stone:40},hp:800,decay:false,decayRate:0, msg:'🏟 Estadio desbloqueado — el pueblo necesita espectáculo y gloria'},
+  {avgK:20000,type:'theme_park', icon:'🎡',color:'#ff88cc',label:'Parque Temático',cost:{wood:25,stone:35},hp:600,decay:false,decayRate:0, msg:'🎡 Parque Temático desbloqueado — la era del entretenimiento masivo'},
   {avgK:9000, type:'mining_complex',icon:'⛏️',color:'#886644',label:'Complejo Minero',cost:{wood:12,stone:20},hp:500,decay:false,decayRate:0,msg:'⛏️ Complejos mineros desbloqueados — industria extractiva'},
   // ── Renacimiento (avgK 10000-18000) ──────────────────────────────────────
   {avgK:10000,type:'highway',    icon:'🛣️', color:'#666688',label:'Autopista',   cost:{wood:0,stone:15}, hp:800,decay:false,decayRate:0, msg:'🛣️ Autopistas desbloqueadas — las ciudades se expanden'},
@@ -3827,6 +3831,8 @@ function tickHumans(yearsElapsed){
               if(h.civId===s.civId){h.health=Math.min(100,h.health+yearsElapsed*2);h.hunger=Math.min(100,h.hunger+yearsElapsed*3);h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*1.5*_intelModifier);}break;
             case 'megacity_core':
               if(h.civId===s.civId){h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*2*_intelModifier);h.social=Math.min(100,h.social+yearsElapsed);}break;
+            case 'theme_park':
+              if(h.civId===s.civId){h.social=Math.min(100,h.social+yearsElapsed*3);h.energy=Math.min(100,h.energy+yearsElapsed*2);h.hunger=Math.min(100,h.hunger+yearsElapsed);}break;
           }
         }
       }
