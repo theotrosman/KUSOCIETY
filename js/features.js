@@ -5739,14 +5739,14 @@ function tickDayNight(yearsElapsed) {
   if (_dayNightLastMs < 0) _dayNightLastMs = now;
   const dtMs = now - _dayNightLastMs;
   _dayNightLastMs = now;
+  const dayMs = (typeof window !== 'undefined' && window._dayRealMsOverride > 0) ? window._dayRealMsOverride : DAY_REAL_MS;
   const prevPhase = _dayNightPhase;
-  _dayNightPhase = (_dayNightPhase + dtMs / DAY_REAL_MS) % 1;
-  // Count completed days
-  if (_dayNightPhase < prevPhase) {
-    _simDay++;
-    _simDayOfMonth = (_simDay % DAYS_PER_MONTH) + 1;
-    _simMonth = Math.floor(_simDay / DAYS_PER_MONTH) % MONTHS_PER_YEAR;
-  }
+  _dayNightPhase = (_dayNightPhase + dtMs / dayMs) % 1;
+  // Derive day/month from sim year (changes every sim-year = always moving)
+  const simY = typeof year !== 'undefined' ? year : 0;
+  _simDay = simY; // 1 sim-year = 1 sim-day for calendar purposes
+  _simDayOfMonth = (_simDay % DAYS_PER_MONTH) + 1;
+  _simMonth = Math.floor(_simDay / DAYS_PER_MONTH) % MONTHS_PER_YEAR;
   _dayNightTimer += yearsElapsed;
   if (_dayNightTimer < 5) return;
   _dayNightTimer = 0;

@@ -2934,6 +2934,8 @@ class Human{
       this._reproUrge=0;partner._reproUrge=0;
       const cRng=mulberry32(WORLD_SEED^(this.id*0x1337)^(year*0x7F)^(partner.id*0x31));
       const childGender=cRng()<0.5?'F':'M';
+      // Population cap check
+      if(typeof _popTarget !== 'undefined' && _popTarget > 0 && typeof _cachedAliveCount !== 'undefined' && _cachedAliveCount >= _popTarget) return;
       const child=new Human(this.tx,this.ty,cRng,childGender,this,partner);
       child.hunger=95;child.energy=98;child.health=100;
       if(this.civId)child.civId=this.civId;

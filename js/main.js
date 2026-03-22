@@ -89,7 +89,6 @@ const _hudEls={
   civ:    document.getElementById('civ-label'),
   phase:  document.getElementById('phase-label'),
   intel:  document.getElementById('intel-label'),
-  slider: document.getElementById('intel-slider-val'),
   season: document.getElementById('season-label'),
 };
 let _hudTimer=0;
@@ -116,10 +115,6 @@ function updateHUD(){
     const pct=Math.round(_intelModifier*100);
     _hudEls.intel.textContent=`🧠 ${pct}%`;
     _hudEls.intel.style.color=_intelModifier>1.2?'#4ff':_intelModifier>0.8?'#adf':'#f84';
-  }
-  if(_hudEls.slider&&typeof _intelModifier!=='undefined'){
-    _hudEls.slider.textContent=Math.round(_intelModifier*100)+'%';
-    _hudEls.slider.style.color=_intelModifier>1.4?'#4ff':_intelModifier>1.0?'#a8f':'#f84';
   }
   if(_hudEls.season&&typeof _seasonName!=='undefined'){
     const icons=['🌸','☀️','🍂','❄️'];
@@ -1373,4 +1368,60 @@ function _toggleStatsPanel(){
   if(!p) return;
   p.classList.toggle('collapsed');
   if(btn) btn.textContent = p.classList.contains('collapsed') ? '▶' : '◀';
+}
+
+// ── Settings panel ────────────────────────────────────────────────────────────
+let _popTarget = 0; // 0 = unlimited
+
+function _toggleSettingsPanel(){
+  const p = document.getElementById('settings-panel');
+  if(!p) return;
+  const open = p.style.display === 'none' || p.style.display === '';
+  p.style.display = open ? 'block' : 'none';
+  // Sync controls to current state when opening
+  if(open){
+    const spd = document.getElementById('set-speed');
+    if(spd) spd.value = speedIndex;
+    const intel = document.getElementById('set-intel');
+    if(intel && typeof _userIntelBias !== 'undefined'){
+      intel.value = Math.round(_userIntelBias * 100);
+      const v = document.getElementById('set-intel-val');
+      if(v) v.textContent = Math.round((1.2 + _userIntelBias) * 100) + '%';
+    }
+  }
+}
+
+function _applySettings(){
+  // Speed
+  const spd = document.getElementById('set-speed');
+  if(spd){
+    const idx = parseInt(spd.value);
+    if(!isNaN(idx) && idx !== speedIndex){
+      speedIndex = idx;
+      _checkSpeedChange();
+    }
+  }
+  // Intel bias
+  const intel = document.getElementById('set-intel');
+  if(intel && typeof _userIntelBias !== 'undefined'){
+    _userIntelBias = parseInt(intel.value) / 100;
+  }
+  // Era jump
+  const era = document.getElementById('set-era');
+  if(era){
+    const target = parseInt(era.value);
+    if(target > 0 && target > year){
+      year = target;
+      era.value = '0'; // reset after jump
+    }
+  }
+  // Population target
+  const pop = document.getElementById('set-pop');
+  if(pop) _popTarget = parseInt(pop.value) || 0;
+  // Day length
+  const daylen = document.getElementById('set-daylen');
+  if(daylen && typeof DAY_REAL_MS !== 'undefined'){
+    // DAY_REAL_MS is const in features.js — override via global
+    window._dayRealMsOverride = parseInt(daylen.value) * 1000;
+  }
 }
