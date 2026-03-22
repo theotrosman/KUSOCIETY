@@ -5612,4 +5612,752 @@ function tickNewFeatures(yearsElapsed) {
   tickHungerForGlory(yearsElapsed);
   tickBiblicalLocustPlague(yearsElapsed);
   tickLivingCulturalLegacy(yearsElapsed);
+  // Tanda 5
+  tickSocialClasses(yearsElapsed);
+  tickEndemicDiseases(yearsElapsed);
+  tickDayNight(yearsElapsed);
+  tickConstitutions(yearsElapsed);
+  tickElections(yearsElapsed);
+  tickPoliticalParties(yearsElapsed);
+  tickArchitecturalStyles(yearsElapsed);
+  tickNationalSports(yearsElapsed);
+  tickStockMarket(yearsElapsed);
+  tickNationalDebt(yearsElapsed);
+  tickInternationalTourism(yearsElapsed);
+  tickUnionsAndStrikes(yearsElapsed);
+  tickResourceDepletion(yearsElapsed);
+  tickVisiblePollution(yearsElapsed);
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TANDA 5 — 14 SISTEMAS NUEVOS
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── 2. CLASES SOCIALES ────────────────────────────────────────────────────────
+// noble, comerciante, campesino, esclavo — afecta acceso a recursos y conocimiento
+let _classTimer = 0;
+function tickSocialClasses(yearsElapsed) {
+  _classTimer += yearsElapsed;
+  if (_classTimer < 40) return;
+  _classTimer = 0;
+  if (typeof _cachedAlive === 'undefined') return;
+  for (const h of _cachedAlive) {
+    if (!h.alive || !h.civId) continue;
+    const civ = civilizations.get(h.civId);
+    if (!civ) continue;
+    // Assign class based on wealth, knowledge, leaderScore
+    const prevClass = h._socialClass;
+    if (h.isLeader || (h._socialClass === 'noble' && civ.honor > 40)) {
+      h._socialClass = 'noble';
+    } else if (h.knowledge > 2000 || h.wealth > 80) {
+      h._socialClass = 'comerciante';
+    } else if (h.kills > 0 && h.isSoldier) {
+      h._socialClass = 'soldado';
+    } else if (h.wealth < 5 && civ.honor < 30 && Math.random() < 0.05) {
+      h._socialClass = 'esclavo';
+    } else {
+      h._socialClass = h._socialClass || 'campesino';
+    }
+    // Class effects
+    if (h._socialClass === 'noble') {
+      h.knowledge = Math.min(99999, h.knowledge + 0.5 * yearsElapsed);
+      h.social = Math.min(100, h.social + 2 * yearsElapsed);
+    } else if (h._socialClass === 'comerciante') {
+      h.inventory.food = Math.min(50, h.inventory.food + 1);
+      h.wealth = (h.wealth || 0) + 2 * yearsElapsed;
+    } else if (h._socialClass === 'esclavo') {
+      h.hunger = Math.max(0, h.hunger - 3 * yearsElapsed);
+      h.social = Math.max(0, h.social - 5 * yearsElapsed);
+      h.aggression = Math.min(1, h.aggression + 0.01 * yearsElapsed);
+    }
+    // Revolution: if too many slaves, rebellion
+    if (prevClass !== h._socialClass && h._socialClass === 'esclavo') {
+      const slaves = [...civ.members].filter(id => { const m = _hById(id); return m && m._socialClass === 'esclavo'; }).length;
+      if (slaves > civ.population * 0.4 && Math.random() < 0.1) {
+        civ.honor = Math.max(0, civ.honor - 20);
+        for (const id of civ.members) {
+          const m = _hById(id);
+          if (m && m._socialClass === 'esclavo') { m._socialClass = 'campesino'; m.aggression = Math.min(1, m.aggression + 0.2); }
+        }
+        addWorldEvent(`⚡ Revolución de esclavos en ${civ.name} — ${slaves} liberados, el orden social colapsa`);
+        addChronicle('politics', `La Revolución de ${civ.name}`, `Los esclavos se levantaron. Nadie lo vio venir, aunque todos lo sabían. En una noche, el orden de siglos se derrumbó.`, '⚡');
+      }
+    }
+  }
+}
+
+// ── 3. ENFERMEDADES ENDÉMICAS POR BIOMA ──────────────────────────────────────
+const BIOME_DISEASES = {
+  jungle:       { name: 'Malaria Selvática',   damage: 3, spread: 0.04, cure: 60 },
+  rainforest:   { name: 'Fiebre Verde',        damage: 2, spread: 0.03, cure: 50 },
+  tundra:       { name: 'Escorbuto Ártico',    damage: 2, spread: 0.02, cure: 40 },
+  snow:         { name: 'Hipotermia Crónica',  damage: 3, spread: 0.02, cure: 45 },
+  desert:       { name: 'Fiebre del Desierto', damage: 2, spread: 0.03, cure: 55 },
+  swamp:        { name: 'Podredumbre Pantanosa', damage: 4, spread: 0.05, cure: 70 },
+};
+let _endemicTimer = 0;
+function tickEndemicDiseases(yearsElapsed) {
+  _endemicTimer += yearsElapsed;
+  if (_endemicTimer < 20) return;
+  _endemicTimer = 0;
+  if (typeof _cachedAlive === 'undefined' || typeof getCell === 'undefined') return;
+  for (const h of _cachedAlive) {
+    if (!h.alive || h.sick) continue;
+    const cell = getCell(h.tx, h.ty);
+    if (!cell) continue;
+    const disease = BIOME_DISEASES[cell.biome];
+    if (!disease) continue;
+    if (h.immunity.has(disease.name)) continue;
+    // Civs that have been in this biome long are more resistant
+    const resistance = Math.min(0.9, (h.knowledge * 0.0001) + (h._biomeYears?.[cell.biome] || 0) * 0.01);
+    if (Math.random() < disease.spread * 0.02 * yearsElapsed * (1 - resistance)) {
+      h.sick = true;
+      h.sickType = { name: disease.name, damage: disease.damage, spread: disease.spread, cure: disease.cure, duration: 8 };
+      h.sickTimer = 8;
+      if (Math.random() < 0.05) addWorldEvent(`🦟 ${h.name.split(' ')[0]} contrae ${disease.name} en ${cell.biome} — enfermedad endémica`);
+    }
+    // Track time in biome for adaptation
+    if (!h._biomeYears) h._biomeYears = {};
+    h._biomeYears[cell.biome] = (h._biomeYears[cell.biome] || 0) + yearsElapsed;
+  }
+}
+
+// ── 4. CICLO DÍA/NOCHE ───────────────────────────────────────────────────────
+// Usa tiempo real (ms) para que el ciclo sea visible a cualquier velocidad.
+// phase: 0=medianoche, 0.25=amanecer, 0.5=mediodía, 0.75=atardecer
+let _dayNightPhase = 0;
+let _dayNightTimer = 0;
+let _simDay = 0;          // día absoluto de simulación
+let _simMonth = 0;        // 0-11
+let _simDayOfMonth = 1;   // 1-30
+let _dayNightLastMs = -1;
+const DAY_REAL_MS = 20000; // 20 segundos de reloj real = 1 día completo
+const DAYS_PER_MONTH = 30;
+const MONTHS_PER_YEAR = 12;
+function tickDayNight(yearsElapsed) {
+  const now = performance.now();
+  if (_dayNightLastMs < 0) _dayNightLastMs = now;
+  const dtMs = now - _dayNightLastMs;
+  _dayNightLastMs = now;
+  const prevPhase = _dayNightPhase;
+  _dayNightPhase = (_dayNightPhase + dtMs / DAY_REAL_MS) % 1;
+  // Count completed days
+  if (_dayNightPhase < prevPhase) {
+    _simDay++;
+    _simDayOfMonth = (_simDay % DAYS_PER_MONTH) + 1;
+    _simMonth = Math.floor(_simDay / DAYS_PER_MONTH) % MONTHS_PER_YEAR;
+  }
+  _dayNightTimer += yearsElapsed;
+  if (_dayNightTimer < 5) return;
+  _dayNightTimer = 0;
+  const isNight = _dayNightPhase < 0.25 || _dayNightPhase > 0.75;
+  if (typeof _cachedAlive === 'undefined') return;
+  for (const h of _cachedAlive) {
+    if (!h.alive) continue;
+    if (isNight) {
+      // Night: energy recovers faster, productivity drops
+      h.energy = Math.min(100, h.energy + 2 * yearsElapsed);
+      // Black markets more active at night
+      if (h._socialClass === 'comerciante' && Math.random() < 0.01) {
+        h.inventory.food = Math.min(50, h.inventory.food + 2);
+        h.wealth = (h.wealth || 0) + 1;
+      }
+    } else {
+      // Day: slight productivity boost
+      h.knowledge = Math.min(99999, h.knowledge + 0.05 * yearsElapsed);
+    }
+  }
+  // Boost black markets at night
+  if (isNight) {
+    for (const bm of (typeof _blackMarkets !== 'undefined' ? _blackMarkets : [])) {
+      const nearby = _spatialQuery(bm.tx, bm.ty, 8, -1);
+      for (const h of nearby) {
+        if (h.alive && h.civId === bm.civId) h.inventory.food = Math.min(50, h.inventory.food + 1);
+      }
+    }
+  }
+}
+function getDayNightPhase() { return _dayNightPhase; }
+function getSimDay()   { return _simDay; }
+function getSimMonth() { return _simMonth; }
+function getSimDayOfMonth() { return _simDayOfMonth; }
+function isNightTime() { return _dayNightPhase < 0.25 || _dayNightPhase > 0.75; }
+
+// ── 7. CONSTITUCIONES ────────────────────────────────────────────────────────
+// Civs avanzadas escriben leyes. Líderes que las violan generan rebeliones.
+const _constitutions = new Map(); // civId → {year, laws:[], violations}
+let _constitutionTimer = 0;
+const CONSTITUTION_LAWS = [
+  { id: 'no_slavery',    text: 'Prohibición de esclavitud',   check: (civ) => [...civ.members].filter(id=>{const h=_hById(id);return h&&h._socialClass==='esclavo';}).length === 0 },
+  { id: 'fair_food',     text: 'Derecho a la alimentación',   check: (civ) => { let hungry=0; for(const id of civ.members){const h=_hById(id);if(h&&h.alive&&h.hunger<20)hungry++;} return hungry < civ.population*0.2; } },
+  { id: 'no_war_crime',  text: 'Prohibición de crímenes de guerra', check: (civ) => civ.honor > 30 },
+  { id: 'free_trade',    text: 'Libertad de comercio',        check: (civ) => civ.tradePartners.size > 0 },
+];
+function tickConstitutions(yearsElapsed) {
+  _constitutionTimer += yearsElapsed;
+  if (_constitutionTimer < 50) return;
+  _constitutionTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.population < 10) continue;
+    const avgK = civ.avgKnowledge || 0;
+    if (avgK < 2000) continue;
+    // Write constitution if none exists
+    if (!_constitutions.has(civ.id)) {
+      const laws = CONSTITUTION_LAWS.filter(() => Math.random() < 0.6).map(l => l.id);
+      if (laws.length === 0) continue;
+      _constitutions.set(civ.id, { year, laws, violations: 0 });
+      const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+      addWorldEvent(`📜 ${leader?.name.split(' ')[0]||civ.name} promulga la Constitución de ${civ.name} — ${laws.length} leyes fundamentales`);
+      addChronicle('politics', `La Constitución de ${civ.name}`, `Por primera vez, el poder tenía límites escritos. ${civ.name} se dotó de leyes que ningún líder podría ignorar sin consecuencias.`, '📜');
+      continue;
+    }
+    // Check violations
+    const constitution = _constitutions.get(civ.id);
+    for (const lawId of constitution.laws) {
+      const law = CONSTITUTION_LAWS.find(l => l.id === lawId);
+      if (!law) continue;
+      try {
+        if (!law.check(civ)) {
+          constitution.violations++;
+          civ.honor = Math.max(0, civ.honor - 5);
+          if (constitution.violations >= 3) {
+            // Rebellion triggered
+            constitution.violations = 0;
+            for (const id of civ.members) {
+              const h = _hById(id); if (h && h.alive) h.aggression = Math.min(1, h.aggression + 0.15);
+            }
+            const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+            addWorldEvent(`⚖️ ${civ.name} viola su Constitución (${law.text}) — rebelión popular contra ${leader?.name.split(' ')[0]||'el líder'}`);
+          }
+        } else if (constitution.violations > 0) {
+          constitution.violations = Math.max(0, constitution.violations - 1);
+        }
+      } catch(e) {}
+    }
+  }
+}
+
+// ── 8. ELECCIONES ────────────────────────────────────────────────────────────
+// En civs con constitución y honor alto, los líderes se eligen por voto
+let _electionTimer = 0;
+const _electionHistory = new Map(); // civId → [{winner, year, votes}]
+function tickElections(yearsElapsed) {
+  _electionTimer += yearsElapsed;
+  if (_electionTimer < 80) return;
+  _electionTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.population < 8 || !_constitutions.has(civ.id)) continue;
+    if (civ.honor < 50) continue; // only democratic civs hold elections
+    if (Math.random() > 0.15) continue;
+    // Find top 2 candidates by leaderScore
+    const candidates = [];
+    for (const id of civ.members) {
+      const h = _hById(id); if (h && h.alive) candidates.push(h);
+    }
+    candidates.sort((a, b) => b.leaderScore - a.leaderScore);
+    if (candidates.length < 2) continue;
+    const [cand1, cand2] = candidates;
+    // Vote: each member votes for the candidate with higher leaderScore + random factor
+    let votes1 = 0, votes2 = 0;
+    for (const id of civ.members) {
+      const h = _hById(id); if (!h || !h.alive) continue;
+      const score1 = cand1.leaderScore + Math.random() * 20 + (civ.honor > 70 ? 5 : 0);
+      const score2 = cand2.leaderScore + Math.random() * 20;
+      if (score1 > score2) votes1++; else votes2++;
+    }
+    const winner = votes1 >= votes2 ? cand1 : cand2;
+    const loser  = votes1 >= votes2 ? cand2 : cand1;
+    const prevLeader = civ.leaderId ? _hById(civ.leaderId) : null;
+    if (winner.id !== civ.leaderId) {
+      if (prevLeader) prevLeader.isLeader = false;
+      winner.isLeader = true;
+      civ.leaderId = winner.id;
+      civ.honor = Math.min(100, civ.honor + 10);
+    }
+    if (!_electionHistory.has(civ.id)) _electionHistory.set(civ.id, []);
+    _electionHistory.get(civ.id).push({ winner: winner.name, year, votes: Math.max(votes1, votes2) });
+    addWorldEvent(`🗳️ Elecciones en ${civ.name}: ${winner.name.split(' ')[0]} gana con ${Math.max(votes1,votes2)} votos sobre ${loser.name.split(' ')[0]}`);
+  }
+}
+
+// ── 10. PARTIDOS POLÍTICOS ────────────────────────────────────────────────────
+// En civs grandes, facciones compiten por el poder
+const _parties = new Map(); // civId → [{name, ideology, members, power}]
+let _partyTimer = 0;
+const PARTY_NAMES_LEFT  = ['Frente Popular','Partido del Pueblo','Alianza Progresista','Movimiento Obrero'];
+const PARTY_NAMES_RIGHT = ['Orden Nacional','Partido Imperial','Liga Conservadora','Frente Patriótico'];
+const PARTY_NAMES_MID   = ['Centro Democrático','Unión Cívica','Partido Moderado','Coalición Nacional'];
+function tickPoliticalParties(yearsElapsed) {
+  _partyTimer += yearsElapsed;
+  if (_partyTimer < 100) return;
+  _partyTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.population < 15) continue;
+    if (_parties.has(civ.id)) {
+      // Update party power based on member ideology
+      const parties = _parties.get(civ.id);
+      for (const party of parties) {
+        party.members = 0;
+        for (const id of civ.members) {
+          const h = _hById(id);
+          if (!h || !h.alive) continue;
+          if (Math.abs(h.ideology - party.ideology) < 0.25) party.members++;
+        }
+        party.power = party.members / Math.max(1, civ.population);
+      }
+      // Dominant party influences leader
+      const dominant = parties.reduce((a, b) => a.power > b.power ? a : b);
+      if (dominant.power > 0.5 && Math.random() < 0.1) {
+        addWorldEvent(`🏛️ ${dominant.name} domina la política de ${civ.name} con ${Math.round(dominant.power*100)}% de apoyo`);
+      }
+      // Coup attempt if a party has >60% and leader is from another party
+      const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+      if (leader && dominant.power > 0.6 && Math.abs(leader.ideology - dominant.ideology) > 0.4 && Math.random() < 0.05) {
+        // Find best candidate from dominant party
+        let candidate = null, bestScore = 0;
+        for (const id of civ.members) {
+          const h = _hById(id);
+          if (!h || !h.alive || h.id === civ.leaderId) continue;
+          if (Math.abs(h.ideology - dominant.ideology) < 0.25 && h.leaderScore > bestScore) {
+            bestScore = h.leaderScore; candidate = h;
+          }
+        }
+        if (candidate) {
+          leader.isLeader = false;
+          candidate.isLeader = true;
+          civ.leaderId = candidate.id;
+          civ.honor = Math.max(0, civ.honor - 10);
+          addWorldEvent(`🗡️ Golpe de estado en ${civ.name}: ${dominant.name} derroca a ${leader.name.split(' ')[0]} — ${candidate.name.split(' ')[0]} toma el poder`);
+        }
+      }
+      continue;
+    }
+    if (Math.random() > 0.2) continue;
+    // Create 2-3 parties
+    const rnd = arr => arr[Math.floor(Math.random()*arr.length)];
+    const newParties = [
+      { name: rnd(PARTY_NAMES_LEFT),  ideology: 0.15 + Math.random()*0.2, members: 0, power: 0 },
+      { name: rnd(PARTY_NAMES_RIGHT), ideology: 0.65 + Math.random()*0.2, members: 0, power: 0 },
+      { name: rnd(PARTY_NAMES_MID),   ideology: 0.4  + Math.random()*0.2, members: 0, power: 0 },
+    ];
+    _parties.set(civ.id, newParties);
+    addWorldEvent(`🏛️ Nacen los primeros partidos políticos en ${civ.name}: ${newParties.map(p=>p.name).join(', ')}`);
+  }
+}
+
+// ── 11. ESTILOS ARQUITECTÓNICOS ───────────────────────────────────────────────
+// Cada civ desarrolla un estilo visual propio; colonias lo heredan
+const ARCH_STYLES = [
+  { name: 'Clásico',    color: '#e8d5a3', accent: '#8b6914' },
+  { name: 'Gótico',     color: '#c8c8d8', accent: '#4a4a6a' },
+  { name: 'Oriental',   color: '#f0a060', accent: '#8b2020' },
+  { name: 'Nórdico',    color: '#d0e8f0', accent: '#2060a0' },
+  { name: 'Tropical',   color: '#90d090', accent: '#206020' },
+  { name: 'Desértico',  color: '#f0d080', accent: '#a06020' },
+  { name: 'Futurista',  color: '#a0c8f0', accent: '#0040a0' },
+  { name: 'Industrial', color: '#b0b0b0', accent: '#404040' },
+];
+let _archTimer = 0;
+function tickArchitecturalStyles(yearsElapsed) {
+  _archTimer += yearsElapsed;
+  if (_archTimer < 120) return;
+  _archTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ._archStyle || civ.population < 5) continue;
+    // Assign style based on biome of city center
+    const cc = civ.cityCenter;
+    if (!cc) continue;
+    const cell = typeof getCell !== 'undefined' ? getCell(cc.tx, cc.ty) : null;
+    let styleIdx = Math.floor(Math.random() * ARCH_STYLES.length);
+    if (cell) {
+      if (['desert','savanna','dry_grass'].includes(cell.biome)) styleIdx = 5;
+      else if (['tundra','snow','taiga'].includes(cell.biome)) styleIdx = 3;
+      else if (['jungle','rainforest'].includes(cell.biome)) styleIdx = 4;
+      else if (civ.techLevel >= 4) styleIdx = 6;
+      else if (civ.techLevel >= 3) styleIdx = 7;
+    }
+    civ._archStyle = ARCH_STYLES[styleIdx];
+    addWorldEvent(`🏛️ ${civ.name} desarrolla el estilo arquitectónico ${civ._archStyle.name}`);
+  }
+}
+function getCivArchStyle(civId) {
+  const civ = civilizations.get(civId);
+  return civ?._archStyle || null;
+}
+
+// ── 15. DEPORTES NACIONALES ───────────────────────────────────────────────────
+// Cada civ tiene un deporte propio; torneos internacionales reemplazan guerras
+const NATIONAL_SPORTS = [
+  'Lucha de Toros','Arquería Real','Carrera de Caballos','Combate de Gladiadores',
+  'Polo Real','Natación de Aguas Bravas','Lanzamiento de Jabalina','Carreras de Carros',
+  'Torneo de Ajedrez','Cacería del Zorro','Regata Naval','Escalada de Montaña',
+];
+const _civSports = new Map(); // civId → sportName
+let _sportsTimer = 0;
+function tickNationalSports(yearsElapsed) {
+  _sportsTimer += yearsElapsed;
+  if (_sportsTimer < 90) return;
+  _sportsTimer = 0;
+  // Assign sports to civs that don't have one
+  for (const [, civ] of civilizations) {
+    if (!_civSports.has(civ.id) && civ.population >= 5) {
+      const sport = NATIONAL_SPORTS[Math.floor(Math.random() * NATIONAL_SPORTS.length)];
+      _civSports.set(civ.id, sport);
+    }
+  }
+  // International tournament between allied civs
+  const civList = [];
+  for (const [, civ] of civilizations) { if (civ.population >= 8 && civ.allies.size > 0) civList.push(civ); }
+  if (civList.length < 2) return;
+  if (Math.random() > 0.15) return;
+  const host = civList[Math.floor(Math.random() * civList.length)];
+  const guests = [];
+  for (const allyId of host.allies) {
+    const ally = civilizations.get(allyId);
+    if (ally && ally.population > 0) guests.push(ally);
+  }
+  if (guests.length === 0) return;
+  const winner = Math.random() < 0.5 ? host : guests[Math.floor(Math.random() * guests.length)];
+  const sport = _civSports.get(host.id) || 'Juegos';
+  // Winner gets honor and social boost; all participants avoid war for a while
+  winner.honor = Math.min(100, winner.honor + 15);
+  for (const id of winner.members) { const h = _hById(id); if (h && h.alive) h.social = Math.min(100, h.social + 10); }
+  // Reduce aggression between participants
+  for (const guest of guests) {
+    host.enemies.delete(guest.id); guest.enemies.delete(host.id);
+    host.atWarWith.delete(guest.id); guest.atWarWith.delete(host.id);
+  }
+  const participants = [host, ...guests].map(c => c.name).join(', ');
+  addWorldEvent(`🏆 Torneo Internacional de ${sport} en ${host.name} — participan ${participants}. Gana ${winner.name}!`);
+  addChronicle('culture', `El Gran Torneo de ${sport}`, `Las armas se guardaron. Los atletas tomaron el campo. ${winner.name} se coronó campeón ante la mirada de naciones rivales. Por un momento, el mundo fue solo juego.`, '🏆');
+}
+
+// ── 16. BOLSA DE VALORES ──────────────────────────────────────────────────────
+// Civs con internet hub tienen una bolsa; crashes económicos posibles
+const _stockMarkets = new Map(); // civId → {index, history, crashCooldown}
+let _stockTimer = 0;
+function tickStockMarket(yearsElapsed) {
+  _stockTimer += yearsElapsed;
+  if (_stockTimer < 10) return;
+  _stockTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (!civ._hasInternetHub && !civ._hasTvStation) continue;
+    if (!_stockMarkets.has(civ.id)) {
+      _stockMarkets.set(civ.id, { index: 1000, history: [1000], crashCooldown: 0 });
+      addWorldEvent(`📈 ${civ.name} abre su primera Bolsa de Valores — índice inicial: 1000`);
+    }
+    const market = _stockMarkets.get(civ.id);
+    if (market.crashCooldown > 0) { market.crashCooldown -= yearsElapsed; }
+    // Index fluctuates based on civ health
+    const healthFactor = (civ.honor / 100) * 0.4 + (civ.population / 50) * 0.3 + (civ.tradePartners.size / 5) * 0.3;
+    const change = (Math.random() - 0.48 + healthFactor * 0.05) * 50;
+    market.index = Math.max(10, market.index + change);
+    market.history.push(Math.round(market.index));
+    if (market.history.length > 100) market.history.shift();
+    // Crash: if index drops >40% from peak
+    const peak = Math.max(...market.history);
+    if (market.index < peak * 0.6 && market.crashCooldown <= 0) {
+      market.crashCooldown = 100;
+      // Economic damage
+      for (const id of civ.members) {
+        const h = _hById(id);
+        if (!h || !h.alive) continue;
+        h.wealth = Math.max(0, (h.wealth || 0) * 0.5);
+        h.inventory.food = Math.max(0, h.inventory.food - 5);
+      }
+      civ.honor = Math.max(0, civ.honor - 15);
+      addWorldEvent(`📉 CRASH BURSÁTIL en ${civ.name} — índice cae a ${Math.round(market.index)}, economía en crisis`);
+      addChronicle('disaster', `El Gran Crash de ${civ.name}`, `En un solo día, fortunas enteras se evaporaron. El índice de la bolsa de ${civ.name} se desplomó. Las calles se llenaron de ciudadanos arruinados.`, '📉');
+    }
+    // Boom: if index rises >50% from start
+    if (market.index > 2000 && Math.random() < 0.02) {
+      addWorldEvent(`📈 Boom económico en ${civ.name} — índice alcanza ${Math.round(market.index)}, prosperidad histórica`);
+    }
+    // Apply wealth effect to members
+    const wealthBoost = (market.index / 1000 - 1) * 0.5;
+    for (const id of civ.members) {
+      const h = _hById(id);
+      if (h && h.alive) h.wealth = Math.max(0, (h.wealth || 0) + wealthBoost * yearsElapsed);
+    }
+  }
+}
+function getStockMarket(civId) { return _stockMarkets.get(civId) || null; }
+
+// ── 17. DEUDA ENTRE NACIONES ──────────────────────────────────────────────────
+// Civs pueden pedir préstamos a aliados; si no pagan pierden honor
+const _debts = new Map(); // `${debtorId}-${creditorId}` → {amount, dueYear, paid}
+let _debtTimer = 0;
+function tickNationalDebt(yearsElapsed) {
+  _debtTimer += yearsElapsed;
+  if (_debtTimer < 60) return;
+  _debtTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.population < 5 || civ.allies.size === 0) continue;
+    // Check if civ is in economic trouble (low food, low honor)
+    let totalFood = 0;
+    for (const id of civ.members) { const h = _hById(id); if (h && h.alive) totalFood += h.inventory.food; }
+    const avgFood = totalFood / Math.max(1, civ.population);
+    if (avgFood > 15 || Math.random() > 0.1) continue;
+    // Ask richest ally for a loan
+    let richestAlly = null, bestFood = 0;
+    for (const allyId of civ.allies) {
+      const ally = civilizations.get(allyId);
+      if (!ally || ally.population === 0) continue;
+      let allyFood = 0;
+      for (const id of ally.members) { const h = _hById(id); if (h && h.alive) allyFood += h.inventory.food; }
+      if (allyFood > bestFood) { bestFood = allyFood; richestAlly = ally; }
+    }
+    if (!richestAlly || bestFood < 30) continue;
+    const debtKey = `${civ.id}-${richestAlly.id}`;
+    if (_debts.has(debtKey)) continue;
+    const loanAmount = Math.floor(bestFood * 0.3);
+    // Transfer food
+    let transferred = 0;
+    for (const id of richestAlly.members) {
+      const h = _hById(id); if (!h || !h.alive) continue;
+      const give = Math.min(h.inventory.food, Math.ceil(loanAmount / Math.max(1, richestAlly.population)));
+      h.inventory.food -= give; transferred += give;
+    }
+    for (const id of civ.members) {
+      const h = _hById(id); if (!h || !h.alive) continue;
+      h.inventory.food += Math.floor(transferred / Math.max(1, civ.population));
+    }
+    _debts.set(debtKey, { amount: transferred, dueYear: year + 50, paid: false });
+    addWorldEvent(`💸 ${civ.name} pide préstamo de ${transferred} unidades de comida a ${richestAlly.name} — deuda a pagar en 50 años`);
+  }
+  // Check debt repayment
+  for (const [key, debt] of _debts) {
+    if (debt.paid) continue;
+    const [debtorId, creditorId] = key.split('-').map(Number);
+    const debtor = civilizations.get(debtorId);
+    const creditor = civilizations.get(creditorId);
+    if (!debtor || !creditor) { _debts.delete(key); continue; }
+    if (year >= debt.dueYear) {
+      // Try to repay
+      let totalFood = 0;
+      for (const id of debtor.members) { const h = _hById(id); if (h && h.alive) totalFood += h.inventory.food; }
+      if (totalFood >= debt.amount) {
+        // Repay
+        let remaining = debt.amount;
+        for (const id of debtor.members) {
+          const h = _hById(id); if (!h || !h.alive || remaining <= 0) continue;
+          const pay = Math.min(h.inventory.food, Math.ceil(debt.amount / Math.max(1, debtor.population)));
+          h.inventory.food -= pay; remaining -= pay;
+        }
+        for (const id of creditor.members) {
+          const h = _hById(id); if (!h || !h.alive) continue;
+          h.inventory.food += Math.floor(debt.amount / Math.max(1, creditor.population));
+        }
+        debt.paid = true;
+        debtor.honor = Math.min(100, debtor.honor + 5);
+        addWorldEvent(`✅ ${debtor.name} salda su deuda con ${creditor.name} — ${debt.amount} unidades devueltas`);
+      } else {
+        // Default
+        debtor.honor = Math.max(0, debtor.honor - 20);
+        creditor.allies.delete(debtorId);
+        debtor.allies.delete(creditorId);
+        addWorldEvent(`❌ ${debtor.name} no puede pagar su deuda con ${creditor.name} — ruptura diplomática, honor cae 20 puntos`);
+        _debts.delete(key);
+      }
+    }
+  }
+}
+
+// ── 19. TURISMO INTERNACIONAL ─────────────────────────────────────────────────
+// Civs con monumentos y buena reputación atraen visitantes de otras civs
+let _intlTourismTimer = 0;
+const _tourismRevenue = new Map(); // civId → totalVisitors
+function tickInternationalTourism(yearsElapsed) {
+  _intlTourismTimer += yearsElapsed;
+  if (_intlTourismTimer < 35) return;
+  _intlTourismTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.population < 5 || civ.honor < 40) continue;
+    // Count tourist attractions
+    const attractions = structures.filter(s => s.civId === civ.id &&
+      ['colosseum','cathedral','pyramid','ziggurat','lighthouse','amphitheater','stadium','great_wall','palace'].includes(s.type));
+    if (attractions.length === 0) continue;
+    // Find visitors from other civs
+    let visitors = 0;
+    for (const [, other] of civilizations) {
+      if (other.id === civ.id || other.population === 0) continue;
+      if (civ.enemies.has(other.id)) continue;
+      const chance = (attractions.length * 0.05 + civ.honor * 0.002) * yearsElapsed;
+      if (Math.random() < chance) {
+        // Send a visitor
+        for (const id of other.members) {
+          const h = _hById(id);
+          if (!h || !h.alive || h._isVisiting) continue;
+          h._isVisiting = civ.id;
+          h._visitTimer = 20 + Math.floor(Math.random() * 30);
+          visitors++;
+          // Visitor gains knowledge, host civ gains food/wealth
+          h.knowledge = Math.min(99999, h.knowledge + attractions.length * 20);
+          for (const id2 of civ.members) {
+            const m = _hById(id2); if (m && m.alive) m.inventory.food = Math.min(50, m.inventory.food + 1);
+          }
+          break;
+        }
+      }
+    }
+    if (visitors > 0) {
+      _tourismRevenue.set(civ.id, (_tourismRevenue.get(civ.id) || 0) + visitors);
+      if (Math.random() < 0.1) addWorldEvent(`🗺️ ${visitors} visitantes llegan a ${civ.name} atraídos por sus ${attractions.length} monumentos`);
+    }
+  }
+  // Return visitors home after timer
+  if (typeof _cachedAlive === 'undefined') return;
+  for (const h of _cachedAlive) {
+    if (!h._isVisiting) continue;
+    h._visitTimer = (h._visitTimer || 0) - yearsElapsed;
+    if (h._visitTimer <= 0) {
+      h._isVisiting = null;
+      // Return to own civ city center
+      const civ = h.civId ? civilizations.get(h.civId) : null;
+      if (civ?.cityCenter) {
+        h.tx = civ.cityCenter.tx + Math.floor(Math.random()*6-3);
+        h.ty = civ.cityCenter.ty + Math.floor(Math.random()*6-3);
+      }
+    }
+  }
+}
+
+// ── 20. SINDICATOS Y HUELGAS ──────────────────────────────────────────────────
+// En civs industriales, trabajadores con baja comida se organizan
+const _strikes = new Map(); // civId → {active, yearsLeft, demands}
+let _strikeTimer = 0;
+function tickUnionsAndStrikes(yearsElapsed) {
+  _strikeTimer += yearsElapsed;
+  if (_strikeTimer < 45) return;
+  _strikeTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.population < 8) continue;
+    const hasFactory = structures.some(s => s.civId === civ.id && (s.type === 'factory' || s.type === 'powerplant'));
+    if (!hasFactory) continue;
+    // Check worker conditions
+    let hungryWorkers = 0;
+    for (const id of civ.members) {
+      const h = _hById(id);
+      if (h && h.alive && h.hunger < 30 && h._socialClass !== 'noble') hungryWorkers++;
+    }
+    const strikeActive = _strikes.get(civ.id);
+    if (strikeActive && strikeActive.active) {
+      strikeActive.yearsLeft -= yearsElapsed;
+      // During strike: factories produce nothing, workers gain social
+      for (const id of civ.members) {
+        const h = _hById(id);
+        if (!h || !h.alive || h._socialClass === 'noble') continue;
+        h.social = Math.min(100, h.social + 5 * yearsElapsed);
+      }
+      if (strikeActive.yearsLeft <= 0) {
+        // Strike ends — leader must improve conditions
+        strikeActive.active = false;
+        civ.honor = Math.min(100, civ.honor + 10);
+        for (const id of civ.members) {
+          const h = _hById(id); if (h && h.alive) h.inventory.food = Math.min(50, h.inventory.food + 8);
+        }
+        const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+        addWorldEvent(`✊ Huelga en ${civ.name} termina — ${leader?.name.split(' ')[0]||'el gobierno'} cede a las demandas obreras`);
+      }
+      continue;
+    }
+    if (hungryWorkers > civ.population * 0.35 && Math.random() < 0.2) {
+      _strikes.set(civ.id, { active: true, yearsLeft: 15 + Math.floor(Math.random()*20), demands: 'mejores condiciones' });
+      const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+      addWorldEvent(`✊ Huelga general en ${civ.name}: ${hungryWorkers} trabajadores paran — ${leader?.name.split(' ')[0]||'el gobierno'} bajo presión`);
+      addChronicle('politics', `La Gran Huelga de ${civ.name}`, `Las fábricas enmudecieron. Los trabajadores de ${civ.name} dijeron basta. ${hungryWorkers} personas cruzaron los brazos y esperaron.`, '✊');
+    }
+  }
+}
+
+// ── 22. RECURSOS AGOTABLES ────────────────────────────────────────────────────
+// Las minas se vacían con el tiempo; civs deben expandirse o comerciar
+let _depletionTimer = 0;
+function tickResourceDepletion(yearsElapsed) {
+  _depletionTimer += yearsElapsed;
+  if (_depletionTimer < 30) return;
+  _depletionTimer = 0;
+  if (typeof resourceGrid === 'undefined') return;
+  // Mines and deep mines accelerate depletion of nearby stone/ore resources
+  for (const s of structures) {
+    if (!['mine','mining_complex','drill_rig','excavator'].includes(s.type)) continue;
+    const r = s.type === 'mining_complex' ? 8 : 5;
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (dx*dx+dy*dy > r*r) continue;
+      const tx = s.tx+dx, ty = s.ty+dy;
+      if (tx<0||ty<0||tx>=WORLD_W||ty>=WORLD_H) continue;
+      const res = resourceGrid[ty]?.[tx];
+      if (!res || !['rock','iron_ore','gold_ore','coal','clay'].includes(res.type)) continue;
+      res.amount = Math.max(0, res.amount - 0.5 * yearsElapsed);
+      if (res.amount <= 0) {
+        resourceGrid[ty][tx] = null;
+        if (Math.random() < 0.05) {
+          const civ = s.civId ? civilizations.get(s.civId) : null;
+          addWorldEvent(`⛏️ Yacimiento agotado cerca de ${civ?.name||'?'} — la mina queda vacía`);
+        }
+      }
+    }
+  }
+}
+
+// ── 23. CONTAMINACIÓN VISIBLE ─────────────────────────────────────────────────
+// Fábricas y centrales nucleares contaminan tiles; reduce comida y salud
+const _pollutionGrid = new Map(); // `${tx},${ty}` → level 0..100
+let _visiblePollutionTimer = 0;
+function tickVisiblePollution(yearsElapsed) {
+  _visiblePollutionTimer += yearsElapsed;
+  if (_visiblePollutionTimer < 15) return;
+  _visiblePollutionTimer = 0;
+  // Spread pollution from factories/powerplants/nuclear
+  for (const s of structures) {
+    if (!['factory','powerplant','nuclear_silo','ore_processor'].includes(s.type)) continue;
+    const rate = s.type === 'nuclear_silo' ? 8 : s.type === 'powerplant' ? 4 : 2;
+    const r = s.type === 'nuclear_silo' ? 15 : 8;
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (dx*dx+dy*dy > r*r) continue;
+      const tx = s.tx+dx, ty = s.ty+dy;
+      if (tx<0||ty<0||tx>=WORLD_W||ty>=WORLD_H) continue;
+      const key = `${tx},${ty}`;
+      const cur = _pollutionGrid.get(key) || 0;
+      _pollutionGrid.set(key, Math.min(100, cur + rate * yearsElapsed * 0.1));
+    }
+  }
+  // Natural dissipation
+  for (const [key, level] of _pollutionGrid) {
+    const newLevel = level - 0.5 * yearsElapsed;
+    if (newLevel <= 0) _pollutionGrid.delete(key);
+    else _pollutionGrid.set(key, newLevel);
+  }
+  // Effect on humans
+  if (typeof _cachedAlive === 'undefined') return;
+  for (const h of _cachedAlive) {
+    if (!h.alive) continue;
+    const key = `${h.tx},${h.ty}`;
+    const pollution = _pollutionGrid.get(key) || 0;
+    if (pollution > 30) {
+      h.health = Math.max(0, h.health - pollution * 0.01 * yearsElapsed);
+      if (pollution > 60 && Math.random() < 0.01) {
+        h.sick = true;
+        h.sickType = { name: 'Envenenamiento Industrial', damage: 3, spread: 0, cure: 80, duration: 10 };
+        h.sickTimer = 10;
+      }
+    }
+    // Cleanup: neural_hub civs can reduce pollution
+    const civ = h.civId ? civilizations.get(h.civId) : null;
+    if (civ && civ._hasInternetHub && pollution > 20 && Math.random() < 0.001) {
+      _pollutionGrid.set(key, Math.max(0, pollution - 5));
+    }
+  }
+  // Alert when pollution is very high
+  for (const [, civ] of civilizations) {
+    if (!civ.cityCenter) continue;
+    const key = `${civ.cityCenter.tx},${civ.cityCenter.ty}`;
+    const pollution = _pollutionGrid.get(key) || 0;
+    if (pollution > 70 && Math.random() < 0.02) {
+      addWorldEvent(`☠️ Contaminación crítica en ${civ.name} — nivel ${Math.round(pollution)}%, salud de la población en riesgo`);
+    }
+  }
+}
+function getPollutionAt(tx, ty) { return _pollutionGrid.get(`${tx},${ty}`) || 0; }
+
+// ── Wire Tanda 5 into tickNewFeatures ────────────────────────────────────────

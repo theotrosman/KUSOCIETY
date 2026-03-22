@@ -632,6 +632,38 @@ function renderFrame(dt){
     }
   }
 
+  // Day/night overlay
+  // phase: 0=medianoche, 0.25=amanecer, 0.5=mediodía, 0.75=atardecer
+  if(typeof getDayNightPhase !== 'undefined'){
+    const phase = getDayNightPhase();
+    // Sine curve: darkest at midnight (phase=0), brightest at noon (phase=0.5)
+    const nightAlpha = Math.max(0, -Math.cos(phase * Math.PI * 2)) * 0.45;
+    if(nightAlpha > 0.01){
+      _ctx.fillStyle = `rgba(10,10,40,${nightAlpha.toFixed(2)})`;
+      _ctx.fillRect(0,0,_canvas.width,_canvas.height);
+    }
+  }
+
+  // Pollution tint overlay (world-space, drawn over terrain)
+  if(typeof getPollutionAt !== 'undefined' && cam.zoom > 0.3){
+    _ctx.save();
+    _ctx.translate(cam.x, cam.y);
+    _ctx.scale(cam.zoom, cam.zoom);
+    const vx0=Math.floor(-cam.x/cam.zoom/TILE)-1, vy0=Math.floor(-cam.y/cam.zoom/TILE)-1;
+    const vx1=Math.ceil((_canvas.width-cam.x)/cam.zoom/TILE)+1;
+    const vy1=Math.ceil((_canvas.height-cam.y)/cam.zoom/TILE)+1;
+    for(let ty=Math.max(0,vy0);ty<Math.min(WORLD_H,vy1);ty+=2){
+      for(let tx=Math.max(0,vx0);tx<Math.min(WORLD_W,vx1);tx+=2){
+        const p = getPollutionAt(tx,ty);
+        if(p < 10) continue;
+        const alpha = Math.min(0.5, p/200);
+        _ctx.fillStyle = `rgba(80,60,20,${alpha.toFixed(2)})`;
+        _ctx.fillRect(tx*TILE, ty*TILE, TILE*2, TILE*2);
+      }
+    }
+    _ctx.restore();
+  }
+
   // UI overlays (screen-space)
   _drawLegend();
   _drawIntelligenceCurve();
@@ -640,6 +672,40 @@ function renderFrame(dt){
   _drawAIPlagueHUD();
   _drawGlobalizationHUD();
   _drawNuclearHUD();
+  _drawClock();
+}
+
+// ── Clock HUD ────────────────────────────────────────────────────────────────
+function _drawClock(){
+  if(typeof getDayNightPhase === 'undefined' || typeof year === 'undefined') return;
+  const phase = getDayNightPhase();
+  const totalHours = phase * 24;
+  const hh = Math.floor(totalHours) % 24;
+  const mm = Math.floor((totalHours % 1) * 60);
+  const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  // Use sim day/month counters if available, else fall back to year fraction
+  const mes  = typeof getSimMonth === 'function' ? MESES[getSimMonth()] : MESES[0];
+  const dom  = typeof getSimDayOfMonth === 'function' ? getSimDayOfMonth() : 1;
+  const timeStr = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+  const dateStr = `${dom} ${mes} ${Math.floor(year)}`;
+
+  _ctx.save();
+  _ctx.font = 'bold 11px monospace';
+  const tw = Math.max(_ctx.measureText(timeStr).width, _ctx.measureText(dateStr).width);
+  const pw = tw + 14, ph = 30;
+  const px = _canvas.width / 2 - pw / 2;
+  const py = _canvas.height - ph - 6;
+  _ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  _ctx.beginPath();
+  _ctx.roundRect(px, py, pw, ph, 5);
+  _ctx.fill();
+  _ctx.fillStyle = '#e8e8ff';
+  _ctx.textAlign = 'center';
+  _ctx.fillText(timeStr, _canvas.width / 2, py + 12);
+  _ctx.fillStyle = '#aaaacc';
+  _ctx.font = '9px monospace';
+  _ctx.fillText(dateStr, _canvas.width / 2, py + 24);
+  _ctx.restore();
 }
 
 // ── Trade Routes ─────────────────────────────────────────────────────────────
