@@ -113,14 +113,6 @@ const TRANSPORT_TIERS=[
 // structureGrid: flat array [ty*WORLD_W+tx] → structure|null (faster than nested arrays)
 function initStructureGrid(){structureGrid=new Array(WORLD_W*WORLD_H).fill(null);}
 const MAX_STRUCTURES=3500;
-const MAX_RESOURCES=8000;
-// Cached canvas context for resource drawing — avoids getContext() every tick
-let _resourceCtxCache=null;
-function _getResourceCtx(){
-  if(!_resourceCtxCache&&typeof resourceCanvas!=='undefined'&&resourceCanvas)
-    _resourceCtxCache=resourceCanvas.getContext('2d');
-  return _resourceCtxCache;
-}
 function placeStructure(tx,ty,type,builder){
   if(structures.length>=MAX_STRUCTURES)return false;
   if(!structureGrid||structureGrid[ty*WORLD_W+tx])return false;
@@ -160,7 +152,6 @@ function tickStructures(yearsElapsed){
     if(s.hp<=0){
       structureGrid[s.ty*WORLD_W+s.tx]=null;
       structures.splice(i,1);
-      if(typeof _historicSites!=='undefined') _historicSites.delete(`${s.tx},${s.ty}`);
       if(typeof markCityGlowDirty!=='undefined')markCityGlowDirty();
     }
   }
@@ -206,11 +197,7 @@ function _tickHousingUpgrades(yearsElapsed){
 }
 
 // ── Replanting tick — tree nurseries plant trees when wood is scarce ──────────
-let _resourceCtxCache=null;
-function _getResourceCtx(){
-  if(!_resourceCtxCache&&resourceCanvas) _resourceCtxCache=resourceCanvas.getContext('2d');
-  return _resourceCtxCache;
-}
+const MAX_RESOURCES = 8000; // hard cap to prevent memory growth
 let _replantTimer=0;
 function _tickReplanting(yearsElapsed){
   _replantTimer+=yearsElapsed;
@@ -218,7 +205,7 @@ function _tickReplanting(yearsElapsed){
   _replantTimer=0;
   if(resources.length>=MAX_RESOURCES)return; // don't grow unbounded
   // Iterate structures directly — avoid filter() allocation
-  const ctx=_getResourceCtx();
+  const ctx=resourceCanvas?resourceCanvas.getContext('2d'):null;
   for(const n of structures){
     if(n.type!=='tree_nursery'&&n.type!=='greenhouse')continue;
     // Check if wood is scarce nearby
@@ -261,16 +248,16 @@ function _tickReplanting(yearsElapsed){
 
 // ── Excavation tick — excavators/mining complexes generate stone/ore ──────────
 let _excavationTimer=0;
-const _EXCAV_TYPES=new Set(['excavator','mining_complex','drill_rig','ore_processor']);
 function _tickExcavation(yearsElapsed){
   _excavationTimer+=yearsElapsed;
   if(_excavationTimer<25)return;
   _excavationTimer=0;
   if(resources.length>=MAX_RESOURCES)return; // don't grow unbounded
+  const excavTypes=new Set(['excavator','mining_complex','drill_rig','ore_processor']);
   // Iterate structures directly — avoid filter() allocation
-  const ctx=_getResourceCtx();
+  const ctx=resourceCanvas?resourceCanvas.getContext('2d'):null;
   for(const e of structures){
-    if(!_EXCAV_TYPES.has(e.type))continue;
+    if(!excavTypes.has(e.type))continue;
     // Check if stone is scarce nearby
     const STONE_TYPES=['rock','iron_ore','gold_ore','coal','clay'];
     let stoneCount=0;
@@ -2981,12 +2968,10 @@ function _checkCivSplits(){
 // Every 500 years a legendary figure is born — they actively move, build, fight
 // and leave a permanent named legacy (structure) when they die
 
-const prodigyLegacies=[]; // {name,icon,tx,ty,year,civName,prodigyName,prodigyIcon} — capped at 80
-const MAX_PRODIGY_LEGACIES=80;
+const prodigyLegacies=[]; // {name,icon,tx,ty,year,civName,prodigyName,prodigyIcon}
 function _registerLegacy(h,structLabel,structIcon){
   const civ=h.civId!=null?civilizations.get(h.civId):null;
-  if(prodigyLegacies.length>=MAX_PRODIGY_LEGACIES) prodigyLegacies.pop();
-  prodigyLegacies.unshift({name:`${structLabel} de ${h.name.split(' ')[0]}`,icon:structIcon,tx:h.tx,ty:h.ty,year,civName:civ?civ.name:'?',prodigyName:h.name,prodigyIcon:h.prodigyType?.icon||'✨'});
+  prodigyLegacies.push({name:`${structLabel} de ${h.name.split(' ')[0]}`,icon:structIcon,tx:h.tx,ty:h.ty,year,civName:civ?civ.name:'?',prodigyName:h.name,prodigyIcon:h.prodigyType?.icon||'✨'});
   addMajorEvent(`${structIcon} ${h.name.split(' ')[0]} erigió ${structLabel} — legado eterno en ${civ?civ.name:'el mundo'}`);
 }
 
@@ -3615,24 +3600,6 @@ function tickHumans(yearsElapsed){
       if(!humans[i].alive){
         _humanById.delete(humans[i].id);
         humans.splice(i,1);
-      }
-    }
-  }
-
-  // Prune dead civilizations every 50 years — free territory Sets and Map entries
-  if(Math.floor(year)%50===0){
-    for(const [id,civ] of civilizations){
-      if(civ.population===0){
-        civ.territory.clear();
-        civ.members.clear();
-        civ.allies.clear();
-        civ.enemies.clear();
-        civ.tradePartners.clear();
-        civ.atWarWith.clear();
-        civ.inventions.clear();
-        if(civ._kMilestones) civ._kMilestones.clear();
-        _civStructureTypes.delete(id);
-        civilizations.delete(id);
       }
     }
   }

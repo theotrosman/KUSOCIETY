@@ -3266,13 +3266,13 @@ function _launchNuke(attackerCiv, targetCiv) {
   }
   if (typeof markCityGlowDirty !== 'undefined') markCityGlowDirty();
 
-  // Leave radiation tiles — cap at 2000 to prevent memory growth
+  // Leave radiation tiles
   for (let dy = -blastRadius; dy <= blastRadius; dy++) {
     for (let dx = -blastRadius; dx <= blastRadius; dx++) {
       if (dx*dx + dy*dy <= r2) {
         const rtx = tx + dx, rty = ty + dy;
         if (rtx >= 0 && rtx < WORLD_W && rty >= 0 && rty < WORLD_H) {
-          if (_radiationTiles.size < 2000) _radiationTiles.add(`${rtx},${rty}`);
+          _radiationTiles.add(`${rtx},${rty}`);
         }
       }
     }
