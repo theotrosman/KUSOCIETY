@@ -47,28 +47,12 @@
     </div>
 
     <div class="setting-group">
-      <label class="setting-label">⚡ Velocidad</label>
-      <div class="btn-group" id="set-speed-group">
-        <button class="sg-btn" data-val="0" onclick="_setSpeed(0)">⏸</button>
-        <button class="sg-btn active" data-val="1" onclick="_setSpeed(1)">1×</button>
-        <button class="sg-btn" data-val="2" onclick="_setSpeed(2)">5×</button>
-        <button class="sg-btn" data-val="3" onclick="_setSpeed(3)">20×</button>
-        <button class="sg-btn" data-val="4" onclick="_setSpeed(4)">100×</button>
-        <button class="sg-btn sg-btn-max" data-val="5" onclick="_setSpeed(5)">MAX</button>
-      </div>
-    </div>
-
-    <div class="setting-group">
       <div class="setting-label-row">
         <label class="setting-label">🧠 Inteligencia</label>
         <span id="set-intel-val" class="setting-val">120%</span>
       </div>
-      <div class="slider-wrap">
-        <span class="slider-bound">−</span>
-        <input type="range" id="set-intel" min="-80" max="80" value="0" step="5"
-          oninput="_applyIntel(this.value)"/>
-        <span class="slider-bound">+</span>
-      </div>
+      <input type="range" id="set-intel" min="-80" max="80" value="0" step="5"
+        oninput="_applyIntel(this.value)"/>
     </div>
 
     <div class="setting-group">
@@ -96,19 +80,6 @@
         <button class="sg-btn" data-val="200" onclick="_setPop(200)">200</button>
         <button class="sg-btn" data-val="500" onclick="_setPop(500)">500</button>
         <button class="sg-btn" data-val="1000" onclick="_setPop(1000)">1k</button>
-      </div>
-    </div>
-
-    <div class="setting-group">
-      <div class="setting-label-row">
-        <label class="setting-label">☀️ Duración del día</label>
-        <span id="set-daylen-val" class="setting-val">20s</span>
-      </div>
-      <div class="slider-wrap">
-        <span class="slider-bound">5s</span>
-        <input type="range" id="set-daylen" min="5" max="120" value="20" step="5"
-          oninput="_applyDayLen(this.value)"/>
-        <span class="slider-bound">2m</span>
       </div>
     </div>
   </div>
