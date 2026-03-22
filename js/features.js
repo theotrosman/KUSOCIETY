@@ -569,11 +569,11 @@ function tickScientificExpeditions(yearsElapsed) {
     if (!scholar || scholar.knowledge < 500) continue;
     // La expedición descubre algo
     const discoveries = [
-      { msg: 'una nueva ruta comercial', effect: (h) => { h.knowledge += 200 * _intelModifier; civ.honor += 8; } },
-      { msg: 'un yacimiento de minerales', effect: (h) => { h.inventory.stone += 20; h.knowledge += 100 * _intelModifier; } },
-      { msg: 'plantas medicinales desconocidas', effect: (h) => { h.health = 100; h.knowledge += 150 * _intelModifier; for (const id of civ.members) { const m = _hById(id); if (m && m.alive) m.health = Math.min(100, m.health + 15); } } },
-      { msg: 'ruinas de una civilización antigua', effect: (h) => { h.knowledge += 500 * _intelModifier; addMajorEvent(`🏚 ${h.name.split(' ')[0]} descubrió ruinas antiguas — el pasado revela sus secretos`); } },
-      { msg: 'un paso de montaña desconocido', effect: (h) => { h.tilesPerYear = Math.min(h.tilesPerYear + 5, 80); h.knowledge += 80 * _intelModifier; } },
+      { msg: 'una nueva ruta comercial', effect: (h) => { h.knowledge += 60 * _intelModifier; civ.honor += 8; } },
+      { msg: 'un yacimiento de minerales', effect: (h) => { h.inventory.stone += 20; h.knowledge += 30 * _intelModifier; } },
+      { msg: 'plantas medicinales desconocidas', effect: (h) => { h.health = 100; h.knowledge += 50 * _intelModifier; for (const id of civ.members) { const m = _hById(id); if (m && m.alive) m.health = Math.min(100, m.health + 15); } } },
+      { msg: 'ruinas de una civilización antigua', effect: (h) => { h.knowledge += 150 * _intelModifier; addMajorEvent(`🏚 ${h.name.split(' ')[0]} descubrió ruinas antiguas — el pasado revela sus secretos`); } },
+      { msg: 'un paso de montaña desconocido', effect: (h) => { h.tilesPerYear = Math.min(h.tilesPerYear + 5, 80); h.knowledge += 25 * _intelModifier; } },
     ];
     const disc = discoveries[Math.floor(Math.random() * discoveries.length)];
     disc.effect(scholar);
@@ -1008,9 +1008,9 @@ function tickTradeRoutes(yearsElapsed) {
   for (const route of _tradeRoutes) {
     const ca = civilizations.get(route.civA), cb = civilizations.get(route.civB);
     if (!ca || !cb) continue;
-    const bonus = 8 + Math.floor(Math.random() * 10);
-    for (const id of ca.members) { const h = _hById(id); if (h && h.alive) h.knowledge = Math.min(99999, h.knowledge + bonus * _intelModifier * 0.3); }
-    for (const id of cb.members) { const h = _hById(id); if (h && h.alive) h.knowledge = Math.min(99999, h.knowledge + bonus * _intelModifier * 0.3); }
+    const bonus = 2 + Math.floor(Math.random() * 3);
+    for (const id of ca.members) { const h = _hById(id); if (h && h.alive) h.knowledge = Math.min(99999, h.knowledge + bonus * _intelModifier * 0.1); }
+    for (const id of cb.members) { const h = _hById(id); if (h && h.alive) h.knowledge = Math.min(99999, h.knowledge + bonus * _intelModifier * 0.1); }
     ca.honor = Math.min(100, ca.honor + 1);
     cb.honor = Math.min(100, cb.honor + 1);
   }
@@ -1056,7 +1056,7 @@ function tickDynasticLegacy(yearsElapsed) {
     const dynastyLen = _dynastyHistory.get(civ.id).length;
     // Bonus al heredero: stats escalados por longitud de la dinastía
     const bonus = Math.min(30, dynastyLen * 5);
-    heir.knowledge = Math.min(99999, heir.knowledge + bonus * 10 * _intelModifier);
+    heir.knowledge = Math.min(99999, heir.knowledge + bonus * 2 * _intelModifier);
     heir.health = Math.min(100, heir.health + bonus * 0.5);
     heir.leaderScore = (heir.leaderScore || 0) + bonus;
     heir.isLeader = true;
@@ -1194,8 +1194,8 @@ function tickEspionage(yearsElapsed) {
       case 'robo_conocimiento': {
         // Robar conocimiento promedio de la civ enemiga y darlo al espía y su civ
         let stolen = 0;
-        for (const id of targetCiv.members) { const h = _hById(id); if (h && h.alive) { const take = Math.floor(h.knowledge * 0.05); h.knowledge -= take; stolen += take; } }
-        const share = Math.floor(stolen / Math.max(1, spyCiv ? spyCiv.population : 1));
+        for (const id of targetCiv.members) { const h = _hById(id); if (h && h.alive) { const take = Math.floor(h.knowledge * 0.02); h.knowledge -= take; stolen += take; } }
+        const share = Math.floor(stolen / Math.max(1, spyCiv ? spyCiv.population * 3 : 3));
         if (spyCiv) for (const id of spyCiv.members) { const h = _hById(id); if (h && h.alive) h.knowledge = Math.min(99999, h.knowledge + share * _intelModifier); }
         addWorldEvent(`📜 ${spy.name.split(' ')[0]} robó secretos de ${targetCiv.name} — ${stolen} puntos de conocimiento transferidos`);
         break;
@@ -3736,7 +3736,7 @@ function tickGoldenAge(yearsElapsed) {
     for (const id of civ.members) {
       const h = _hById(id);
       if (!h || !h.alive) continue;
-      h.knowledge = Math.min(99999, h.knowledge + yearsElapsed * 5 * _intelModifier);
+      h.knowledge = Math.min(99999, h.knowledge + yearsElapsed * 1.5 * _intelModifier);
       h.health = Math.min(100, h.health + yearsElapsed * 1);
       h._reproUrge = Math.min(1, h._reproUrge + yearsElapsed * 0.05);
       h._buildUrge = Math.min(1, h._buildUrge + yearsElapsed * 0.1);
@@ -4053,7 +4053,7 @@ function tickMediaSystem(yearsElapsed) {
 
     // Knowledge boost to humans near media structures
     if(typeof _cachedAlive !== 'undefined'){
-      const boost = mediaLevel * 0.3;
+      const boost = mediaLevel * 0.05; // small passive boost per broadcast
       for(const h of _cachedAlive){
         const civ = h.civId != null ? civilizations.get(h.civId) : null;
         if(!civ) continue;

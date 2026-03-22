@@ -1246,12 +1246,15 @@ function _inheritTrait(a,b,rng){
 // Lookup table for knowledge curve: kCurve = 1 + (k/500)^1.6 * 0.4, k in [0,5000]
 // 101 entries covering k=0..5000 in steps of 50
 const _kCurveLUT=(()=>{
+  // Logarithmic curve — early knowledge comes fast, high knowledge is hard-won
+  // At k=0: 1.0x, k=1000: ~1.4x, k=5000: ~1.8x, k=20000: ~2.2x, k=99999: ~2.6x
+  // Much flatter than before — prevents runaway acceleration
   const t=new Float32Array(101);
-  for(let i=0;i<=100;i++)t[i]=1+Math.pow(i*0.1,1.6)*0.4; // i*0.1 = k/500 (0..10 but capped at 10)
+  for(let i=0;i<=100;i++) t[i]=1+Math.log1p(i*0.12)*0.55;
   return t;
 })();
 function _kCurve(k){
-  const idx=Math.min(100,Math.floor(Math.min(k,5000)/50));
+  const idx=Math.min(100,Math.floor(Math.min(k,99999)/1000));
   return _kCurveLUT[idx];
 }
 // Global intelligence modifier — oscillates to create dark ages and renaissances
@@ -1259,7 +1262,9 @@ let _intelPhase=0;
 let _intelModifier=1.2; // start higher — societies are more capable from the start
 let _userIntelBias=0;   // user-controlled offset via slider (-0.8 to +0.8)
 function _tickIntelligenceCurve(yearsElapsed){
-  _intelPhase+=yearsElapsed*0.0008;
+  // Phase advances based on absolute year — speed-independent
+  // One full cycle ≈ 7854 years (2π / 0.0008), creating slow civilizational waves
+  _intelPhase = year * 0.0008;
   // Slow sine wave with noise — creates golden ages and dark ages
   const base=Math.sin(_intelPhase)*0.3+Math.sin(_intelPhase*2.3)*0.1+Math.sin(_intelPhase*0.7)*0.15;
   // Floor raised to 0.85 — no more brutal dark ages that kill progress
@@ -1596,9 +1601,9 @@ class Human{
     const intelMult=_intelModifier*this._intelVariance;
     this.brain.epsilon=Math.max(0.04,0.38-Math.min(this.knowledge,2000)*0.00015/intelMult);
 
-    // Knowledge grows exponentially — slow at first, explosive at high levels
-    // Base rate scales with intellect, then multiplied by a curve that accelerates with existing knowledge
-    const kGrowthBase=0.10+this.traits.intellect*0.005;
+    // Knowledge grows slowly — verisimilar pace tied to intellect and era
+    // Base: ~0.04/yr primitive, ~0.12/yr advanced, multiplied by curve and intel modifier
+    const kGrowthBase=0.04+this.traits.intellect*0.002;
     this.knowledge=Math.min(99999,this.knowledge+yearsElapsed*kGrowthBase*intelMult*_kCurve(this.knowledge));
 
     this.wealth=this.inventory.food+this.inventory.wood*2+this.inventory.stone*1.5;
@@ -3247,8 +3252,8 @@ const PRODIGY_TYPES=[
     },
     onTick(h,yearsElapsed){
       const near=_spatialQuery(h.tx,h.ty,30,h.id);
-      for(const n of near)n.knowledge=Math.min(99999,n.knowledge+yearsElapsed*8*_intelModifier);
-      h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*20*_intelModifier);
+      for(const n of near)n.knowledge=Math.min(99999,n.knowledge+yearsElapsed*1.5*_intelModifier);
+      h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*5*_intelModifier);
       if(h._rng()<0.002*yearsElapsed){_checkKnowledgeUnlocks();addMajorEvent(`💡 ${h.name.split(' ')[0]} tuvo una revelación — el conocimiento da un salto`);}
       if(h._rng()<0.05*yearsElapsed){const alive=_cachedAlive;if(alive.length>0){const t=alive[Math.floor(h._rng()*alive.length)];if(t&&t.id!==h.id){h.tx=Math.max(0,Math.min(WORLD_W-1,t.tx+Math.floor(h._rng()*6-3)));h.ty=Math.max(0,Math.min(WORLD_H-1,t.ty+Math.floor(h._rng()*6-3)));}}}
     },
@@ -3318,10 +3323,10 @@ const PRODIGY_TYPES=[
       addMajorEvent(`⚙️✨ ${h.name} nació — Inventor Visionario. La tecnología da un salto.`);
     },
     onTick(h,yearsElapsed){
-      h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*15*_intelModifier);
+      h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*4*_intelModifier);
       if(h.civId!=null&&h._rng()<0.005*yearsElapsed){const civ=civilizations.get(h.civId);if(civ&&civ.techLevel<5){civ.techLevel++;addMajorEvent(`⚙️ ${h.name.split(' ')[0]} inventó algo revolucionario — ${WEAPON_TIERS[civ.techLevel]||'tecnología avanzada'}`);}};
       const near=_spatialQuery(h.tx,h.ty,20,h.id);
-      for(const n of near){if(n.civId===h.civId)n.knowledge=Math.min(99999,n.knowledge+yearsElapsed*4*_intelModifier);}
+      for(const n of near){if(n.civId===h.civId)n.knowledge=Math.min(99999,n.knowledge+yearsElapsed*1.0*_intelModifier);}
       if(h._rng()<0.04*yearsElapsed){
         const types=new Set(['workshop','forge','academy','university']);
         let best=null,bestD=Infinity;
@@ -3607,7 +3612,7 @@ function tickHumans(yearsElapsed){
       for(const child of _cachedAlive){
         if(!child.parentIds) continue;
         if(child.parentIds[0] !== h.id && child.parentIds[1] !== h.id) continue;
-        const bonus = Math.floor(h.knowledge * 0.35);
+        const bonus = Math.floor(h.knowledge * 0.12); // children inherit 12% of parent knowledge
         child.knowledge = Math.min(99999, child.knowledge + bonus);
       }
     }
@@ -3709,10 +3714,10 @@ function tickHumans(yearsElapsed){
                 h.inventory.food=Math.min(50,h.inventory.food+Math.floor(yearsElapsed*3));
                 h.hunger=Math.min(100,h.hunger+yearsElapsed*4);
               }break;
-            case 'library':   h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*0.8*_intelModifier);break;
-            case 'academy':   h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*1.5*_intelModifier);break;
-            case 'university':h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*2*_intelModifier);break;
-            case 'observatory':h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*3*_intelModifier);break;
+            case 'library':   h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*0.3*_intelModifier);break;
+            case 'academy':   h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*0.6*_intelModifier);break;
+            case 'university':h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*1.0*_intelModifier);break;
+            case 'observatory':h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*1.2*_intelModifier);break;
             case 'workshop':case 'forge':
               if(h.inventory.wood<20)h.inventory.wood+=Math.floor(yearsElapsed*0.5);
               if(h.inventory.stone<15)h.inventory.stone+=Math.floor(yearsElapsed*0.5);break;
@@ -3735,11 +3740,11 @@ function tickHumans(yearsElapsed){
             case 'carriage':
               if(h.civId===s.civId&&h.transportTier<2){h.transportTier=2;h.tilesPerYear=16;}break;
             case 'factory':
-              if(h.civId===s.civId){h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*4*_intelModifier);h.inventory.stone=Math.min(30,h.inventory.stone+Math.floor(yearsElapsed));}break;
+              if(h.civId===s.civId){h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*1.5*_intelModifier);h.inventory.stone=Math.min(30,h.inventory.stone+Math.floor(yearsElapsed));}break;
             case 'railway':
               if(h.civId===s.civId&&h.transportTier<3){h.transportTier=3;h.tilesPerYear=28;}break;
             case 'powerplant':
-              if(h.civId===s.civId){h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*6*_intelModifier);if(h.transportTier<4){h.transportTier=4;h.tilesPerYear=45;}}break;
+              if(h.civId===s.civId){h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*2.5*_intelModifier);if(h.transportTier<4){h.transportTier=4;h.tilesPerYear=45;}}break;
             case 'airport':
               if(h.civId===s.civId&&h.transportTier<5){h.transportTier=5;h.tilesPerYear=80;}break;
             case 'highway':
@@ -3747,11 +3752,11 @@ function tickHumans(yearsElapsed){
             case 'subway':
               if(h.civId===s.civId&&h.transportTier<4){h.transportTier=4;h.tilesPerYear=45;}break;
             case 'neural_hub':
-              if(h.civId===s.civId)h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*8*_intelModifier);break;
+              if(h.civId===s.civId)h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*3.5*_intelModifier);break;
             case 'arcology':
-              if(h.civId===s.civId){h.health=Math.min(100,h.health+yearsElapsed*2);h.hunger=Math.min(100,h.hunger+yearsElapsed*3);h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*4*_intelModifier);}break;
+              if(h.civId===s.civId){h.health=Math.min(100,h.health+yearsElapsed*2);h.hunger=Math.min(100,h.hunger+yearsElapsed*3);h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*1.5*_intelModifier);}break;
             case 'megacity_core':
-              if(h.civId===s.civId){h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*5*_intelModifier);h.social=Math.min(100,h.social+yearsElapsed);}break;
+              if(h.civId===s.civId){h.knowledge=Math.min(99999,h.knowledge+yearsElapsed*2*_intelModifier);h.social=Math.min(100,h.social+yearsElapsed);}break;
           }
         }
       }

@@ -1785,14 +1785,18 @@ function _drawHumans(){
 // ── Intelligence curve graph ──────────────────────────────────────────────────
 let _intelHistory=[];
 let _intelHistoryTimer=0;
+let _intelLastSampleYear=-999;
 
 function _drawIntelligenceCurve(){
   if(typeof _intelModifier==='undefined')return;
-  _intelHistoryTimer++;
-  if(_intelHistoryTimer>30){
-    _intelHistoryTimer=0;
-    _intelHistory.push(_intelModifier);
-    if(_intelHistory.length>80)_intelHistory.shift();
+  // Sample based on year intervals (every 50 years) — speed-independent history
+  if(typeof year!=='undefined'){
+    const sampleYear=Math.floor(year/50)*50;
+    if(sampleYear!==_intelLastSampleYear){
+      _intelLastSampleYear=sampleYear;
+      _intelHistory.push(_intelModifier);
+      if(_intelHistory.length>80)_intelHistory.shift();
+    }
   }
   if(_intelHistory.length<2)return;
 
