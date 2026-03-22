@@ -1697,8 +1697,13 @@ class Human{
     if(this._razeUrge>0.7&&this.aggression>0.4&&getSocialPhase()==='division'){
       this._razeUrge=0;this._doRaze();return;
     }
-    // Island exploration — humans with boats sail to new lands
-    if(this.transportTier>=1&&this._exploreUrge>0.9&&this.hunger>50&&this._nearWater()){
+    // Ocean exploration — boats sail to new lands, planes fly between nations
+    if(this.transportTier>=5&&this._exploreUrge>0.5&&this.hunger>40){
+      // Plane: fly directly to another civ's city center
+      this._exploreUrge=0;this._doFlyToNation();return;
+    }
+    if(this.transportTier>=1&&this._exploreUrge>0.6&&this.hunger>45){
+      // Boat: sail even if not immediately near water — seek coast first
       this._exploreUrge=0;this._doSailToIsland();return;
     }
     if(this._exploreUrge>0.75&&crowding<3&&this.hunger>40){
@@ -2963,6 +2968,7 @@ class Human{
     this.alive=false;this.action=`Murió (${cause})`;
     this.addLog(`Murió de ${cause} a los ${Math.floor(this.age)} años`);
     _spatialRemove(this);
+    if(typeof registerDeath!=='undefined') try{registerDeath(this,cause);}catch(e){}
     if(this.civId){
       const civ=civilizations.get(this.civId);
       if(civ){

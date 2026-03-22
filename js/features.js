@@ -4530,36 +4530,6 @@ function tickWarTribute(yearsElapsed) {
   }
 }
 
-// ── Registrar las nuevas mecánicas en tickAllFeatures ────────────────────────
-function tickNewFeatures(yearsElapsed) {
-  tickEspionage2(yearsElapsed);
-  tickGoldenAge(yearsElapsed);
-  tickMercenaries(yearsElapsed);
-  tickWarTrauma(yearsElapsed);
-  tickMediaSystem(yearsElapsed);
-  tickPoliticalAssassination(yearsElapsed);
-  tickOlympicGames(yearsElapsed);
-  tickWarRefugees(yearsElapsed);
-  tickCharismaticCult(yearsElapsed);
-  tickLongevityRecord(yearsElapsed);
-  tickTradeBlockade(yearsElapsed);
-  tickTechRace(yearsElapsed);
-  tickScholarExile(yearsElapsed);
-  tickMediaEpidemic(yearsElapsed);
-  tickPropaganda(yearsElapsed);
-  // Tanda 3
-  tickOverseasColonies(yearsElapsed);
-  tickLandHunger(yearsElapsed);
-  tickReligiousSyncretism(yearsElapsed);
-  tickItinerantArtisans(yearsElapsed);
-  tickCommonCurrency(yearsElapsed);
-  tickMilitaryDesertion(yearsElapsed);
-  tickUniversalLibrary(yearsElapsed);
-  tickPublicTrial(yearsElapsed);
-  tickClimateSeasonMigration(yearsElapsed);
-  tickWarTribute(yearsElapsed);
-}
-
 // ── SISTEMA DE MEDIOS DE COMUNICACIÓN ────────────────────────────────────────
 // Imprentas, radios, televisiones e internet que difunden noticias y conocimiento
 // Se desbloquean progresivamente según el nivel de conocimiento promedio
@@ -4852,4 +4822,794 @@ function tickMediaSystem(yearsElapsed) {
       }
     }
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TANDA 4 — 20 NUEVAS MECÁNICAS
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── 1. CEMENTERIOS ────────────────────────────────────────────────────────────
+// Cuando mueren humanos, se registran en un cementerio de la civ.
+// Civs con cementerio ganan honor; humanos cercanos ganan social.
+const _graveyards = new Map(); // civId → [{name, age, cause, year}]
+let _graveyardTimer = 0;
+function tickCemeteries(yearsElapsed) {
+  _graveyardTimer += yearsElapsed;
+  if (_graveyardTimer < 20) return;
+  _graveyardTimer = 0;
+  if (typeof _cachedAlive === 'undefined') return;
+  // Passive: humans near a cemetery structure gain social
+  const cemStructures = structures.filter(s => s.type === 'cemetery');
+  for (const cem of cemStructures) {
+    const civ = cem.civId != null ? civilizations.get(cem.civId) : null;
+    if (!civ) continue;
+    const nearby = _spatialQuery(cem.tx, cem.ty, 12, -1);
+    for (const h of nearby) {
+      if (!h.alive || h.civId !== cem.civId) continue;
+      h.social = Math.min(100, h.social + 2);
+    }
+    // Honor boost for having a cemetery
+    civ.honor = Math.min(100, civ.honor + 0.1);
+  }
+}
+
+// Called when a human dies — register in civ graveyard
+function registerDeath(h, cause) {
+  if (!h || !h.civId) return;
+  if (!_graveyards.has(h.civId)) _graveyards.set(h.civId, []);
+  const list = _graveyards.get(h.civId);
+  list.push({ name: h.name, age: Math.floor(h.age), cause, year });
+  if (list.length > 200) list.shift(); // keep last 200
+  // Notable deaths get a world event
+  if (h.kills >= 5 || h.knowledge > 5000 || h.isLeader) {
+    const civ = civilizations.get(h.civId);
+    const role = h.isLeader ? 'líder' : h.kills >= 5 ? 'guerrero' : 'sabio';
+    addWorldEvent(`⚰️ ${h.name.split(' ')[0]}, ${role} de ${civ?.name||'?'}, muere a los ${Math.floor(h.age)} años — ${cause}`);
+  }
+}
+function getGraveyard(civId) { return _graveyards.get(civId) || []; }
+
+// ── 2. LINAJES DE SANGRE ──────────────────────────────────────────────────────
+// Familias con 3+ líderes históricos se convierten en Casa Noble
+const _nobleFamilies = new Map(); // surname → {civId, leaderCount, bonus}
+const _leaderHistory = new Map(); // civId → [leaderName, ...]
+let _lineageTimer = 0;
+function tickBloodlineages(yearsElapsed) {
+  _lineageTimer += yearsElapsed;
+  if (_lineageTimer < 80) return;
+  _lineageTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (!civ.leaderId) continue;
+    const leader = _hById(civ.leaderId);
+    if (!leader || !leader.alive) continue;
+    const surname = leader.name.split(' ')[1] || leader.name.split(' ')[0];
+    if (!_leaderHistory.has(civ.id)) _leaderHistory.set(civ.id, []);
+    const hist = _leaderHistory.get(civ.id);
+    if (!hist.includes(surname)) hist.push(surname);
+    // Count how many times this surname has led
+    const count = hist.filter(n => n === surname).length;
+    if (count >= 3 && !_nobleFamilies.has(surname)) {
+      _nobleFamilies.set(surname, { civId: civ.id, leaderCount: count, bonus: 0.15 });
+      // Boost all members with this surname
+      for (const id of civ.members) {
+        const h = _hById(id);
+        if (!h || !h.alive) continue;
+        if ((h.name.split(' ')[1] || h.name.split(' ')[0]) === surname) {
+          h.knowledge = Math.min(99999, h.knowledge * 1.15);
+          h.traits.charisma = Math.min(100, h.traits.charisma + 10);
+        }
+      }
+      addWorldEvent(`👑 La familia ${surname} de ${civ.name} se convierte en Casa Noble — ${count} líderes en su historia`);
+      addChronicle('politics', `Casa Noble ${surname}`, `Tres generaciones de líderes. El apellido ${surname} ya no era solo un nombre — era un destino. ${civ.name} reconoció su linaje con honores eternos.`, '👑');
+    }
+  }
+}
+
+// ── 3. HEREJÍAS Y CISMAS ──────────────────────────────────────────────────────
+// Religiones muy extendidas generan facciones disidentes
+let _heresyTimer = 0;
+function tickHeresiesAndSchisms(yearsElapsed) {
+  _heresyTimer += yearsElapsed;
+  if (_heresyTimer < 110) return;
+  _heresyTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (!civ.religion || civ.population < 8) continue;
+    if (Math.random() > 0.12) continue;
+    // Count how many civs share this religion
+    let sharedCount = 0;
+    for (const [, other] of civilizations) { if (other.religion === civ.religion) sharedCount++; }
+    if (sharedCount < 2) continue; // only splits if religion is widespread
+    const prefixes = ['Reformista', 'Libre', 'Verdadero', 'Antiguo', 'Nuevo'];
+    const newFaith = `${prefixes[Math.floor(Math.random() * prefixes.length)]} ${civ.religion}`;
+    const oldFaith = civ.religion;
+    // Split: half the members adopt the new faith (ideologically)
+    let converted = 0;
+    for (const id of civ.members) {
+      const h = _hById(id);
+      if (!h || !h.alive) continue;
+      if (h.ideology > 0.5 && Math.random() < 0.4) {
+        h.social = Math.max(0, h.social - 15); // social tension
+        converted++;
+      }
+    }
+    civ.religion = newFaith;
+    civ.honor = Math.max(0, civ.honor - 10);
+    addWorldEvent(`✝️ Cisma en ${civ.name}: ${converted} fieles abandonan ${oldFaith} y fundan el ${newFaith} — tensión religiosa interna`);
+    addChronicle('culture', `El Gran Cisma de ${civ.name}`, `Lo que empezó como un debate teológico terminó en ruptura. ${converted} fieles rechazaron la doctrina oficial y fundaron el ${newFaith}. ${civ.name} nunca volvió a ser la misma.`, '✝️');
+  }
+}
+
+// ── 4. MERCADOS NEGROS ────────────────────────────────────────────────────────
+// En civs en guerra o con honor bajo, aparecen comerciantes ilegales
+let _blackMarketTimer = 0;
+const _blackMarkets = []; // {civId, tx, ty, timer}
+function tickBlackMarkets(yearsElapsed) {
+  _blackMarketTimer += yearsElapsed;
+  if (_blackMarketTimer < 45) return;
+  _blackMarketTimer = 0;
+  // Spawn black markets in low-honor or at-war civs
+  for (const [, civ] of civilizations) {
+    if (civ.population < 6) continue;
+    if (civ.honor > 35 && civ.atWarWith.size === 0) continue;
+    if (_blackMarkets.some(bm => bm.civId === civ.id)) continue;
+    if (Math.random() > 0.2) continue;
+    const cc = civ.cityCenter;
+    if (!cc) continue;
+    const tx = cc.tx + Math.floor(Math.random() * 10 - 5);
+    const ty = cc.ty + Math.floor(Math.random() * 10 - 5);
+    _blackMarkets.push({ civId: civ.id, tx, ty, timer: 80 + Math.floor(Math.random() * 60) });
+    const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+    addWorldEvent(`🕶️ Mercado negro surge en ${civ.name} — comercio ilegal florece mientras ${leader?.name.split(' ')[0]||'el gobierno'} mira hacia otro lado`);
+  }
+  // Tick existing black markets
+  for (let i = _blackMarkets.length - 1; i >= 0; i--) {
+    const bm = _blackMarkets[i];
+    bm.timer -= yearsElapsed;
+    const civ = civilizations.get(bm.civId);
+    if (!civ || bm.timer <= 0) { _blackMarkets.splice(i, 1); continue; }
+    // Boost nearby humans' food/wealth but reduce civ honor
+    const nearby = _spatialQuery(bm.tx, bm.ty, 10, -1);
+    for (const h of nearby) {
+      if (!h.alive || h.civId !== bm.civId) continue;
+      h.inventory.food = Math.min(h.inventory.food + 3, 50);
+      h.wealth = (h.wealth || 0) + 5;
+    }
+    civ.honor = Math.max(0, civ.honor - 0.05);
+    // Leader can crack down
+    if (civ.honor < 20 && Math.random() < 0.1) {
+      _blackMarkets.splice(i, 1);
+      civ.honor = Math.min(100, civ.honor + 8);
+      const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+      addWorldEvent(`🚔 ${leader?.name.split(' ')[0]||civ.name} clausura el mercado negro — operación policial en ${civ.name}`);
+    }
+  }
+}
+
+// ── 5. MONUMENTOS A LOS CAÍDOS ────────────────────────────────────────────────
+// Tras guerras grandes, la civ ganadora construye un monumento
+let _warMonumentTimer = 0;
+const _warMonuments = new Set(); // civId — already built one
+function tickWarMonuments(yearsElapsed) {
+  _warMonumentTimer += yearsElapsed;
+  if (_warMonumentTimer < 60) return;
+  _warMonumentTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (_warMonuments.has(civ.id) || civ.population < 5) continue;
+    if (civ.atWarWith.size > 0) continue; // only after war ends
+    // Check if civ recently won a war (has kills history)
+    const totalKills = [...(civ.members || [])].reduce((sum, id) => {
+      const h = _hById(id); return sum + (h ? h.kills : 0);
+    }, 0);
+    if (totalKills < 10) continue;
+    if (Math.random() > 0.15) continue;
+    _warMonuments.add(civ.id);
+    civ.honor = Math.min(100, civ.honor + 20);
+    for (const id of civ.members) {
+      const h = _hById(id); if (h && h.alive) h.social = Math.min(100, h.social + 15);
+    }
+    const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+    const lname = leader ? leader.name.split(' ')[0] : civ.name;
+    addWorldEvent(`🗿 ${lname} inaugura el Monumento a los Caídos de ${civ.name} — ${totalKills} guerreros recordados para siempre`);
+    addChronicle('war', `El Monumento de ${civ.name}`, `${lname} mandó grabar cada nombre en piedra. ${totalKills} guerreros que no volvieron. El monumento se convirtió en lugar de peregrinación y duelo colectivo.`, '🗿');
+  }
+}
+
+// ── 6. ESCUELAS DE COMBATE ────────────────────────────────────────────────────
+// Civs con barracks + forge crean una escuela de combate con estilo propio
+let _combatSchoolTimer = 0;
+const _combatSchools = new Map(); // civId → {name, style, bonus}
+const COMBAT_STYLES = [
+  { name: 'Espartana', bonus: 'fuerza', desc: 'disciplina de hierro' },
+  { name: 'Samurái', bonus: 'velocidad', desc: 'honor y precisión' },
+  { name: 'Berserker', bonus: 'agresión', desc: 'furia sin límites' },
+  { name: 'Legionaria', bonus: 'formación', desc: 'cohesión táctica' },
+  { name: 'Nómada', bonus: 'movilidad', desc: 'guerreros del viento' },
+  { name: 'Arcana', bonus: 'conocimiento', desc: 'magia y estrategia' },
+];
+function tickCombatSchools(yearsElapsed) {
+  _combatSchoolTimer += yearsElapsed;
+  if (_combatSchoolTimer < 90) return;
+  _combatSchoolTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (_combatSchools.has(civ.id) || civ.population < 8) continue;
+    const hasBarracks = structures.some(s => s.civId === civ.id && s.type === 'barracks');
+    const hasForge = structures.some(s => s.civId === civ.id && s.type === 'forge');
+    if (!hasBarracks || !hasForge) continue;
+    if (Math.random() > 0.2) continue;
+    const style = COMBAT_STYLES[Math.floor(Math.random() * COMBAT_STYLES.length)];
+    _combatSchools.set(civ.id, { name: `Escuela ${style.name}`, style: style.bonus, desc: style.desc });
+    // Apply bonus to all soldiers
+    for (const id of civ.members) {
+      const h = _hById(id);
+      if (!h || !h.alive || !h.isSoldier) continue;
+      if (style.bonus === 'fuerza') h.traits.strength = Math.min(100, h.traits.strength + 15);
+      else if (style.bonus === 'agresión') h.aggression = Math.min(1, h.aggression + 0.2);
+      else if (style.bonus === 'conocimiento') h.knowledge = Math.min(99999, h.knowledge + 200);
+      else if (style.bonus === 'movilidad') h.tilesPerYear = Math.min(h.tilesPerYear + 4, 60);
+      h._combatStyle = style.name;
+    }
+    addWorldEvent(`🥋 ${civ.name} funda la Escuela ${style.name} — ${style.desc}. Sus guerreros serán temidos.`);
+    addChronicle('war', `La Escuela ${style.name} de ${civ.name}`, `No era solo entrenamiento. Era una filosofía. La Escuela ${style.name} forjó guerreros con ${style.desc}. Sus técnicas se transmitirían de generación en generación.`, '🥋');
+  }
+}
+
+// ── 7. HAMBRUNAS POLÍTICAS ────────────────────────────────────────────────────
+// Líderes corruptos (honor bajo) desvían comida del granero
+let _politFamineTimer = 0;
+function tickPoliticalFamine(yearsElapsed) {
+  _politFamineTimer += yearsElapsed;
+  if (_politFamineTimer < 35) return;
+  _politFamineTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.honor > 25 || civ.population < 5 || !civ.leaderId) continue;
+    const leader = _hById(civ.leaderId);
+    if (!leader || !leader.alive) continue;
+    if (Math.random() > 0.3) continue;
+    // Leader takes food from members
+    let stolen = 0;
+    for (const id of civ.members) {
+      const h = _hById(id);
+      if (!h || !h.alive || h.id === civ.leaderId) continue;
+      const take = Math.min(h.inventory.food, 3);
+      h.inventory.food -= take;
+      h.hunger = Math.max(0, h.hunger - 8);
+      stolen += take;
+    }
+    leader.inventory.food += stolen;
+    leader.wealth = (leader.wealth || 0) + stolen * 2;
+    if (stolen > 5) {
+      addWorldEvent(`🍞 ${leader.name.split(' ')[0]} de ${civ.name} desvía ${stolen} unidades de comida — el pueblo pasa hambre mientras el líder festeja`);
+      civ.honor = Math.max(0, civ.honor - 3);
+    }
+  }
+}
+
+// ── 8. EXPLORADORES LEGENDARIOS ──────────────────────────────────────────────
+// Humanos que visitan muchos biomas se convierten en Exploradores
+const _explorerBiomes = new Map(); // humanId → Set of biomes visited
+const _legendaryExplorers = new Set(); // humanIds
+let _explorerTimer = 0;
+function tickLegendaryExplorers(yearsElapsed) {
+  _explorerTimer += yearsElapsed;
+  if (_explorerTimer < 15) return;
+  _explorerTimer = 0;
+  if (typeof _cachedAlive === 'undefined' || typeof getCell === 'undefined') return;
+  for (const h of _cachedAlive) {
+    if (!h.alive || _legendaryExplorers.has(h.id)) continue;
+    if (!_explorerBiomes.has(h.id)) _explorerBiomes.set(h.id, new Set());
+    const biomes = _explorerBiomes.get(h.id);
+    const cell = getCell(h.tx, h.ty);
+    if (cell) biomes.add(cell.biome);
+    if (biomes.size >= 7) {
+      _legendaryExplorers.add(h.id);
+      h._isExplorer = true;
+      h.knowledge = Math.min(99999, h.knowledge + 800);
+      const civ = h.civId ? civilizations.get(h.civId) : null;
+      if (civ) {
+        for (const id of civ.members) {
+          const m = _hById(id); if (m && m.alive) m.knowledge = Math.min(99999, m.knowledge + 80);
+        }
+      }
+      addWorldEvent(`🧭 ${h.name.split(' ')[0]} ha explorado ${biomes.size} biomas distintos — declarado Explorador Legendario de ${civ?.name||'la humanidad'}`);
+      addChronicle('culture', `${h.name.split(' ')[0]}, el Explorador`, `Desiertos, tundras, selvas, mares. ${h.name.split(' ')[0]} lo había visto todo. Sus crónicas de viaje se convirtieron en el mapa del mundo conocido. Generaciones futuras seguirían sus pasos.`, '🧭');
+    }
+  }
+}
+
+// ── 9. ALIANZAS MATRIMONIALES ─────────────────────────────────────────────────
+// Líderes casan a sus hijos para sellar la paz entre civs
+let _matrimonialTimer = 0;
+const _matrimonialBonds = new Map(); // civIdA+civIdB → {year, childId}
+function tickMatrimonialAlliances(yearsElapsed) {
+  _matrimonialTimer += yearsElapsed;
+  if (_matrimonialTimer < 100) return;
+  _matrimonialTimer = 0;
+  const civList = [];
+  for (const [, civ] of civilizations) { if (civ.population >= 6 && civ.leaderId) civList.push(civ); }
+  if (civList.length < 2) return;
+  for (const civA of civList) {
+    if (civA.atWarWith.size > 0) continue;
+    for (const civB of civList) {
+      if (civB.id === civA.id || civB.atWarWith.size > 0) continue;
+      if (civA.allies.has(civB.id)) continue;
+      const bondKey = [civA.id, civB.id].sort().join('-');
+      if (_matrimonialBonds.has(bondKey)) continue;
+      if (Math.random() > 0.08) continue;
+      // Find a young member from each civ
+      let childA = null, childB = null;
+      for (const id of civA.members) {
+        const h = _hById(id);
+        if (h && h.alive && h.age >= 16 && h.age <= 30 && !h.partner) { childA = h; break; }
+      }
+      for (const id of civB.members) {
+        const h = _hById(id);
+        if (h && h.alive && h.age >= 16 && h.age <= 30 && !h.partner) { childB = h; break; }
+      }
+      if (!childA || !childB) continue;
+      childA.partner = childB.id;
+      childB.partner = childA.id;
+      civA.allies.add(civB.id);
+      civB.allies.add(civA.id);
+      civA.enemies.delete(civB.id);
+      civB.enemies.delete(civA.id);
+      _matrimonialBonds.set(bondKey, { year, childA: childA.id, childB: childB.id });
+      const leaderA = _hById(civA.leaderId);
+      const leaderB = _hById(civB.leaderId);
+      addWorldEvent(`💍 ${childA.name.split(' ')[0]} de ${civA.name} se casa con ${childB.name.split(' ')[0]} de ${civB.name} — alianza sellada por ${leaderA?.name.split(' ')[0]||civA.name} y ${leaderB?.name.split(' ')[0]||civB.name}`);
+      addChronicle('politics', `La boda que cambió la historia`, `${childA.name.split(' ')[0]} y ${childB.name.split(' ')[0]} no se eligieron. Los eligieron sus padres. Pero en la ceremonia, algo real nació. ${civA.name} y ${civB.name} dejaron de ser enemigos.`, '💍');
+      break;
+    }
+  }
+}
+
+// ── 10. RUINAS DE CIVILIZACIONES EXTINTAS ────────────────────────────────────
+// Cuando una civ desaparece, sus estructuras se convierten en ruinas explorables
+const _ruinSites = []; // {name, tx, ty, knowledge, civName, year}
+let _ruinTimer = 0;
+function tickExtinctCivRuins(yearsElapsed) {
+  _ruinTimer += yearsElapsed;
+  if (_ruinTimer < 30) return;
+  _ruinTimer = 0;
+  // Check for newly extinct civs
+  for (const [civId, civ] of civilizations) {
+    if (civ.population > 0 || civ._ruinsCreated) continue;
+    civ._ruinsCreated = true;
+    // Convert some structures to ruins
+    let ruinCount = 0;
+    for (const s of structures) {
+      if (s.civId !== civId || s.type === 'road' || s.type === 'camp') continue;
+      s.type = 'ruins';
+      s.label = `Ruinas de ${civ.name}`;
+      s.civId = null;
+      s._ruinKnowledge = 50 + Math.floor(Math.random() * 200);
+      s._ruinCivName = civ.name;
+      ruinCount++;
+      if (ruinCount >= 5) break;
+    }
+    if (ruinCount > 0) {
+      _ruinSites.push({ name: `Ruinas de ${civ.name}`, civName: civ.name, year });
+      addWorldEvent(`🏚️ ${civ.name} se extingue — sus estructuras quedan como ruinas. Futuros exploradores encontrarán sus secretos.`);
+      addChronicle('culture', `El fin de ${civ.name}`, `Nadie recordaba exactamente cuándo murió el último ciudadano de ${civ.name}. Solo quedaban las piedras. Y en las piedras, la memoria de todo lo que fueron.`, '🏚️');
+    }
+  }
+  // Humans who visit ruins gain knowledge
+  if (typeof _cachedAlive === 'undefined') return;
+  for (const s of structures) {
+    if (s.type !== 'ruins' || !s._ruinKnowledge) continue;
+    const nearby = _spatialQuery(s.tx, s.ty, 4, -1);
+    for (const h of nearby) {
+      if (!h.alive) continue;
+      h.knowledge = Math.min(99999, h.knowledge + s._ruinKnowledge * 0.1);
+      if (Math.random() < 0.02) {
+        addWorldEvent(`🔍 ${h.name.split(' ')[0]} explora las ${s.label} — descubre ${Math.round(s._ruinKnowledge * 0.1)} pts de conocimiento perdido`);
+      }
+    }
+  }
+}
+
+// ── 11. CANAL DE TV / PROGRAMA ESTRELLA ──────────────────────────────────────
+// Civs con TV crean programas que influyen en la ideología y social de la población
+const _tvShows = new Map(); // civId → {name, type, rating, yearsRunning}
+const TV_SHOW_TYPES = [
+  { name: 'El Gran Debate', type: 'politico', effect: 'honor', icon: '🎙️' },
+  { name: 'Guerreros de la Arena', type: 'combate', effect: 'aggression', icon: '⚔️' },
+  { name: 'La Voz del Pueblo', type: 'social', effect: 'social', icon: '🎤' },
+  { name: 'Misterios del Cosmos', type: 'ciencia', effect: 'knowledge', icon: '🔭' },
+  { name: 'El Imperio Culinario', type: 'cultura', effect: 'hunger', icon: '🍖' },
+  { name: 'Noticias de la Nación', type: 'noticias', effect: 'honor', icon: '📺' },
+  { name: 'Historias de Guerra', type: 'drama', effect: 'aggression', icon: '🎬' },
+  { name: 'El Sabio y el Rey', type: 'educativo', effect: 'knowledge', icon: '📚' },
+];
+let _tvTimer = 0;
+function tickTVChannel(yearsElapsed) {
+  _tvTimer += yearsElapsed;
+  if (_tvTimer < 18) return;
+  _tvTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (!civ._hasTvStation || civ.population < 5) continue;
+    // Create a show if none exists
+    if (!_tvShows.has(civ.id)) {
+      const show = TV_SHOW_TYPES[Math.floor(Math.random() * TV_SHOW_TYPES.length)];
+      _tvShows.set(civ.id, { ...show, rating: 50 + Math.floor(Math.random() * 30), yearsRunning: 0 });
+      addWorldEvent(`${show.icon} ${civ.name} estrena "${show.name}" — primer programa de televisión de la historia`);
+    }
+    const show = _tvShows.get(civ.id);
+    show.yearsRunning += yearsElapsed;
+    show.rating = Math.max(10, Math.min(100, show.rating + (Math.random() * 10 - 5)));
+    // Apply effect to all civ members
+    for (const id of civ.members) {
+      const h = _hById(id);
+      if (!h || !h.alive) continue;
+      const strength = (show.rating / 100) * 0.5;
+      if (show.effect === 'honor') civ.honor = Math.min(100, civ.honor + strength * 0.1);
+      else if (show.effect === 'social') h.social = Math.min(100, h.social + strength);
+      else if (show.effect === 'knowledge') h.knowledge = Math.min(99999, h.knowledge + strength * 0.5);
+      else if (show.effect === 'aggression') h.aggression = Math.min(1, h.aggression + strength * 0.005);
+      else if (show.effect === 'hunger') h.hunger = Math.min(100, h.hunger + strength * 0.3);
+    }
+    // Milestone events
+    if (Math.floor(show.yearsRunning) % 50 === 0 && show.yearsRunning > 0) {
+      addWorldEvent(`${show.icon} "${show.name}" de ${civ.name} cumple ${Math.floor(show.yearsRunning)} años al aire — rating ${Math.round(show.rating)}%`);
+    }
+    // Show can be cancelled if rating drops
+    if (show.rating < 15 && Math.random() < 0.3) {
+      const newShow = TV_SHOW_TYPES[Math.floor(Math.random() * TV_SHOW_TYPES.length)];
+      addWorldEvent(`📺 "${show.name}" de ${civ.name} es cancelado — estrenan "${newShow.name}"`);
+      _tvShows.set(civ.id, { ...newShow, rating: 40 + Math.floor(Math.random() * 20), yearsRunning: 0 });
+    }
+  }
+}
+
+// ── 12. EPIDEMIA DE IDEOLOGÍA ─────────────────────────────────────────────────
+// Ideas radicales se propagan como virus entre civs conectadas
+let _ideologyEpidemicTimer = 0;
+function tickIdeologyEpidemic(yearsElapsed) {
+  _ideologyEpidemicTimer += yearsElapsed;
+  if (_ideologyEpidemicTimer < 60) return;
+  _ideologyEpidemicTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.population < 8 || civ.allies.size === 0) continue;
+    if (Math.random() > 0.15) continue;
+    // Find the dominant ideology in this civ
+    let ideSum = 0, cnt = 0;
+    for (const id of civ.members) {
+      const h = _hById(id); if (h && h.alive) { ideSum += h.ideology; cnt++; }
+    }
+    const avgIde = cnt > 0 ? ideSum / cnt : 0.5;
+    const isRadical = avgIde < 0.2 || avgIde > 0.8;
+    if (!isRadical) continue;
+    // Spread to allies
+    for (const allyId of civ.allies) {
+      const ally = civilizations.get(allyId);
+      if (!ally || ally.population === 0) continue;
+      let spread = 0;
+      for (const id of ally.members) {
+        const h = _hById(id);
+        if (!h || !h.alive) continue;
+        if (Math.random() < 0.3) {
+          h.ideology = h.ideology * 0.7 + avgIde * 0.3;
+          spread++;
+        }
+      }
+      if (spread > 2) {
+        const label = avgIde < 0.2 ? 'autoritarismo' : 'radicalismo libertario';
+        addWorldEvent(`💭 Ideas de ${label} se propagan de ${civ.name} a ${ally.name} — ${spread} personas adoptan la nueva visión del mundo`);
+      }
+    }
+  }
+}
+
+// ── 13. JUEGOS FLORALES / POESÍA ──────────────────────────────────────────────
+// Civs con catedral/coliseo organizan concursos de poesía y arte
+let _poetryTimer = 0;
+function tickPoetryGames(yearsElapsed) {
+  _poetryTimer += yearsElapsed;
+  if (_poetryTimer < 75) return;
+  _poetryTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.population < 8) continue;
+    const hasVenue = structures.some(s => s.civId === civ.id && (s.type === 'colosseum' || s.type === 'cathedral' || s.type === 'amphitheater'));
+    if (!hasVenue || Math.random() > 0.2) continue;
+    // Find the most knowledgeable member as the winner
+    let poet = null, bestK = 0;
+    for (const id of civ.members) {
+      const h = _hById(id);
+      if (h && h.alive && h.knowledge > bestK) { bestK = h.knowledge; poet = h; }
+    }
+    if (!poet) continue;
+    poet.knowledge = Math.min(99999, poet.knowledge + 300);
+    poet.social = Math.min(100, poet.social + 30);
+    civ.honor = Math.min(100, civ.honor + 5);
+    for (const id of civ.members) {
+      const h = _hById(id); if (h && h.alive) h.social = Math.min(100, h.social + 8);
+    }
+    const poems = [
+      `"Oda a ${civ.name}"`, `"El río eterno"`, `"Canción de los guerreros"`,
+      `"Himno al sol"`, `"Elegía por los caídos"`, `"La ciudad que soñamos"`,
+    ];
+    const poem = poems[Math.floor(Math.random() * poems.length)];
+    addWorldEvent(`🌸 Juegos Florales en ${civ.name}: ${poet.name.split(' ')[0]} gana con ${poem} — ${civ.population} ciudadanos celebran el arte`);
+  }
+}
+
+// ── 14. MIGRACIÓN DE INVIERNO NUCLEAR ────────────────────────────────────────
+// Tras una guerra nuclear, el polvo bloquea el sol y todos migran
+let _nuclearWinterMigTimer = 0;
+function tickNuclearWinterMigration(yearsElapsed) {
+  _nuclearWinterMigTimer += yearsElapsed;
+  if (_nuclearWinterMigTimer < 20) return;
+  _nuclearWinterMigTimer = 0;
+  if (typeof _cachedAlive === 'undefined') return;
+  // Check if any nuclear silo was recently fired (proxy: look for very low population civs with nuclear_silo)
+  let nuclearActive = false;
+  for (const [, civ] of civilizations) {
+    if (civ.population < 3 && structures.some(s => s.civId === civ.id && s.type === 'nuclear_silo')) {
+      nuclearActive = true; break;
+    }
+  }
+  if (!nuclearActive) return;
+  // Mass migration away from radiation zones
+  let migrated = 0;
+  for (const h of _cachedAlive) {
+    if (!h.alive || migrated >= 8) break;
+    if (Math.random() > 0.05) continue;
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 40 + Math.floor(Math.random() * 60);
+    h.tx = Math.max(0, Math.min(WORLD_W - 1, h.tx + Math.round(Math.cos(angle) * dist)));
+    h.ty = Math.max(0, Math.min(WORLD_H - 1, h.ty + Math.round(Math.sin(angle) * dist)));
+    h.health = Math.max(10, h.health - 15);
+    migrated++;
+  }
+  if (migrated > 0 && Math.random() < 0.1) {
+    addWorldEvent(`☢️ Invierno nuclear: ${migrated} personas huyen de las zonas contaminadas — el cielo está oscuro`);
+  }
+}
+
+// ── 15. CANONIZACIÓN DE SANTOS ────────────────────────────────────────────────
+// Humanos muertos con alta reputación son canonizados por su civ
+const _saints = []; // {name, civName, year, reason}
+let _saintTimer = 0;
+function tickSainthood(yearsElapsed) {
+  _saintTimer += yearsElapsed;
+  if (_saintTimer < 90) return;
+  _saintTimer = 0;
+  if (typeof humans === 'undefined') return;
+  for (const h of humans) {
+    if (h.alive || h._canonized) continue;
+    if (!h.civId) continue;
+    const civ = civilizations.get(h.civId);
+    if (!civ || !civ.religion) continue;
+    // Qualify: high knowledge, many kills, or was a leader
+    const notable = h.knowledge > 3000 || h.kills >= 8 || h.isLeader;
+    if (!notable || Math.random() > 0.05) continue;
+    h._canonized = true;
+    const reason = h.kills >= 8 ? 'mártir de guerra' : h.isLeader ? 'líder venerado' : 'sabio iluminado';
+    _saints.push({ name: h.name, civName: civ.name, year, reason });
+    civ.honor = Math.min(100, civ.honor + 10);
+    for (const id of civ.members) {
+      const m = _hById(id); if (m && m.alive) m.social = Math.min(100, m.social + 10);
+    }
+    addWorldEvent(`✨ ${civ.name} canoniza a ${h.name.split(' ')[0]} como santo — ${reason}. Su nombre vivirá en la fe de ${civ.religion}.`);
+    addChronicle('culture', `San ${h.name.split(' ')[0]}`, `Murió como ${reason}. Pero en la memoria de ${civ.name}, nunca murió del todo. Los fieles de ${civ.religion} comenzaron a invocar su nombre en las oraciones.`, '✨');
+  }
+}
+
+// ── 16. CRISIS DE SUCESIÓN ────────────────────────────────────────────────────
+// Cuando un líder muere sin heredero claro, hay guerra civil breve
+let _successionTimer = 0;
+function tickSuccessionCrisis(yearsElapsed) {
+  _successionTimer += yearsElapsed;
+  if (_successionTimer < 25) return;
+  _successionTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.population < 5 || !civ.leaderId) continue;
+    const leader = _hById(civ.leaderId);
+    if (leader && leader.alive) continue; // leader still alive
+    // Leader is dead — find top 2 candidates
+    const candidates = [];
+    for (const id of civ.members) {
+      const h = _hById(id);
+      if (h && h.alive) candidates.push(h);
+    }
+    candidates.sort((a, b) => b.leaderScore - a.leaderScore);
+    if (candidates.length < 2) continue;
+    const winner = candidates[0], rival = candidates[1];
+    if (Math.random() < 0.4) {
+      // Crisis: brief civil war — rival loses health
+      rival.health = Math.max(10, rival.health - 30);
+      civ.honor = Math.max(0, civ.honor - 15);
+      for (const id of civ.members) {
+        const h = _hById(id); if (h && h.alive) h.social = Math.max(0, h.social - 20);
+      }
+      addWorldEvent(`⚡ Crisis de sucesión en ${civ.name}: ${winner.name.split(' ')[0]} y ${rival.name.split(' ')[0]} se disputan el poder — inestabilidad total`);
+    }
+    winner.isLeader = true;
+    civ.leaderId = winner.id;
+    addWorldEvent(`👑 ${winner.name.split(' ')[0]} asume el liderazgo de ${civ.name} tras la muerte del líder anterior`);
+  }
+}
+
+// ── 17. FERIA INTERNACIONAL ───────────────────────────────────────────────────
+// Civs aliadas organizan ferias donde intercambian inventos y cultura
+let _fairTimer = 0;
+function tickInternationalFair(yearsElapsed) {
+  _fairTimer += yearsElapsed;
+  if (_fairTimer < 85) return;
+  _fairTimer = 0;
+  const civList = [];
+  for (const [, civ] of civilizations) { if (civ.population >= 8 && civ.allies.size > 0) civList.push(civ); }
+  if (civList.length < 2) return;
+  const host = civList[Math.floor(Math.random() * civList.length)];
+  if (Math.random() > 0.2) return;
+  let participants = [host];
+  for (const allyId of host.allies) {
+    const ally = civilizations.get(allyId);
+    if (ally && ally.population > 0) participants.push(ally);
+  }
+  if (participants.length < 2) return;
+  // Share inventions between participants
+  const allInventions = new Set();
+  for (const p of participants) for (const inv of p.inventions) allInventions.add(inv);
+  for (const p of participants) {
+    for (const inv of allInventions) p.inventions.add(inv);
+    for (const id of p.members) {
+      const h = _hById(id); if (h && h.alive) h.knowledge = Math.min(99999, h.knowledge + 100);
+    }
+  }
+  const names = participants.map(p => p.name).join(', ');
+  addWorldEvent(`🎪 Feria Internacional en ${host.name} — participan ${names}. Se comparten ${allInventions.size} inventos y conocimientos.`);
+  addChronicle('culture', `La Gran Feria de ${host.name}`, `Por primera vez, ${participants.length} naciones se reunieron en paz. Artesanos, sabios y comerciantes llenaron las calles de ${host.name}. El mundo se hizo un poco más pequeño.`, '🎪');
+}
+
+// ── 18. HAMBRE DE GLORIA ──────────────────────────────────────────────────────
+// Humanos jóvenes con alta agresión buscan fama en combate voluntariamente
+let _gloryTimer = 0;
+function tickHungerForGlory(yearsElapsed) {
+  _gloryTimer += yearsElapsed;
+  if (_gloryTimer < 30) return;
+  _gloryTimer = 0;
+  if (typeof _cachedAlive === 'undefined') return;
+  for (const h of _cachedAlive) {
+    if (!h.alive || h.age > 35 || h.aggression < 0.7 || h.isSoldier) continue;
+    if (Math.random() > 0.05) continue;
+    const civ = h.civId ? civilizations.get(h.civId) : null;
+    if (!civ || civ.atWarWith.size === 0) continue;
+    // Volunteer as soldier
+    h.isSoldier = true;
+    h.weaponTier = Math.max(h.weaponTier, 1);
+    h._glorySeeker = true;
+    addWorldEvent(`⚡ ${h.name.split(' ')[0]} de ${civ.name} se alista voluntariamente — sed de gloria y combate a los ${Math.floor(h.age)} años`);
+  }
+}
+
+// ── 19. PLAGA DE LANGOSTAS BÍBLICA ───────────────────────────────────────────
+// Evento raro: plaga masiva que destruye todas las granjas de una región
+let _biblicalLocustTimer = 0;
+function tickBiblicalLocustPlague(yearsElapsed) {
+  _biblicalLocustTimer += yearsElapsed;
+  if (_biblicalLocustTimer < 200) return;
+  _biblicalLocustTimer = 0;
+  if (Math.random() > 0.15) return;
+  // Pick a random region of the map
+  const cx = Math.floor(Math.random() * WORLD_W);
+  const cy = Math.floor(Math.random() * WORLD_H);
+  const radius = 25 + Math.floor(Math.random() * 20);
+  let farmsDestroyed = 0;
+  for (let i = structures.length - 1; i >= 0; i--) {
+    const s = structures[i];
+    if (s.type !== 'farm' && s.type !== 'granary') continue;
+    const d = Math.hypot(s.tx - cx, s.ty - cy);
+    if (d > radius) continue;
+    if (structureGrid) structureGrid[s.ty * WORLD_W + s.tx] = null;
+    structures.splice(i, 1);
+    farmsDestroyed++;
+  }
+  if (farmsDestroyed === 0) return;
+  // Starve nearby humans
+  if (typeof _cachedAlive !== 'undefined') {
+    for (const h of _cachedAlive) {
+      if (!h.alive) continue;
+      const d = Math.hypot(h.tx - cx, h.ty - cy);
+      if (d > radius) continue;
+      h.inventory.food = Math.max(0, h.inventory.food - 15);
+      h.hunger = Math.max(0, h.hunger - 25);
+    }
+  }
+  // Find affected civs
+  const affectedCivs = new Set();
+  for (const [, civ] of civilizations) {
+    if (civ.cityCenter && Math.hypot(civ.cityCenter.tx - cx, civ.cityCenter.ty - cy) < radius + 20) {
+      affectedCivs.add(civ.name);
+    }
+  }
+  const civNames = [...affectedCivs].slice(0, 3).join(', ') || 'la región';
+  addWorldEvent(`🦗 PLAGA BÍBLICA: nube de langostas devasta ${civNames} — ${farmsDestroyed} granjas destruidas, hambruna inminente`);
+  addChronicle('disaster', 'La Gran Plaga de Langostas', `El cielo se oscureció. No era una nube — eran millones de langostas. En horas, los campos de ${civNames} quedaron arrasados. El hambre llegó antes de que nadie pudiera prepararse.`, '🦗');
+}
+
+// ── 20. LEGADO CULTURAL VIVO ──────────────────────────────────────────────────
+// Civs antiguas (>500 años) generan un "legado cultural" que influye en civs vecinas
+let _culturalLegacyLiveTimer = 0;
+function tickLivingCulturalLegacy(yearsElapsed) {
+  _culturalLegacyLiveTimer += yearsElapsed;
+  if (_culturalLegacyLiveTimer < 50) return;
+  _culturalLegacyLiveTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.population === 0) continue;
+    const age = year - civ.founded;
+    if (age < 300) continue;
+    const legacyStrength = Math.min(1, age / 1000);
+    // Influence nearby civs
+    for (const [, other] of civilizations) {
+      if (other.id === civ.id || other.population === 0) continue;
+      if (!civ.cityCenter || !other.cityCenter) continue;
+      const dist = Math.hypot(civ.cityCenter.tx - other.cityCenter.tx, civ.cityCenter.ty - other.cityCenter.ty);
+      if (dist > 80) continue;
+      // Share religion, boost knowledge
+      if (civ.religion && !other.religion && Math.random() < legacyStrength * 0.05) {
+        other.religion = civ.religion;
+        addWorldEvent(`🌍 La cultura de ${civ.name} (${Math.round(age)} años) influye en ${other.name} — adoptan la fe ${civ.religion}`);
+      }
+      for (const id of other.members) {
+        const h = _hById(id);
+        if (h && h.alive) h.knowledge = Math.min(99999, h.knowledge + legacyStrength * 0.5);
+      }
+    }
+    // Milestone chronicles
+    if (age === 500 || age === 1000 || age === 2000) {
+      const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+      addChronicle('culture', `${civ.name}: ${age} años de historia`, `${age} años. Guerras, pestes, renacimientos. ${civ.name} había sobrevivido todo. ${leader?.name.split(' ')[0]||'Su líder'} contempló el horizonte y supo que habría ${age} años más.`, '🌍');
+    }
+  }
+}
+
+// ── Registrar las nuevas mecánicas en tickAllFeatures ────────────────────────
+function tickNewFeatures(yearsElapsed) {
+  tickEspionage2(yearsElapsed);
+  tickGoldenAge(yearsElapsed);
+  tickMercenaries(yearsElapsed);
+  tickWarTrauma(yearsElapsed);
+  tickMediaSystem(yearsElapsed);
+  tickPoliticalAssassination(yearsElapsed);
+  tickOlympicGames(yearsElapsed);
+  tickWarRefugees(yearsElapsed);
+  tickCharismaticCult(yearsElapsed);
+  tickLongevityRecord(yearsElapsed);
+  tickTradeBlockade(yearsElapsed);
+  tickTechRace(yearsElapsed);
+  tickScholarExile(yearsElapsed);
+  tickMediaEpidemic(yearsElapsed);
+  tickPropaganda(yearsElapsed);
+  // Tanda 3
+  tickOverseasColonies(yearsElapsed);
+  tickLandHunger(yearsElapsed);
+  tickReligiousSyncretism(yearsElapsed);
+  tickItinerantArtisans(yearsElapsed);
+  tickCommonCurrency(yearsElapsed);
+  tickMilitaryDesertion(yearsElapsed);
+  tickUniversalLibrary(yearsElapsed);
+  tickPublicTrial(yearsElapsed);
+  tickClimateSeasonMigration(yearsElapsed);
+  tickWarTribute(yearsElapsed);
+  // Tanda 4
+  tickCemeteries(yearsElapsed);
+  tickBloodlineages(yearsElapsed);
+  tickHeresiesAndSchisms(yearsElapsed);
+  tickBlackMarkets(yearsElapsed);
+  tickWarMonuments(yearsElapsed);
+  tickCombatSchools(yearsElapsed);
+  tickPoliticalFamine(yearsElapsed);
+  tickLegendaryExplorers(yearsElapsed);
+  tickMatrimonialAlliances(yearsElapsed);
+  tickExtinctCivRuins(yearsElapsed);
+  tickTVChannel(yearsElapsed);
+  tickIdeologyEpidemic(yearsElapsed);
+  tickPoetryGames(yearsElapsed);
+  tickNuclearWinterMigration(yearsElapsed);
+  tickSainthood(yearsElapsed);
+  tickSuccessionCrisis(yearsElapsed);
+  tickInternationalFair(yearsElapsed);
+  tickHungerForGlory(yearsElapsed);
+  tickBiblicalLocustPlague(yearsElapsed);
+  tickLivingCulturalLegacy(yearsElapsed);
 }
