@@ -19,8 +19,8 @@ function tickSeasonalEpidemics(yearsElapsed) {
   if (_seasonalEpidemicTimer < 8) return;
   _seasonalEpidemicTimer = 0;
   // Invierno (_season===3): alta probabilidad de brote
-  if (_season === 3 && _cachedAlive.length > 10 && Math.random() < 0.35) {
-    if(activeOutbreaks.length < 12){ // cap outbreaks
+  if (_season === 3 && _cachedAlive.length > 10 && Math.random() < 0.15) {
+    if(activeOutbreaks.length < 6){ // cap outbreaks
     const host = _cachedAlive[Math.floor(Math.random() * _cachedAlive.length)];
     const coldDiseases = DISEASE_TYPES.filter(d => ['Fiebre','Tifus','Pestilencia'].includes(d.name));
     const dtype = coldDiseases[Math.floor(Math.random() * coldDiseases.length)];
@@ -29,8 +29,8 @@ function tickSeasonalEpidemics(yearsElapsed) {
     }
   }
   // Verano (_season===1): brotes de cólera/malaria en zonas húmedas
-  if (_season === 1 && _cachedAlive.length > 15 && Math.random() < 0.18) {
-    if(activeOutbreaks.length < 12){ // cap outbreaks
+  if (_season === 1 && _cachedAlive.length > 15 && Math.random() < 0.07) {
+    if(activeOutbreaks.length < 6){ // cap outbreaks
     const host = _cachedAlive[Math.floor(Math.random() * _cachedAlive.length)];
     const summerDiseases = DISEASE_TYPES.filter(d => ['Cólera','Malaria'].includes(d.name));
     const dtype = summerDiseases[Math.floor(Math.random() * summerDiseases.length)];
@@ -80,7 +80,7 @@ function tickEarthquakes(yearsElapsed) {
   for (const h of _cachedAlive) {
     const d = Math.hypot(h.tx - epicTx, h.ty - epicTy);
     if (d <= radius) {
-      h.health = Math.max(0, h.health - Math.floor((1 - d / radius) * 40));
+      h.health = Math.max(0, h.health - Math.floor((1 - d / radius) * 20));
       if (h.health <= 0) h._die('terremoto');
     }
   }
@@ -102,17 +102,18 @@ function tickLocusts(yearsElapsed) {
   if (_locustTimer < 30) return;
   _locustTimer = 0;
   if (typeof _season === 'undefined' || _season !== 1) return; // solo en verano
-  if (Math.random() > 0.15) return;
+  if (Math.random() > 0.07) return; // reduced from 0.15
   if (typeof structureGrid === 'undefined' || !structureGrid) return;
   const rng = mulberry32(WORLD_SEED ^ year ^ 0xA0CC);
   const epicTx = Math.floor(rng() * WORLD_W);
   const epicTy = Math.floor(rng() * WORLD_H);
-  const radius = 15 + Math.floor(rng() * 15);
+  const radius = 8 + Math.floor(rng() * 8); // reduced from 15+15
   let destroyed = 0;
   for (let i = structures.length - 1; i >= 0; i--) {
     const s = structures[i];
     if (s.type !== 'farm' && s.type !== 'granary') continue;
     if (Math.hypot(s.tx - epicTx, s.ty - epicTy) > radius) continue;
+    if (destroyed >= 4) break; // cap at 4 farms destroyed
     structureGrid[s.ty*WORLD_W+s.tx] = null;
     structures.splice(i, 1);
     destroyed++;
@@ -1260,8 +1261,8 @@ function tickFamine(yearsElapsed) {
     const foodPerCapita = foodStructures / civ.population;
     const inFamine = _famineState.has(civ.id);
     // Entrar en hambruna si hay muy poca comida por persona
-    if (!inFamine && foodPerCapita < 0.15 && civ.population > 8) {
-      const severity = Math.min(3, Math.floor(1 + (0.15 - foodPerCapita) * 20));
+    if (!inFamine && foodPerCapita < 0.08 && civ.population > 10) {
+      const severity = Math.min(2, Math.floor(1 + (0.08 - foodPerCapita) * 20));
       _famineState.set(civ.id, { yearsLeft: 30 + severity * 20, severity });
       addMajorEvent(`🍂 ¡HAMBRUNA en ${civ.name}! Severidad ${severity}/3 — ${civ.population} bocas, solo ${foodStructures} fuentes de comida`);
       addChronicle('famine',`Hambruna en ${civ.name}`,`Con ${civ.population} bocas que alimentar y apenas ${foodStructures} fuentes de comida, ${civ.name} entró en una espiral de desesperación. Los más débiles cayeron primero. Los demás miraron al horizonte buscando salvación.`,'🍂');
@@ -1277,11 +1278,11 @@ function tickFamine(yearsElapsed) {
       const h = _hById(id);
       if (!h || !h.alive) continue;
       // Pérdida de salud y hambre
-      h.hunger = Math.max(0, h.hunger - famine.severity * 8);
-      h.health = Math.max(0, h.health - famine.severity * 3);
+      h.hunger = Math.max(0, h.hunger - famine.severity * 3);
+      h.health = Math.max(0, h.health - famine.severity * 1);
       if (h.health <= 0) { h._die('hambruna'); deaths++; continue; }
       // Migración: los más débiles huyen a otras tierras
-      if (h.hunger < 20 && !h.isLeader && Math.random() < 0.15) {
+      if (h.hunger < 20 && !h.isLeader && Math.random() < 0.06) {
         civ.removeMember(h.id);
         h.civId = null;
         h.action = ACTIONS.MIGRATE;
@@ -1388,7 +1389,7 @@ function _tickMegacityPollution(yearsElapsed) {
     const zx = cx * 20 + 10, zy = cy * 20 + 10;
     for (const h of _cachedAlive) {
       if (Math.hypot(h.tx - zx, h.ty - zy) > 20) continue;
-      h.health = Math.max(0, h.health - yearsElapsed * count * 0.5);
+      h.health = Math.max(0, h.health - yearsElapsed * count * 0.15);
       if (h.health <= 0) h._die('contaminación');
     }
   }
@@ -1536,7 +1537,7 @@ function tickGlobalPandemic(yearsElapsed) {
     phase: 'incubacion',
     civIds: new Set([originCiv.id]),
     yearsInPhase: 0,
-    mortality: 2 + Math.random() * 4,
+    mortality: 1 + Math.random() * 2,
     spread: 0.3 + Math.random() * 0.4,
   };
   _activePandemics.push(pandemic);
@@ -1661,7 +1662,7 @@ function tickDarkAgeRenaissance(yearsElapsed) {
           for (const id of civ.members) {
             const h = _hById(id);
             if (!h || !h.alive) continue;
-            h.knowledge = Math.max(10, Math.floor(h.knowledge * 0.4));
+            h.knowledge = Math.max(10, Math.floor(h.knowledge * 0.7)); // was 0.4 — less brutal
           }
           // Degradar algunas estructuras
           let degraded = 0;
