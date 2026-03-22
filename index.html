@@ -9,7 +9,7 @@
 <body>
   <canvas id="world"></canvas>
 
-  <!-- HUD top-center -->
+  <!-- HUD top bar — single row -->
   <div id="hud">
     <div id="time-display">
       <span id="year-label">Año 1</span>
@@ -20,23 +20,35 @@
       <span id="intel-label" style="color:#adf">🧠 100%</span>
       <span id="season-label" style="color:#aaffaa">🌸 Primavera</span>
     </div>
+
     <div id="speed-controls">
       <button id="btn-pause">⏸</button>
       <button id="btn-1x" class="active">1x</button>
       <button id="btn-5x">5x</button>
       <button id="btn-20x">20x</button>
       <button id="btn-100x">100x</button>
-      <button id="btn-500x">MAX MODE</button>
-      <button id="btn-follow" title="Seguir humano automáticamente">👁 Seguir</button>
-      <button id="btn-history" title="Crónica del mundo">📜</button>
+      <button id="btn-500x">MAX</button>
+      <button id="btn-follow" title="Seguir humano">👁 Seguir</button>
+      <button id="btn-history" title="Crónica">📜</button>
+    </div>
+
+    <!-- Intel slider inline -->
+    <div id="intel-slider-bar">
+      <span>🧠</span>
+      <span style="color:#556;font-size:0.65rem;letter-spacing:1px">INTEL</span>
+      <span style="color:#f84;font-size:0.65rem">▼</span>
+      <input id="intel-slider" type="range" min="-80" max="80" value="0" step="1"
+        oninput="if(typeof _userIntelBias!=='undefined'){_userIntelBias=this.value/100;document.getElementById('intel-slider-val').textContent=Math.round((1.2+_userIntelBias)*100)+'%';}"/>
+      <span style="color:#4ff;font-size:0.65rem">▲</span>
+      <span id="intel-slider-val" style="color:#a8f;min-width:32px;font-size:0.72rem;font-family:monospace">120%</span>
     </div>
   </div>
 
   <!-- Left panel: social stats -->
   <div id="stats-panel">
     <div id="stats-title">
-      📊 Estadísticas Sociales
-      <button onclick="_toggleStatsPanel()" id="stats-toggle" style="margin-left:auto;background:none;border:none;color:#556;cursor:pointer;font-size:14px;padding:0 2px" title="Colapsar">◀</button>
+      <span id="stats-title-text">📊 Estadísticas</span>
+      <button onclick="_toggleStatsPanel()" id="stats-toggle" title="Colapsar">◀</button>
     </div>
     <div id="stats-content"></div>
   </div>
@@ -48,10 +60,11 @@
   </div>
 
   <!-- History / Chronicle panel -->
-  <div id="history-panel" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:540px;max-width:96vw;max-height:80vh;background:rgba(6,12,28,0.97);color:#dde;border-radius:12px;padding:18px 20px;font-size:12px;font-family:monospace;border:1px solid rgba(100,160,255,0.3);z-index:200;overflow-y:auto;">
+  <div id="history-panel" style="display:none;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <span style="color:#adf;font-size:15px;font-weight:bold">📜 Crónica del Mundo</span>
-      <button onclick="document.getElementById('history-panel').style.display='none'" style="background:rgba(255,80,80,0.2);border:1px solid rgba(255,80,80,0.4);color:#faa;border-radius:5px;padding:3px 10px;cursor:pointer">✕</button>
+      <span style="color:#adf;font-size:14px;font-weight:bold">📜 Crónica del Mundo</span>
+      <button onclick="document.getElementById('history-panel').style.display='none'"
+        style="background:rgba(255,80,80,0.15);border:1px solid rgba(255,80,80,0.3);color:#faa;border-radius:5px;padding:3px 10px;cursor:pointer;font-family:monospace">✕</button>
     </div>
     <div id="history-content" style="line-height:1.7"></div>
   </div>
@@ -60,22 +73,11 @@
     <h2>🌍 Simulación de Civilización</h2>
     <div>Dos humanos aparecen en el mundo.<br>
     Tienen una <b>red neuronal</b> que aprende a sobrevivir.<br><br>
-    🖱️ <b>Rueda</b> para hacer zoom · <b>Arrastrar</b> para mover<br>
+    🖱️ <b>Rueda</b> para zoom · <b>Arrastrar</b> para mover<br>
     👆 <b>Click</b> en un humano para ver sus stats<br>
-    👁 <b>Seguir</b> para seguir automáticamente a un humano<br>
-    🏛 Los territorios se muestran con colores por civilización<br>
-    🧠 La curva de inteligencia sube y baja creando eras doradas</div>
+    👁 <b>Seguir</b> para seguir a un humano automáticamente<br>
+    📡 <b>Noticias</b> aparece cuando hay medios de comunicación</div>
     <button onclick="document.getElementById('intro-tip').style.display='none'">Comenzar →</button>
-  </div>
-
-  <!-- Intelligence slider — bottom center -->
-  <div id="intel-slider-bar" style="position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:rgba(6,12,28,0.82);border:1px solid rgba(100,160,255,0.22);border-radius:20px;padding:6px 16px;z-index:150;user-select:none;backdrop-filter:blur(4px);">
-    <span style="font-size:13px">🧠</span>
-    <span style="font-size:10px;color:#778;letter-spacing:1px;white-space:nowrap">INTELIGENCIA</span>
-    <span style="font-size:10px;color:#f84;white-space:nowrap">Baja</span>
-    <input id="intel-slider" type="range" min="-80" max="80" value="0" step="1" style="width:180px;accent-color:#a8f;cursor:pointer;" oninput="if(typeof _userIntelBias!=='undefined'){_userIntelBias=this.value/100;document.getElementById('intel-slider-val').textContent=Math.round((1.2+_userIntelBias)*100)+'%';}"/>
-    <span style="font-size:10px;color:#4ff;white-space:nowrap">Alta</span>
-    <span id="intel-slider-val" style="font-size:11px;color:#a8f;min-width:36px;text-align:right;font-family:monospace">120%</span>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/simplex-noise@2.4.0/simplex-noise.js"></script>
