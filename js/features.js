@@ -4159,6 +4159,377 @@ function tickPropaganda(yearsElapsed) {
   }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// NUEVAS MECÁNICAS — TANDA 3
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 1. COLONIAS ULTRAMARINAS — civs con astillero/puerto fundan colonias en islas lejanas
+let _colonialTimer = 0;
+function tickOverseasColonies(yearsElapsed) {
+  _colonialTimer += yearsElapsed;
+  if (_colonialTimer < 80) return;
+  _colonialTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.population < 8) continue;
+    const hasPort = structures.some(s => s.civId === civ.id && (s.type === 'shipyard' || s.type === 'harbor'));
+    if (!hasPort) continue;
+    if (Math.random() > 0.3) continue;
+    // Find a member with a boat
+    let colonist = null;
+    for (const id of civ.members) {
+      const h = _hById(id);
+      if (h && h.alive && h.transportTier >= 1) { colonist = h; break; }
+    }
+    if (!colonist) continue;
+    // Find a distant land tile not claimed by any civ
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 70 + Math.floor(Math.random() * 80);
+    let destTx = Math.max(0, Math.min(WORLD_W - 1, colonist.tx + Math.round(Math.cos(angle) * dist)));
+    let destTy = Math.max(0, Math.min(WORLD_H - 1, colonist.ty + Math.round(Math.sin(angle) * dist)));
+    // Find nearest land
+    let found = false;
+    for (let r = 0; r <= 20 && !found; r++) {
+      for (let a = 0; a < 8 && !found; a++) {
+        const lx = destTx + Math.round(Math.cos(a / 8 * Math.PI * 2) * r);
+        const ly = destTy + Math.round(Math.sin(a / 8 * Math.PI * 2) * r);
+        if (typeof isLand !== 'undefined' && isLand(lx, ly)) {
+          // Check no civ already there
+          let occupied = false;
+          for (const [, other] of civilizations) {
+            if (other.territory.has(`${lx},${ly}`)) { occupied = true; break; }
+          }
+          if (!occupied) { destTx = lx; destTy = ly; found = true; }
+        }
+      }
+    }
+    if (!found) continue;
+    // Send colonist there
+    colonist.tx = destTx; colonist.ty = destTy;
+    colonist.px = destTx * TILE + TILE / 2; colonist.py = destTy * TILE + TILE / 2;
+    colonist._settleTx = destTx; colonist._settleTy = destTy;
+    if (civ.cityCenter) {
+      // Create a secondary city center for the colony
+      civ._colonyCenter = { tx: destTx, ty: destTy };
+    }
+    const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+    const lname = leader ? leader.name.split(' ')[0] : civ.name;
+    addWorldEvent(`⛵ ${colonist.name.split(' ')[0]} zarpa desde ${civ.name} por orden de ${lname} — funda colonia a ${Math.round(dist)} leguas`);
+    addChronicle('culture', `${civ.name} cruza el océano`, `${colonist.name.split(' ')[0]} y sus compañeros dejaron atrás todo lo conocido. En tierras lejanas plantaron la bandera de ${civ.name}. Una nueva historia comenzaba.`, '⛵');
+  }
+}
+
+// 2. HAMBRE DE TIERRAS — civs superpobladas invaden vecinos solo por territorio
+let _landHungerTimer = 0;
+function tickLandHunger(yearsElapsed) {
+  _landHungerTimer += yearsElapsed;
+  if (_landHungerTimer < 50) return;
+  _landHungerTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.population < 15 || civ.atWarWith.size > 0) continue;
+    // Check if territory is small relative to population
+    const density = civ.population / Math.max(1, civ.territory.size);
+    if (density < 0.8) continue; // not overcrowded
+    if (Math.random() > 0.2) continue;
+    // Find a neighbor with more territory
+    let target = null, bestScore = 0;
+    for (const [, other] of civilizations) {
+      if (other.id === civ.id || other.population === 0) continue;
+      if (civ.allies.has(other.id)) continue;
+      const score = other.territory.size - civ.territory.size;
+      if (score > 10 && score > bestScore) { bestScore = score; target = other; }
+    }
+    if (!target) continue;
+    civ.enemies.add(target.id);
+    target.enemies.add(civ.id);
+    civ.allies.delete(target.id);
+    target.allies.delete(civ.id);
+    civ.atWarWith.set(target.id, { startYear: year, tributePaid: false });
+    const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+    const lname = leader ? leader.name.split(' ')[0] : civ.name;
+    addWorldEvent(`🗺️ ${lname} de ${civ.name} declara guerra de expansión contra ${target.name} — necesitan más tierras para ${civ.population} habitantes`);
+  }
+}
+
+// 3. SINCRETISMO RELIGIOSO — dos civs aliadas fusionan sus religiones
+let _syncretismTimer = 0;
+function tickReligiousSyncretism(yearsElapsed) {
+  _syncretismTimer += yearsElapsed;
+  if (_syncretismTimer < 120) return;
+  _syncretismTimer = 0;
+  const civList = [];
+  for (const [, civ] of civilizations) { if (civ.population > 5 && civ.religion) civList.push(civ); }
+  if (civList.length < 2) return;
+  for (const civ of civList) {
+    if (!civ.religion || Math.random() > 0.15) continue;
+    for (const allyId of civ.allies) {
+      const ally = civilizations.get(allyId);
+      if (!ally || !ally.religion || ally.religion === civ.religion) continue;
+      // Merge religions
+      const prefixes = ['Neo', 'Gran', 'Nuevo', 'Eterno', 'Sagrado'];
+      const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+      const newReligion = `${prefix} ${civ.religion.split(' ').pop()}`;
+      const oldA = civ.religion, oldB = ally.religion;
+      civ.religion = newReligion;
+      ally.religion = newReligion;
+      // Boost social of both civs
+      for (const id of civ.members) { const h = _hById(id); if (h && h.alive) h.social = Math.min(100, h.social + 15); }
+      for (const id of ally.members) { const h = _hById(id); if (h && h.alive) h.social = Math.min(100, h.social + 15); }
+      addWorldEvent(`🛕 ${civ.name} y ${ally.name} fusionan sus fe: nace el ${newReligion} — unión de ${oldA} y ${oldB}`);
+      addChronicle('culture', `Nace el ${newReligion}`, `Los sacerdotes de ${civ.name} y ${ally.name} se reunieron durante siete días. Cuando salieron, anunciaron una nueva fe: el ${newReligion}. Millones abrazaron la nueva doctrina.`, '🛕');
+      break;
+    }
+  }
+}
+
+// 4. ARTESANOS ITINERANTES — humanos sin civ viajan vendiendo recursos y conocimiento
+let _artisanTimer = 0;
+function tickItinerantArtisans(yearsElapsed) {
+  _artisanTimer += yearsElapsed;
+  if (_artisanTimer < 30) return;
+  _artisanTimer = 0;
+  if (typeof _cachedAlive === 'undefined') return;
+  // Find humans without civ who have knowledge > 200
+  const artisans = _cachedAlive.filter(h => h.alive && !h.civId && h.knowledge > 200);
+  for (const artisan of artisans.slice(0, 3)) {
+    // Find nearest civ member to trade with
+    const nearby = _spatialQuery(artisan.tx, artisan.ty, 20, artisan.id);
+    const partner = nearby.find(h => h.civId && h.alive);
+    if (!partner) continue;
+    const civ = civilizations.get(partner.civId);
+    if (!civ) continue;
+    // Trade: artisan gives knowledge, receives food
+    const kTransfer = Math.min(artisan.knowledge * 0.05, 50);
+    partner.knowledge = Math.min(99999, partner.knowledge + kTransfer);
+    artisan.inventory.food = Math.min(artisan.inventory.food + 8, 50);
+    artisan.knowledge = Math.min(99999, artisan.knowledge + 2);
+    if (Math.random() < 0.08) {
+      addWorldEvent(`🧳 ${artisan.name.split(' ')[0]}, artesano errante, llega a ${civ.name} — comparte ${Math.round(kTransfer)} pts de conocimiento a cambio de comida`);
+    }
+  }
+}
+
+// 5. MONEDA COMÚN — civs aliadas adoptan moneda compartida, boost comercial
+let _currencyTimer = 0;
+const _sharedCurrencies = new Map(); // civId → currencyName
+function tickCommonCurrency(yearsElapsed) {
+  _currencyTimer += yearsElapsed;
+  if (_currencyTimer < 100) return;
+  _currencyTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.population < 10 || civ.allies.size === 0) continue;
+    if (_sharedCurrencies.has(civ.id)) continue;
+    // Need market + enough knowledge
+    const hasMarket = structures.some(s => s.civId === civ.id && s.type === 'market');
+    if (!hasMarket || civ.techLevel < 2) continue;
+    if (Math.random() > 0.2) continue;
+    for (const allyId of civ.allies) {
+      const ally = civilizations.get(allyId);
+      if (!ally || _sharedCurrencies.has(allyId)) continue;
+      const allyMarket = structures.some(s => s.civId === allyId && s.type === 'market');
+      if (!allyMarket) continue;
+      // Create shared currency
+      const metals = ['Áureo', 'Denario', 'Tálero', 'Dracma', 'Sestercio', 'Florín'];
+      const currencyName = metals[Math.floor(Math.random() * metals.length)];
+      _sharedCurrencies.set(civ.id, currencyName);
+      _sharedCurrencies.set(allyId, currencyName);
+      // Boost wealth of all members
+      for (const id of civ.members) { const h = _hById(id); if (h && h.alive) h.wealth = (h.wealth || 0) + 20; }
+      for (const id of ally.members) { const h = _hById(id); if (h && h.alive) h.wealth = (h.wealth || 0) + 20; }
+      // Add trade route if not exists
+      if (!civ.tradePartners.has(allyId)) {
+        civ.tradePartners.add(allyId);
+        ally.tradePartners.add(civ.id);
+        _tradeRoutes.push({ civA: civ.id, civB: allyId, established: year, active: true });
+      }
+      addWorldEvent(`💰 ${civ.name} y ${ally.name} adoptan el ${currencyName} como moneda común — comercio unificado`);
+      addChronicle('science', `El ${currencyName}: moneda de dos naciones`, `Por primera vez en la historia, ${civ.name} y ${ally.name} acordaron usar la misma moneda. Los mercaderes celebraron. Los reyes firmaron. El ${currencyName} comenzó a circular.`, '💰');
+      break;
+    }
+  }
+}
+
+// 6. DESERCIÓN MILITAR — soldados con trauma alto desertan y se vuelven bandidos
+let _desertionTimer = 0;
+function tickMilitaryDesertion(yearsElapsed) {
+  _desertionTimer += yearsElapsed;
+  if (_desertionTimer < 40) return;
+  _desertionTimer = 0;
+  if (typeof _cachedAlive === 'undefined') return;
+  for (const h of _cachedAlive) {
+    if (!h.alive || !h.isSoldier || !h.civId) continue;
+    const trauma = h._warTrauma || 0;
+    if (trauma < 60) continue;
+    if (Math.random() > 0.05) continue;
+    const civ = civilizations.get(h.civId);
+    if (!civ) continue;
+    // Deserter leaves civ
+    civ.removeMember(h.id);
+    h.civId = null;
+    h.isSoldier = false;
+    h.aggression = Math.min(1, h.aggression + 0.3);
+    h._warTrauma = Math.max(0, trauma - 20);
+    // Wander far away
+    h._wanderAngle = Math.random() * Math.PI * 2;
+    const dist = 30 + Math.floor(Math.random() * 40);
+    h.tx = Math.max(0, Math.min(WORLD_W - 1, h.tx + Math.round(Math.cos(h._wanderAngle) * dist)));
+    h.ty = Math.max(0, Math.min(WORLD_H - 1, h.ty + Math.round(Math.sin(h._wanderAngle) * dist)));
+    addWorldEvent(`🏃 ${h.name.split(' ')[0]} deserta de ${civ.name} — trauma de guerra ${Math.round(trauma)}%, se convierte en bandido errante`);
+  }
+}
+
+// 7. BIBLIOTECA UNIVERSAL — civ con universidad+biblioteca+observatorio crea repositorio del saber
+let _universalLibTimer = 0;
+const _universalLibCivs = new Set();
+function tickUniversalLibrary(yearsElapsed) {
+  _universalLibTimer += yearsElapsed;
+  if (_universalLibTimer < 150) return;
+  _universalLibTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (_universalLibCivs.has(civ.id) || civ.population < 10) continue;
+    const hasUni = structures.some(s => s.civId === civ.id && s.type === 'university');
+    const hasLib = structures.some(s => s.civId === civ.id && s.type === 'library');
+    const hasObs = structures.some(s => s.civId === civ.id && s.type === 'observatory');
+    if (!hasUni || !hasLib || !hasObs) continue;
+    const avgK = civ.avgKnowledge || 0;
+    if (avgK < 3000) continue;
+    _universalLibCivs.add(civ.id);
+    // Massive knowledge boost to all members
+    for (const id of civ.members) {
+      const h = _hById(id);
+      if (h && h.alive) h.knowledge = Math.min(99999, h.knowledge + 500);
+    }
+    // Share with allies
+    for (const allyId of civ.allies) {
+      const ally = civilizations.get(allyId);
+      if (!ally) continue;
+      for (const id of ally.members) {
+        const h = _hById(id);
+        if (h && h.alive) h.knowledge = Math.min(99999, h.knowledge + 150);
+      }
+    }
+    const leader = civ.leaderId ? _hById(civ.leaderId) : null;
+    const lname = leader ? leader.name.split(' ')[0] : civ.name;
+    addWorldEvent(`📖 ${lname} inaugura la Biblioteca Universal de ${civ.name} — todo el conocimiento humano en un solo lugar`);
+    addChronicle('science', `La Biblioteca Universal de ${civ.name}`, `${lname} reunió a los sabios de ${civ.name} durante años. Cuando las puertas de la Biblioteca Universal se abrieron, contenía el saber de generaciones. Nada igual había existido jamás.`, '📖');
+  }
+}
+
+// 8. JUICIO PÚBLICO — líderes con honor muy bajo son juzgados y pueden ser depuestos
+let _trialTimer = 0;
+function tickPublicTrial(yearsElapsed) {
+  _trialTimer += yearsElapsed;
+  if (_trialTimer < 60) return;
+  _trialTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.population < 6 || !civ.leaderId) continue;
+    if (civ.honor > 20) continue; // only very low honor triggers trial
+    if (Math.random() > 0.25) continue;
+    const leader = _hById(civ.leaderId);
+    if (!leader || !leader.alive) continue;
+    // Find a challenger (highest leaderScore non-leader)
+    let challenger = null, bestScore = 0;
+    for (const id of civ.members) {
+      const h = _hById(id);
+      if (!h || !h.alive || h.id === civ.leaderId) continue;
+      if (h.leaderScore > bestScore) { bestScore = h.leaderScore; challenger = h; }
+    }
+    if (!challenger) continue;
+    const outcome = Math.random();
+    if (outcome < 0.5) {
+      // Leader deposed
+      leader.isLeader = false;
+      challenger.isLeader = true;
+      civ.leaderId = challenger.id;
+      civ.honor = Math.min(100, civ.honor + 25);
+      addWorldEvent(`⚖️ Juicio en ${civ.name}: ${leader.name.split(' ')[0]} es depuesto por el pueblo — ${challenger.name.split(' ')[0]} asume el poder`);
+      addChronicle('politics', `La caída de ${leader.name.split(' ')[0]}`, `El pueblo de ${civ.name} se hartó. En una asamblea histórica, ${leader.name.split(' ')[0]} fue juzgado y depuesto. ${challenger.name.split(' ')[0]} prometió un nuevo comienzo.`, '⚖️');
+    } else {
+      // Leader survives but weakened
+      civ.honor = Math.max(0, civ.honor - 5);
+      addWorldEvent(`⚖️ ${leader.name.split(' ')[0]} de ${civ.name} sobrevive el juicio popular — pero su autoridad queda debilitada`);
+    }
+  }
+}
+
+// 9. MIGRACIÓN CLIMÁTICA INVERSA — en verano, humanos buscan zonas más frescas
+let _climMigTimer = 0;
+function tickClimateSeasonMigration(yearsElapsed) {
+  _climMigTimer += yearsElapsed;
+  if (_climMigTimer < 25) return;
+  _climMigTimer = 0;
+  if (typeof _cachedAlive === 'undefined') return;
+  // Only trigger in summer (season ~0.5 = peak summer)
+  const globalSeason = typeof season !== 'undefined' ? season : 0;
+  const isSummer = Math.sin(globalSeason * Math.PI * 2) > 0.7;
+  const isWinter = Math.sin(globalSeason * Math.PI * 2) < -0.7;
+  if (!isSummer && !isWinter) return;
+  let migrated = 0;
+  for (const h of _cachedAlive) {
+    if (!h.alive || migrated >= 5) break;
+    if (Math.random() > 0.03) continue;
+    const cell = typeof getCell !== 'undefined' ? getCell(h.tx, h.ty) : null;
+    if (!cell) continue;
+    // In summer: desert/savanna humans move north (lower ty = cooler)
+    if (isSummer && ['desert', 'savanna', 'dry_grass'].includes(cell.biome)) {
+      const newTy = Math.max(5, h.ty - 20 - Math.floor(Math.random() * 20));
+      h.ty = newTy; h.py = newTy * TILE + TILE / 2;
+      migrated++;
+      if (Math.random() < 0.1) addWorldEvent(`☀️ ${h.name.split(' ')[0]} huye del calor del desierto hacia el norte — migración estival`);
+    }
+    // In winter: tundra/snow humans move south (higher ty = warmer)
+    if (isWinter && ['tundra', 'snow', 'taiga'].includes(cell.biome)) {
+      const newTy = Math.min(WORLD_H - 5, h.ty + 20 + Math.floor(Math.random() * 20));
+      h.ty = newTy; h.py = newTy * TILE + TILE / 2;
+      migrated++;
+      if (Math.random() < 0.1) addWorldEvent(`❄️ ${h.name.split(' ')[0]} abandona la tundra helada — migración invernal hacia el sur`);
+    }
+  }
+}
+
+// 10. TRIBUTO DE GUERRA — civs derrotadas pagan tributo en recursos al vencedor
+let _tributeTimer = 0;
+function tickWarTribute(yearsElapsed) {
+  _tributeTimer += yearsElapsed;
+  if (_tributeTimer < 55) return;
+  _tributeTimer = 0;
+  for (const [, civ] of civilizations) {
+    if (civ.atWarWith.size === 0 || civ.population < 5) continue;
+    for (const [enemyId, warData] of civ.atWarWith) {
+      if (warData.tributePaid) continue;
+      const enemy = civilizations.get(enemyId);
+      if (!enemy || enemy.population === 0) continue;
+      // Check if one side is clearly losing (less than 40% of enemy population)
+      if (civ.population * 2.5 > enemy.population) continue; // civ is not losing badly
+      if (Math.random() > 0.15) continue;
+      // Losing civ pays tribute
+      const tributeFood = Math.floor(civ.population * 3);
+      const tributeK = Math.floor((civ.avgKnowledge || 0) * 0.05);
+      // Transfer food from losing civ members to winning civ members
+      let collected = 0;
+      for (const id of civ.members) {
+        const h = _hById(id);
+        if (!h || !h.alive) continue;
+        const give = Math.min(h.inventory.food, Math.ceil(tributeFood / Math.max(1, civ.population)));
+        h.inventory.food -= give;
+        collected += give;
+      }
+      for (const id of enemy.members) {
+        const h = _hById(id);
+        if (!h || !h.alive) continue;
+        h.inventory.food += Math.floor(collected / Math.max(1, enemy.population));
+        h.knowledge = Math.min(99999, h.knowledge + tributeK * 0.1);
+      }
+      warData.tributePaid = true;
+      enemy.honor = Math.min(100, enemy.honor + 5);
+      const civLeader = civ.leaderId ? _hById(civ.leaderId) : null;
+      const enemyLeader = enemy.leaderId ? _hById(enemy.leaderId) : null;
+      const cl = civLeader ? civLeader.name.split(' ')[0] : civ.name;
+      const el = enemyLeader ? enemyLeader.name.split(' ')[0] : enemy.name;
+      addWorldEvent(`💸 ${cl} de ${civ.name} paga tributo a ${el} de ${enemy.name} — ${collected} unidades de comida como precio de la derrota`);
+    }
+  }
+}
+
 // ── Registrar las nuevas mecánicas en tickAllFeatures ────────────────────────
 function tickNewFeatures(yearsElapsed) {
   tickEspionage2(yearsElapsed);
@@ -4176,6 +4547,17 @@ function tickNewFeatures(yearsElapsed) {
   tickScholarExile(yearsElapsed);
   tickMediaEpidemic(yearsElapsed);
   tickPropaganda(yearsElapsed);
+  // Tanda 3
+  tickOverseasColonies(yearsElapsed);
+  tickLandHunger(yearsElapsed);
+  tickReligiousSyncretism(yearsElapsed);
+  tickItinerantArtisans(yearsElapsed);
+  tickCommonCurrency(yearsElapsed);
+  tickMilitaryDesertion(yearsElapsed);
+  tickUniversalLibrary(yearsElapsed);
+  tickPublicTrial(yearsElapsed);
+  tickClimateSeasonMigration(yearsElapsed);
+  tickWarTribute(yearsElapsed);
 }
 
 // ── SISTEMA DE MEDIOS DE COMUNICACIÓN ────────────────────────────────────────
