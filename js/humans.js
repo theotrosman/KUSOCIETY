@@ -342,7 +342,7 @@ function getOrCreateCiv(founder){
 }
 
 // ── Social phases ─────────────────────────────────────────────────────────────
-function getSocialPhase(){ return year>=600?'division':'survival'; }
+function getSocialPhase(){ return year>=1200?'division':'survival'; }
 
 // ── Seasons ───────────────────────────────────────────────────────────────────
 let _season=0;        // 0=Primavera 1=Verano 2=Otoño 3=Invierno
@@ -352,7 +352,7 @@ const SEASON_NAMES=['Primavera','Verano','Otoño','Invierno'];
 const SEASON_ICONS=['🌸','☀️','🍂','❄️'];
 const SEASON_FOOD_MOD=[1.0, 1.3, 0.9, 0.5];   // food gather multiplier
 const SEASON_SPEED_MOD=[1.0, 1.1, 1.0, 0.75];  // movement speed multiplier
-const SEASON_HEALTH_MOD=[0, 0.5, 0, -1.5];     // health delta per year
+const SEASON_HEALTH_MOD=[0, 0.3, 0, -0.5];     // health delta per year (was -1.5 winter — too deadly)
 
 function tickSeasons(yearsElapsed){
   _seasonTimer+=yearsElapsed;
@@ -1551,9 +1551,9 @@ class Human{
     }
 
     // Stat decay
-    this.hunger=Math.max(0,this.hunger-yearsElapsed*4);
-    this.energy=Math.max(0,this.energy-yearsElapsed*3);
-    this.social=Math.max(0,this.social-yearsElapsed*2);
+    this.hunger=Math.max(0,this.hunger-yearsElapsed*2.5);
+    this.energy=Math.max(0,this.energy-yearsElapsed*2);
+    this.social=Math.max(0,this.social-yearsElapsed*1.5);
     if(this.reproTimer>0)this.reproTimer-=yearsElapsed;
 
     // Auto-eat from inventory
@@ -2071,7 +2071,7 @@ class Human{
         if(theirCiv&&myCiv.enemies.has(other.civId)){
           this._doConflict(other);return;
         }
-        if(ideoDiff>0.6&&this._rng()<0.005&&!myCiv.allies.has(other.civId)){
+        if(ideoDiff>0.6&&this._rng()<0.001&&!myCiv.allies.has(other.civId)){
           myCiv.enemies.add(other.civId);
           theirCiv.enemies.add(this.civId);
           myCiv.allies.delete(other.civId);
@@ -3749,10 +3749,10 @@ function tickHumans(yearsElapsed){
     if(skipAI&&(i%skipFactor)!==tickOffset){
       // Still apply basic stat decay even when skipping full AI
       h.age+=yearsElapsed;
-      h.hunger=Math.max(0,h.hunger-yearsElapsed*4);
-      h.energy=Math.max(0,h.energy-yearsElapsed*3);
-      if(h.hunger<=0){h.health=Math.max(0,h.health-yearsElapsed*5);if(h.health<=0)h._die('hambre');}
-      else if(!h.sick)h.health=Math.min(100,h.health+yearsElapsed*3);
+      h.hunger=Math.max(0,h.hunger-yearsElapsed*2.5);
+      h.energy=Math.max(0,h.energy-yearsElapsed*2);
+      if(h.hunger<=0){h.health=Math.max(0,h.health-yearsElapsed*2);if(h.health<=0)h._die('hambre');}
+      else if(!h.sick)h.health=Math.min(100,h.health+yearsElapsed*2);
       continue;
     }
     h.tick(yearsElapsed);
@@ -3847,7 +3847,7 @@ function tickHumans(yearsElapsed){
     _spawnProdigy();
   }
 
-  if(year>=600&&year%15===0) _checkCivSplits();
+  if(year>=1200&&year%15===0) _checkCivSplits();
   if(year===600)  addChronicle('war','Año 600: Las primeras rivalidades','Las tribus que antes coexistían en paz comienzan a mirarse con desconfianza. Los recursos escasean. Las fronteras se dibujan con sangre.','⚔️');
   if(year===1000) addChronicle('wonder','Año 1000: Nacen los primeros imperios','Lo que eran tribus dispersas se convierte en imperios. Líderes carismáticos unifican pueblos bajo una sola bandera. La historia entra en una nueva era.','🏛');
   if(year===2500) addChronicle('war','Año 2500: Era Clásica','Grandes guerras de conquista sacuden el mundo. Los imperios se expanden, chocan y se fragmentan. Es la era de los héroes y los tiranos.','⚔️');
