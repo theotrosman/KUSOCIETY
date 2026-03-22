@@ -1521,19 +1521,14 @@ class Human{
     this.age+=yearsElapsed;
 
     // Immortality mode — clamp stats before any death check
-    if(typeof window._simToggles!=='undefined'&&!window._simToggles.extinction){
-      if(this.health<8)  this.health=8;
-      if(this.hunger<25) this.hunger=25;
-      if(this.energy<10) this.energy=10;
-      if(this.sick){this.sick=false;this.sickType=null;this.sickTimer=0;}
-      // Don't reset age — just skip the age-death check below
-    }
+    // Anti-extinction mode — no immortality, just faster reproduction (handled in _reproUrge)
+    // The population floor is enforced in tickHumans via auto-spawn
 
     // Lifespan — knowledge/intellect extend life
     const maxAge=30+Math.floor(this._rng()*50)
       +Math.min(40,Math.floor(this.knowledge*0.15))
       +Math.floor(this.traits.intellect*0.15);
-    const _immortal=(typeof window._simToggles!=='undefined'&&!window._simToggles.extinction)||(typeof speedIndex!=='undefined'&&speedIndex===5);
+    const _immortal=(typeof speedIndex!=='undefined'&&speedIndex===5);
     if(this.age>maxAge&&!_immortal){this._die('vejez');return;}
 
     // Disease
@@ -1587,7 +1582,10 @@ class Human{
       const popCap = typeof speedIndex!=='undefined'&&speedIndex===5&&_cachedAlive.length>=4500;
       if(!popCap){
         const kFactor = Math.min(1, this.knowledge / 5000);
-        const baseRate = 0.40 + kFactor * 0.35; // 0.40/año primitivo → 0.75/año avanzado
+        const noExtinction = typeof window._simToggles!=='undefined'&&!window._simToggles.extinction;
+        const baseRate = noExtinction
+          ? 1.20 + kFactor * 0.60  // modo sin extinción: reproducción muy alta
+          : 0.40 + kFactor * 0.35;
         // Bonus si la población está muy baja (instinto de supervivencia)
         const popBonus = _cachedAlive.length < 30 ? 0.30 : _cachedAlive.length < 60 ? 0.15 : 0;
         this._reproUrge=Math.min(1,this._reproUrge+yearsElapsed*(baseRate+popBonus));
@@ -3759,6 +3757,24 @@ function tickHumans(yearsElapsed){
   tickStructures(yearsElapsed);
   _tickProdigies(yearsElapsed);
 
+  // Population floor — when extinction is disabled, auto-spawn if pop drops too low
+  if(typeof window._simToggles!=='undefined'&&!window._simToggles.extinction&&_cachedAliveCount<8){
+    const spawnCount = 8 - _cachedAliveCount;
+    const rng = mulberry32(WORLD_SEED ^ year ^ 0xAB12);
+    for(let i=0;i<spawnCount;i++){
+      // Find a land tile near existing humans or center
+      const anchor = _cachedAlive.length>0 ? _cachedAlive[Math.floor(rng()*_cachedAlive.length)] : null;
+      const bx = anchor ? Math.max(0,Math.min(WORLD_W-1,anchor.tx+Math.round(rng()*20-10))) : Math.floor(WORLD_W/2);
+      const by = anchor ? Math.max(0,Math.min(WORLD_H-1,anchor.ty+Math.round(rng()*20-10))) : Math.floor(WORLD_H/2);
+      const gender = rng()<0.5?'F':'M';
+      const h = new Human(bx,by,rng,gender,null,null);
+      h.hunger=80;h.health=80;h.energy=80;
+      humans.push(h);_spatialAdd(h);_humanById.set(h.id,h);
+      _cachedAlive.push(h);_cachedAliveCount++;
+    }
+    if(spawnCount>0) addWorldEvent(`👶 La humanidad resurge — ${spawnCount} nuevos supervivientes aparecen`);
+  }
+
   // At high speed, skip AI for a fraction of humans each tick to spread load
   const n=_cachedAlive.length;
   // More aggressive skipping: at 500x skip 7/8, at 100x skip 3/4, at 20x skip 1/2
@@ -3774,7 +3790,7 @@ function tickHumans(yearsElapsed){
       h.age+=yearsElapsed;
       h.hunger=Math.max(0,h.hunger-yearsElapsed*2.5);
       h.energy=Math.max(0,h.energy-yearsElapsed*2);
-      const immortal=(typeof window._simToggles!=='undefined'&&!window._simToggles.extinction)||(typeof speedIndex!=='undefined'&&speedIndex===5);
+      const immortal=(typeof speedIndex!=='undefined'&&speedIndex===5);
       if(immortal){
         h.health=Math.max(8,h.health);h.hunger=Math.max(25,h.hunger);h.energy=Math.max(10,h.energy);
         if(h.sick){h.sick=false;h.sickType=null;}
