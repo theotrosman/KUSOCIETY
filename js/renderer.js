@@ -5,28 +5,44 @@ const cam = {
 };
 
 let _canvas=null, _ctx=null;
+// Device Pixel Ratio — fixes blurry canvas on retina/HiDPI screens
+let _dpr = 1;
 
 function rendererInit(canvas){
   _canvas=canvas;
+  _dpr = Math.min(window.devicePixelRatio || 1, 2); // cap at 2x to save memory
   _ctx=canvas.getContext('2d');
-  _ctx.imageSmoothingEnabled=false;
+  _applyDPR();
+}
+function _applyDPR(){
+  const logW = window.innerWidth, logH = window.innerHeight;
+  _canvas.width  = Math.round(logW  * _dpr);
+  _canvas.height = Math.round(logH * _dpr);
+  _canvas.style.width  = logW  + 'px';
+  _canvas.style.height = logH + 'px';
+  _ctx.setTransform(_dpr, 0, 0, _dpr, 0, 0);
+  _ctx.imageSmoothingEnabled = true;
+  _ctx.imageSmoothingQuality = 'high';
 }
 function rendererResize(){
-  _canvas.width=window.innerWidth;
-  _canvas.height=window.innerHeight;
-  _ctx.imageSmoothingEnabled=false;
+  _dpr = Math.min(window.devicePixelRatio || 1, 2);
+  _applyDPR();
 }
+// Logical canvas size (what the rest of the code sees)
+function _cw(){ return _canvas.width  / _dpr; }
+function _ch(){ return _canvas.height / _dpr; }
+
 function clampCamera(){
   const ww=WORLD_W*TILE*cam.zoom, wh=WORLD_H*TILE*cam.zoom;
-  // If the world fits inside the viewport, center it instead of clamping to corner
-  if(ww <= _canvas.width)  cam.x = (_canvas.width  - ww) / 2;
-  else cam.x = Math.min(0, Math.max(_canvas.width  - ww, cam.x));
-  if(wh <= _canvas.height) cam.y = (_canvas.height - wh) / 2;
-  else cam.y = Math.min(0, Math.max(_canvas.height - wh, cam.y));
+  const cw=_cw(), ch=_ch();
+  if(ww <= cw)  cam.x = (cw  - ww) / 2;
+  else cam.x = Math.min(0, Math.max(cw  - ww, cam.x));
+  if(wh <= ch) cam.y = (ch - wh) / 2;
+  else cam.y = Math.min(0, Math.max(ch - wh, cam.y));
 }
 function centerCamera(){
   const ww=WORLD_W*TILE*cam.zoom, wh=WORLD_H*TILE*cam.zoom;
-  cam.x=(_canvas.width-ww)/2; cam.y=(_canvas.height-wh)/2;
+  cam.x=(_cw()-ww)/2; cam.y=(_ch()-wh)/2;
 }
 function zoomAt(mx,my,factor){
   const prev=cam.zoom;
@@ -37,8 +53,8 @@ function zoomAt(mx,my,factor){
 }
 function centerOn(tx, ty) {
   const wx=tx*TILE+TILE/2, wy=ty*TILE+TILE/2;
-  cam.x=_canvas.width/2-wx*cam.zoom;
-  cam.y=_canvas.height/2-wy*cam.zoom;
+  cam.x=_cw()/2-wx*cam.zoom;
+  cam.y=_ch()/2-wy*cam.zoom;
   clampCamera();
 }
 
@@ -79,6 +95,206 @@ function spawnBattleFX(wx, wy, type){
 function registerCombat(tx, ty, killed){
   const wx = tx*TILE+TILE/2, wy = ty*TILE+TILE/2;
   spawnBattleFX(wx, wy, killed ? 'death' : 'clash');
+}
+
+// ── Colosseum Battle System ───────────────────────────────────────────────────
+// Tracks active colosseum battles for epic spectator rendering
+let _colosseumBattle = null; // {structureTx, structureTy, nameA, nameB, timer, maxTimer, killed, civColorA, civColorB}
+let _colosseumCooldown = 0;  // prevent spam
+
+function triggerColosseumBattle(attacker, defender, killed){
+  if(typeof structures === 'undefined') return;
+  // Only trigger if there's a colosseum or stadium nearby
+  const SEARCH_R = 12;
+  let arena = null;
+  for(const s of structures){
+    if(s.type !== 'colosseum' && s.type !== 'stadium' && s.type !== 'amphitheater') continue;
+    if(Math.hypot(s.tx - attacker.tx, s.ty - attacker.ty) < SEARCH_R){
+      arena = s; break;
+    }
+  }
+  if(!arena) return;
+  // Cooldown — don't spam
+  if(_colosseumCooldown > 0){ _colosseumCooldown--; return; }
+  _colosseumCooldown = 80;
+
+  const civA = attacker.civId != null && typeof civilizations !== 'undefined' ? civilizations.get(attacker.civId) : null;
+  const civB = defender.civId != null && typeof civilizations !== 'undefined' ? civilizations.get(defender.civId) : null;
+
+  _colosseumBattle = {
+    structureTx: arena.tx,
+    structureTy: arena.ty,
+    nameA: attacker.name.split(' ')[0],
+    nameB: defender.name.split(' ')[0],
+    civColorA: civA ? civA.color : '#ff4444',
+    civColorB: civB ? civB.color : '#4488ff',
+    killed,
+    timer: 0,
+    maxTimer: 8.0,
+    phase: 0, // 0=intro, 1=fight, 2=result
+  };
+
+  // Event feed notification with "go to" button
+  const icon = killed ? '💀' : '⚔️';
+  const text = killed
+    ? `${attacker.name.split(' ')[0]} venció a ${defender.name.split(' ')[0]} en el Coliseo`
+    : `${attacker.name.split(' ')[0]} vs ${defender.name.split(' ')[0]} — Batalla en el Coliseo`;
+  pushEventNotif(icon, text, '#ffd700', arena.tx, arena.ty);
+
+  // Auto-center camera on arena if not following someone
+  if(typeof _autoFollowMode !== 'undefined' && !_autoFollowMode && typeof centerOn !== 'undefined'){
+    centerOn(arena.tx, arena.ty);
+    if(cam.zoom < 2.5) cam.zoom = 2.5;
+    clampCamera();
+  }
+}
+
+// ── Colosseum Battle Rendering ────────────────────────────────────────────────
+function _drawColosseumBattleOverlay(dtSec){
+  if(!_colosseumBattle) return;
+  const b = _colosseumBattle;
+  b.timer += dtSec;
+  if(b.timer >= b.maxTimer){ _colosseumBattle = null; return; }
+
+  const t = _waterPhase;
+  const progress = b.timer / b.maxTimer;
+  const ctx = _ctx;
+
+  // Find arena screen position
+  const arenaWx = b.structureTx * TILE + TILE/2;
+  const arenaWy = b.structureTy * TILE + TILE/2;
+
+  // Phase transitions
+  if(b.timer < 1.5) b.phase = 0;       // intro
+  else if(b.timer < b.maxTimer - 1.5) b.phase = 1; // fight
+  else b.phase = 2;                      // result
+
+  const fadeIn  = Math.min(1, b.timer / 0.4);
+  const fadeOut = progress > 0.82 ? 1-(progress-0.82)/0.18 : 1;
+  const alpha   = fadeIn * fadeOut;
+
+  ctx.save();
+
+  // ── Crowd roar rings expanding from arena ─────────────────────────────────
+  if(b.phase >= 0){
+    for(let ring=0; ring<3; ring++){
+      const rPhase = (t*1.8 + ring*0.7) % 2;
+      const rRadius = (TILE*2 + rPhase * TILE*5);
+      const rAlpha  = (1 - rPhase/2) * 0.25 * alpha;
+      ctx.globalAlpha = rAlpha;
+      ctx.strokeStyle = '#ffd700';
+      ctx.lineWidth = Math.max(1, 3*(1-rPhase/2));
+      ctx.beginPath();
+      ctx.arc(arenaWx, arenaWy, rRadius, 0, Math.PI*2);
+      ctx.stroke();
+    }
+  }
+
+  // ── Fighter A (attacker) — red ────────────────────────────────────────────
+  if(b.phase >= 1){
+    const fightT = (b.timer - 1.5);
+    const orbitR = TILE * 1.2;
+    const speed  = 2.5;
+    const ax = arenaWx + Math.cos(fightT * speed) * orbitR;
+    const ay = arenaWy + Math.sin(fightT * speed) * orbitR * 0.6;
+    const bx = arenaWx + Math.cos(fightT * speed + Math.PI) * orbitR;
+    const by = arenaWy + Math.sin(fightT * speed + Math.PI) * orbitR * 0.6;
+
+    // Fighter trails
+    ctx.globalAlpha = 0.3 * alpha;
+    ctx.strokeStyle = b.civColorA;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(arenaWx, arenaWy, orbitR, fightT*speed - 0.8, fightT*speed);
+    ctx.stroke();
+    ctx.strokeStyle = b.civColorB;
+    ctx.beginPath();
+    ctx.arc(arenaWx, arenaWy, orbitR, fightT*speed + Math.PI - 0.8, fightT*speed + Math.PI);
+    ctx.stroke();
+
+    // Fighter A dot
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = b.civColorA;
+    ctx.beginPath();
+    ctx.arc(ax, ay, Math.max(3, TILE*0.35), 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Fighter B dot
+    ctx.fillStyle = b.civColorB;
+    ctx.beginPath();
+    ctx.arc(bx, by, Math.max(3, TILE*0.35), 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Clash sparks when fighters are close
+    const dist = Math.hypot(ax-bx, ay-by);
+    if(dist < TILE * 0.8){
+      const sparkCount = 6;
+      for(let sp=0; sp<sparkCount; sp++){
+        const sa = (sp/sparkCount)*Math.PI*2 + t*12;
+        const sr = TILE * (0.2 + Math.random()*0.4);
+        const sx = (ax+bx)/2 + Math.cos(sa)*sr;
+        const sy = (ay+by)/2 + Math.sin(sa)*sr;
+        ctx.globalAlpha = (0.6 + Math.random()*0.4) * alpha;
+        ctx.fillStyle = Math.random()>0.5 ? '#ffffff' : '#ffdd00';
+        ctx.beginPath();
+        ctx.arc(sx, sy, Math.max(1, TILE*0.08), 0, Math.PI*2);
+        ctx.fill();
+      }
+      // Central flash
+      ctx.globalAlpha = 0.7 * alpha * (0.5+Math.sin(t*15)*0.5);
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc((ax+bx)/2, (ay+by)/2, TILE*0.25, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // Fighter name labels
+    if(cam.zoom > 1.0){
+      ctx.globalAlpha = alpha;
+      ctx.font = `bold ${Math.max(7, Math.round(TILE*0.55))}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+      ctx.lineWidth = 3;
+      ctx.strokeText(b.nameA, ax, ay - TILE*0.5);
+      ctx.fillStyle = b.civColorA;
+      ctx.fillText(b.nameA, ax, ay - TILE*0.5);
+      ctx.strokeText(b.nameB, bx, by - TILE*0.5);
+      ctx.fillStyle = b.civColorB;
+      ctx.fillText(b.nameB, bx, by - TILE*0.5);
+    }
+  }
+
+  // ── Result phase — death or victory ──────────────────────────────────────
+  if(b.phase === 2 && b.killed){
+    const resultAlpha = Math.min(1, (b.timer - (b.maxTimer-1.5)) / 0.5) * fadeOut;
+    ctx.globalAlpha = resultAlpha;
+    // Victory burst
+    for(let i=0; i<8; i++){
+      const a2 = (i/8)*Math.PI*2;
+      const len = TILE * (1.5 + Math.sin(t*6+i)*0.5);
+      ctx.strokeStyle = '#ffd700';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(arenaWx, arenaWy);
+      ctx.lineTo(arenaWx + Math.cos(a2)*len, arenaWy + Math.sin(a2)*len);
+      ctx.stroke();
+    }
+    // ☠️ death icon
+    ctx.font = `${Math.round(TILE*1.2)}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('☠️', arenaWx, arenaWy - TILE*2);
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
 function _drawBattleFX(dtSec){
@@ -340,8 +556,8 @@ function _drawMetropolisEffects(dtSec){
     ctx.save();
     // Only draw lines between road tiles within viewport — skip O(n²) global scan
     const vx0=Math.floor(-cam.x/cam.zoom/TILE)-2, vy0=Math.floor(-cam.y/cam.zoom/TILE)-2;
-    const vx1=vx0+Math.ceil(_canvas.width/cam.zoom/TILE)+4;
-    const vy1=vy0+Math.ceil(_canvas.height/cam.zoom/TILE)+4;
+    const vx1=vx0+Math.ceil(_cw()/cam.zoom/TILE)+4;
+    const vy1=vy0+Math.ceil(_ch()/cam.zoom/TILE)+4;
     const visRoads = _getStructsByTypes(['road','highway','railway','subway']).filter(s =>
       s.tx>=vx0 && s.tx<=vx1 && s.ty>=vy0 && s.ty<=vy1
     );
@@ -563,19 +779,40 @@ function _drawMetropolisEffects(dtSec){
   }
 }
 
+// ── Per-frame LOD counters ────────────────────────────────────────────────────
+let _frameCount = 0;
+let _lastFrameMs = 0;
+let _fps = 60;
+let _fpsSmooth = 60;
+
 function renderFrame(dt){
+  _frameCount++;
+  const now = performance.now();
+  if(_lastFrameMs > 0){
+    const rawFps = 1000 / (now - _lastFrameMs);
+    _fpsSmooth = _fpsSmooth * 0.92 + rawFps * 0.08;
+    _fps = _fpsSmooth;
+  }
+  _lastFrameMs = now;
+
   const dtSec = dt/1000;
   _waterPhase+=dt*0.0008;
+
+  // LOD: reduce expensive effects when fps drops below 45
+  const lowPerf = _fps < 45;
+  const veryLowPerf = _fps < 30;
+
+  const cw = _cw(), ch = _ch();
+
   _ctx.fillStyle='#0f2a4a';
-  _ctx.fillRect(0,0,_canvas.width,_canvas.height);
+  _ctx.fillRect(0,0,cw,ch);
 
   _ctx.save();
   _ctx.translate(cam.x,cam.y);
   _ctx.scale(cam.zoom,cam.zoom);
 
   if(terrainCanvas) _ctx.drawImage(terrainCanvas,0,0);
-  if(cam.zoom>0.5) _drawWaterShimmer();
-  // Atmospheric depth haze at map edges
+  if(cam.zoom>0.5 && !veryLowPerf) _drawWaterShimmer();
   _drawMapVignette();
 
   if(resourceCanvas&&cam.zoom>0.4){
@@ -584,43 +821,38 @@ function renderFrame(dt){
     _ctx.globalAlpha=1;
   }
 
-  // City glow halos — visible at ALL zoom levels, drawn first for epic feel
   if(typeof structures!=='undefined') _drawCityGlows();
-
-  // Territory outlines (drawn before structures)
   if(typeof civilizations!=='undefined') _drawTerritories();
-
-  // Structures
   if(typeof structures!=='undefined') _drawStructures();
-
-  // Natural monuments
   if(typeof naturalMonuments!=='undefined'&&naturalMonuments.length>0) _drawMonuments();
   if(typeof getTouristSites!=='undefined') _drawTouristSites();
 
-  // Epic overlays: battlefields, wonders, dark age, pandemic
   _drawEpicOverlays();
-  _drawBiomeEffects();
+  // Biome effects: skip every other frame at low perf, skip 2/3 at very low
+  if(!veryLowPerf && (!lowPerf || (_frameCount&1)===0)) _drawBiomeEffects();
 
-  // Humans
+  // Update movement trails for followed/selected humans
+  if(typeof humans!=='undefined'&&typeof _cachedAlive!=='undefined'){
+    const followedId = (typeof _autoFollowId !== 'undefined') ? _autoFollowId : null;
+    const selId = (typeof _selectedHumanId !== 'undefined') ? _selectedHumanId : null;
+    for(const h of _cachedAlive){
+      if(h.id===followedId||h.id===selId) _updateHumanTrail(h, dtSec);
+    }
+  }
+
   if(typeof humans!=='undefined') _drawHumans();
 
-  // Trade routes (drawn on top of terrain, below humans)
-  _drawTradeRoutes();
-
-  // Army rally points
+  if(!lowPerf) _drawTradeRoutes();
   _drawArmyFormations();
 
-  // Media structures (printing press, radio, TV, internet)
-  if(typeof getMediaHeadlines !== 'undefined') _drawMediaStructures();
+  if(typeof getMediaHeadlines !== 'undefined' && !veryLowPerf) _drawMediaStructures();
 
-  // Epic battle effects (world-space, drawn on top of humans)
   _drawBattleFX(dtSec);
+  _drawColosseumBattleOverlay(dtSec);
 
-  // Nuclear explosions (world-space)
   if(typeof getNuclearExplosions!=='undefined') _drawNuclearExplosions();
 
-  // Metropolis effects (smoke, vehicles, screens)
-  _drawMetropolisEffects(dtSec);
+  if(!veryLowPerf) _drawMetropolisEffects(dtSec);
 
   _ctx.restore();
 
@@ -630,30 +862,28 @@ function renderFrame(dt){
     const tint=tints[_season];
     if(tint){
       _ctx.fillStyle=tint;
-      _ctx.fillRect(0,0,_canvas.width,_canvas.height);
+      _ctx.fillRect(0,0,cw,ch);
     }
   }
 
   // Day/night overlay
-  // phase: 0=medianoche, 0.25=amanecer, 0.5=mediodía, 0.75=atardecer
   if(typeof getDayNightPhase !== 'undefined'){
     const phase = getDayNightPhase();
-    // Sine curve: darkest at midnight (phase=0), brightest at noon (phase=0.5)
     const nightAlpha = Math.max(0, -Math.cos(phase * Math.PI * 2)) * 0.45;
     if(nightAlpha > 0.01){
       _ctx.fillStyle = `rgba(10,10,40,${nightAlpha.toFixed(2)})`;
-      _ctx.fillRect(0,0,_canvas.width,_canvas.height);
+      _ctx.fillRect(0,0,cw,ch);
     }
   }
 
-  // Pollution tint overlay (world-space, drawn over terrain)
-  if(typeof getPollutionAt !== 'undefined' && cam.zoom > 0.3){
+  // Pollution tint overlay
+  if(typeof getPollutionAt !== 'undefined' && cam.zoom > 0.3 && !veryLowPerf){
     _ctx.save();
     _ctx.translate(cam.x, cam.y);
     _ctx.scale(cam.zoom, cam.zoom);
     const vx0=Math.floor(-cam.x/cam.zoom/TILE)-1, vy0=Math.floor(-cam.y/cam.zoom/TILE)-1;
-    const vx1=Math.ceil((_canvas.width-cam.x)/cam.zoom/TILE)+1;
-    const vy1=Math.ceil((_canvas.height-cam.y)/cam.zoom/TILE)+1;
+    const vx1=Math.ceil((cw-cam.x)/cam.zoom/TILE)+1;
+    const vy1=Math.ceil((ch-cam.y)/cam.zoom/TILE)+1;
     for(let ty=Math.max(0,vy0);ty<Math.min(WORLD_H,vy1);ty+=2){
       for(let tx=Math.max(0,vx0);tx<Math.min(WORLD_W,vx1);tx+=2){
         const p = getPollutionAt(tx,ty);
@@ -666,7 +896,6 @@ function renderFrame(dt){
     _ctx.restore();
   }
 
-  // UI overlays (screen-space)
   _drawLegend();
   _drawIntelligenceCurve();
   _drawPandemicHUD();
@@ -675,6 +904,195 @@ function renderFrame(dt){
   _drawGlobalizationHUD();
   _drawNuclearHUD();
   _drawClock();
+  _checkWorldEventNotifs();
+  if(!lowPerf) _drawFPSCounter();
+}
+
+// ── Event Feed — DOM notifications bottom-right, left of human panel ─────────
+// Each entry: {id, icon, text, color, tx, ty, timestamp}
+let _eventFeedItems = [];
+let _eventFeedEl = null;
+let _eventFeedLastEventCount = 0;
+let _eventFeedLastPopMilestone = 0;
+let _eventFeedLastWarCount = 0;
+let _eventFeedIdCounter = 0;
+
+function _ensureEventFeed(){
+  if(_eventFeedEl) return _eventFeedEl;
+  _eventFeedEl = document.createElement('div');
+  _eventFeedEl.id = 'event-feed';
+  _eventFeedEl.style.cssText = [
+    'position:fixed',
+    'bottom:10px',
+    'right:225px',   // left of the human panel (215px wide + 10px gap)
+    'width:260px',
+    'max-height:320px',
+    'overflow:hidden',
+    'display:flex',
+    'flex-direction:column-reverse',
+    'gap:5px',
+    'z-index:90',
+    'pointer-events:none',
+  ].join(';');
+  document.body.appendChild(_eventFeedEl);
+  return _eventFeedEl;
+}
+
+function pushEventNotif(icon, text, color, tx, ty){
+  // Deduplicate — same text within 4s
+  const now = Date.now();
+  if(_eventFeedItems.some(n => n.text === text && now - n.timestamp < 4000)) return;
+
+  const id = ++_eventFeedIdCounter;
+  _eventFeedItems.push({id, icon, text, color: color||'#ffd700', tx, ty, timestamp: now});
+  // Keep max 6 items
+  if(_eventFeedItems.length > 6) _eventFeedItems.shift();
+  _renderEventFeed();
+}
+
+function _renderEventFeed(){
+  const el = _ensureEventFeed();
+  el.innerHTML = '';
+  // Render newest first (column-reverse shows bottom = newest)
+  for(const item of _eventFeedItems){
+    const card = document.createElement('div');
+    card.style.cssText = [
+      'background:rgba(4,10,22,0.94)',
+      `border-left:3px solid ${item.color}`,
+      'border-radius:0 8px 8px 0',
+      'padding:7px 8px 7px 10px',
+      'font-family:\'Courier New\',monospace',
+      'font-size:11px',
+      'color:#dde',
+      'display:flex',
+      'align-items:center',
+      'gap:7px',
+      'box-shadow:0 2px 12px rgba(0,0,0,0.6)',
+      'pointer-events:auto',
+      'cursor:default',
+      'animation:efSlideIn 0.25s ease',
+      'border-top:1px solid rgba(255,255,255,0.06)',
+      'border-right:1px solid rgba(255,255,255,0.06)',
+      'border-bottom:1px solid rgba(255,255,255,0.06)',
+    ].join(';');
+
+    const iconSpan = document.createElement('span');
+    iconSpan.style.cssText = 'font-size:16px;flex-shrink:0;';
+    iconSpan.textContent = item.icon;
+
+    const textSpan = document.createElement('span');
+    textSpan.style.cssText = `flex:1;color:${item.color};font-size:10px;line-height:1.35;`;
+    textSpan.textContent = item.text;
+
+    card.appendChild(iconSpan);
+    card.appendChild(textSpan);
+
+    // "Ir" button only if we have coordinates
+    if(item.tx != null && item.ty != null){
+      const btn = document.createElement('button');
+      btn.textContent = '→';
+      btn.title = 'Ir al lugar';
+      btn.style.cssText = [
+        'background:rgba(255,255,255,0.08)',
+        `border:1px solid ${item.color}55`,
+        `color:${item.color}`,
+        'border-radius:5px',
+        'padding:2px 7px',
+        'cursor:pointer',
+        'font-family:\'Courier New\',monospace',
+        'font-size:11px',
+        'flex-shrink:0',
+        'transition:background 0.1s',
+      ].join(';');
+      const capTx = item.tx, capTy = item.ty;
+      btn.addEventListener('mouseenter', ()=>{ btn.style.background='rgba(255,255,255,0.18)'; });
+      btn.addEventListener('mouseleave', ()=>{ btn.style.background='rgba(255,255,255,0.08)'; });
+      btn.addEventListener('click', ()=>{
+        if(typeof centerOn !== 'undefined') centerOn(capTx, capTy);
+        if(cam.zoom < 2.5) cam.zoom = 2.5;
+        if(typeof clampCamera !== 'undefined') clampCamera();
+      });
+      card.appendChild(btn);
+    }
+
+    el.appendChild(card);
+  }
+}
+
+// Auto-expire old items every 8s
+setInterval(()=>{
+  const now = Date.now();
+  const before = _eventFeedItems.length;
+  _eventFeedItems = _eventFeedItems.filter(n => now - n.timestamp < 8000);
+  if(_eventFeedItems.length !== before) _renderEventFeed();
+}, 1000);
+
+// Hook into worldEvents + simulation state
+function _checkWorldEventNotifs(){
+  if(typeof worldEvents === 'undefined') return;
+
+  // ── Population milestones ──────────────────────────────────────────────────
+  if(typeof humans !== 'undefined'){
+    const pop = typeof _cachedAlive !== 'undefined' ? _cachedAlive.length : humans.filter(h=>h.alive).length;
+    const milestones = [50,100,250,500,1000,2000,5000,10000];
+    for(const m of milestones){
+      if(pop >= m && _eventFeedLastPopMilestone < m){
+        _eventFeedLastPopMilestone = m;
+        pushEventNotif('👥', `${m} almas en el mundo`, '#8ff', null, null);
+      }
+    }
+  }
+
+  // ── Active war count changes ───────────────────────────────────────────────
+  if(typeof civilizations !== 'undefined'){
+    let warCount = 0;
+    for(const [,c] of civilizations) warCount += c.atWarWith ? c.atWarWith.size : 0;
+    warCount = Math.floor(warCount / 2);
+    if(warCount > _eventFeedLastWarCount && warCount > 0){
+      // Find a war location
+      let warTx = null, warTy = null;
+      for(const [,c] of civilizations){
+        if(c.atWarWith && c.atWarWith.size > 0 && c.leaderId != null){
+          const leader = typeof _humanById !== 'undefined' ? _humanById.get(c.leaderId) : null;
+          if(leader){ warTx = leader.tx; warTy = leader.ty; break; }
+        }
+      }
+      pushEventNotif('⚔️', `${warCount} guerra${warCount>1?'s':''} activa${warCount>1?'s':''}`, '#f66', warTx, warTy);
+    }
+    _eventFeedLastWarCount = warCount;
+  }
+
+  // ── World events ───────────────────────────────────────────────────────────
+  if(worldEvents.length <= _eventFeedLastEventCount){ return; }
+  const newEvents = worldEvents.slice(0, worldEvents.length - _eventFeedLastEventCount);
+  _eventFeedLastEventCount = worldEvents.length;
+  for(const ev of newEvents.slice(0, 3)){
+    const txt = ev.text||'';
+    let icon='📜', color='#adf';
+    if(txt.includes('guerra')||txt.includes('Guerra')||txt.includes('⚔️')){ icon='⚔️'; color='#f88'; }
+    else if(txt.includes('pandemia')||txt.includes('🦠')){ icon='🦠'; color='#4f8'; }
+    else if(txt.includes('nuclear')||txt.includes('☢️')){ icon='☢️'; color='#f60'; }
+    else if(txt.includes('invento')||txt.includes('✨')||txt.includes('Oro')){ icon='✨'; color='#ffd700'; }
+    else if(txt.includes('volcán')||txt.includes('terremoto')||txt.includes('🌋')){ icon='🌋'; color='#f84'; }
+    else if(txt.includes('IA')||txt.includes('🤖')){ icon='🤖'; color='#a4f'; }
+    else if(txt.includes('fundó')||txt.includes('Imperio')||txt.includes('🏛')){ icon='🏛'; color='#fda'; }
+    else if(txt.includes('murió')||txt.includes('Rey')||txt.includes('👑')){ icon='💀'; color='#f88'; }
+    else if(txt.includes('alianza')||txt.includes('paz')||txt.includes('🤝')){ icon='🤝'; color='#8f8'; }
+    if(txt.length < 90) pushEventNotif(icon, txt.slice(0,70), color, ev.tx??null, ev.ty??null);
+  }
+}
+
+// ── FPS counter (debug/perf indicator) ───────────────────────────────────────
+function _drawFPSCounter(){
+  const cw=_cw(), ch=_ch();
+  _ctx.save();
+  _ctx.font='bold 10px monospace';
+  _ctx.textAlign='right';
+  _ctx.textBaseline='top';
+  const fps=Math.round(_fps);
+  _ctx.fillStyle=fps>50?'rgba(100,255,100,0.5)':fps>30?'rgba(255,200,50,0.5)':'rgba(255,80,80,0.7)';
+  _ctx.fillText(`${fps}fps`,cw-8,54);
+  _ctx.restore();
 }
 
 // ── Clock HUD ────────────────────────────────────────────────────────────────
@@ -685,28 +1103,28 @@ function _drawClock(){
   const hh = Math.floor(totalHours) % 24;
   const mm = Math.floor((totalHours % 1) * 60);
   const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-  // Use sim day/month counters if available, else fall back to year fraction
   const mes  = typeof getSimMonth === 'function' ? MESES[getSimMonth()] : MESES[0];
   const dom  = typeof getSimDayOfMonth === 'function' ? getSimDayOfMonth() : 1;
   const timeStr = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
   const dateStr = `${dom} ${mes} ${Math.floor(year)}`;
 
+  const cw=_cw(), ch=_ch();
   _ctx.save();
   _ctx.font = 'bold 11px monospace';
   const tw = Math.max(_ctx.measureText(timeStr).width, _ctx.measureText(dateStr).width);
   const pw = tw + 14, ph = 30;
-  const px = _canvas.width / 2 - pw / 2;
-  const py = _canvas.height - ph - 6;
+  const px = cw / 2 - pw / 2;
+  const py = ch - ph - 6;
   _ctx.fillStyle = 'rgba(0,0,0,0.55)';
   _ctx.beginPath();
   _ctx.roundRect(px, py, pw, ph, 5);
   _ctx.fill();
   _ctx.fillStyle = '#e8e8ff';
   _ctx.textAlign = 'center';
-  _ctx.fillText(timeStr, _canvas.width / 2, py + 12);
+  _ctx.fillText(timeStr, cw / 2, py + 12);
   _ctx.fillStyle = '#aaaacc';
   _ctx.font = '9px monospace';
-  _ctx.fillText(dateStr, _canvas.width / 2, py + 24);
+  _ctx.fillText(dateStr, cw / 2, py + 24);
   _ctx.restore();
 }
 
@@ -861,8 +1279,8 @@ function _rebuildCityGlows(){
   for(const [,c] of cellMap){
     if(c.count<3)continue; // lower threshold — show even small settlements
     const civ=c.civId!=null&&typeof civilizations!=='undefined'?civilizations.get(c.civId):null;
-    // Size scales with structure count and tier
-    const baseR=Math.min(300,c.count*14+60+c.maxTier*20);
+    // Size scales with structure count and tier — bigger halos for more drama
+    const baseR=Math.min(420, c.count*18+80+c.maxTier*28);
     _cityGlowCache.push({
       cx:(c.sumX/c.count)*TILE+TILE/2,
       cy:(c.sumY/c.count)*TILE+TILE/2,
@@ -892,15 +1310,16 @@ function _drawCityGlows(){
     const screenX=g.cx*cam.zoom+cam.x;
     const screenY=g.cy*cam.zoom+cam.y;
     const sr=g.r*cam.zoom;
-    if(screenX<-sr-200||screenX>_canvas.width+sr+200||screenY<-sr-200||screenY>_canvas.height+sr+200)continue;
+    if(screenX<-sr-200||screenX>_cw()+sr+200||screenY<-sr-200||screenY>_ch()+sr+200)continue;
 
     const pulse=0.7+Math.sin(t*1.5+g.cx*0.003)*0.3;
 
     // ── Outer soft halo — visible even at full zoom-out ───────────────────
     const grad=ctx.createRadialGradient(g.cx,g.cy,0,g.cx,g.cy,g.r);
-    const baseAlpha=g.epic?0.28:0.18;
-    grad.addColorStop(0,  _alphaColor(g.color, baseAlpha*pulse*1.4));
-    grad.addColorStop(0.4,_alphaColor(g.color, baseAlpha*pulse*0.8));
+    const baseAlpha=g.epic?0.38:0.24;
+    grad.addColorStop(0,  _alphaColor(g.color, baseAlpha*pulse*1.6));
+    grad.addColorStop(0.35,_alphaColor(g.color, baseAlpha*pulse*0.9));
+    grad.addColorStop(0.7, _alphaColor(g.color, baseAlpha*pulse*0.3));
     grad.addColorStop(1,  _alphaColor(g.color, 0));
     ctx.fillStyle=grad;
     ctx.beginPath();
@@ -908,11 +1327,11 @@ function _drawCityGlows(){
     ctx.fill();
 
     // ── Bright core dot — always visible from any zoom ────────────────────
-    const coreR=Math.max(TILE*1.5, g.r*0.12);
+    const coreR=Math.max(TILE*2, g.r*0.14);
     const coreGrad=ctx.createRadialGradient(g.cx,g.cy,0,g.cx,g.cy,coreR);
-    const coreAlpha=g.epic?0.85:0.55;
+    const coreAlpha=g.epic?0.95:0.65;
     coreGrad.addColorStop(0,  _alphaColor('#ffffff', coreAlpha*pulse));
-    coreGrad.addColorStop(0.3,_alphaColor(g.color,   coreAlpha*pulse*0.9));
+    coreGrad.addColorStop(0.25,_alphaColor(g.color,  coreAlpha*pulse));
     coreGrad.addColorStop(1,  _alphaColor(g.color,   0));
     ctx.fillStyle=coreGrad;
     ctx.beginPath();
@@ -948,13 +1367,20 @@ function _drawCityGlows(){
 
     // ── Pulsing ring for epic cities ──────────────────────────────────────
     if(g.epic){
-      const ringR=g.r*0.35*(0.85+Math.sin(t*2+g.cx*0.005)*0.15);
+      // Double ring — outer slow, inner fast
+      const ringR1=g.r*0.38*(0.88+Math.sin(t*1.8+g.cx*0.005)*0.12);
+      const ringR2=g.r*0.22*(0.85+Math.sin(t*3.2+g.cx*0.008)*0.15);
       ctx.save();
-      ctx.globalAlpha=0.35*pulse;
+      ctx.globalAlpha=0.45*pulse;
       ctx.strokeStyle=g.color;
-      ctx.lineWidth=Math.max(1.5, 3/cam.zoom);
+      ctx.lineWidth=Math.max(2, 4/cam.zoom);
       ctx.beginPath();
-      ctx.arc(g.cx,g.cy,ringR,0,Math.PI*2);
+      ctx.arc(g.cx,g.cy,ringR1,0,Math.PI*2);
+      ctx.stroke();
+      ctx.globalAlpha=0.25*pulse;
+      ctx.lineWidth=Math.max(1, 2/cam.zoom);
+      ctx.beginPath();
+      ctx.arc(g.cx,g.cy,ringR2,0,Math.PI*2);
       ctx.stroke();
       ctx.restore();
     }
@@ -1009,12 +1435,12 @@ function _drawStructures(){
   ctx.textBaseline='middle';
 
   const vx0=Math.floor(-cam.x/cam.zoom/TILE)-3, vy0=Math.floor(-cam.y/cam.zoom/TILE)-3;
-  const vx1=vx0+Math.ceil(_canvas.width/cam.zoom/TILE)+6;
-  const vy1=vy0+Math.ceil(_canvas.height/cam.zoom/TILE)+6;
+  const vx1=vx0+Math.ceil(_cw()/cam.zoom/TILE)+6;
+  const vy1=vy0+Math.ceil(_ch()/cam.zoom/TILE)+6;
   const showShadow=cam.zoom>0.8;
   const showHP=cam.zoom>0.8;
   const t=_waterPhase;
-  const megaTypes=new Set(['stadium','pyramid','great_wall','lighthouse','amphitheater','ziggurat','obelisk','theme_park']);
+  const megaTypes=new Set(['stadium','pyramid','great_wall','lighthouse','amphitheater','ziggurat','obelisk','theme_park','colosseum']);
   const roadTypes=new Set(['road','highway','bridge','aqueduct','railway','subway']);
 
   // Count visible non-road structures — suppress labels/windows when city is dense
@@ -1084,9 +1510,9 @@ function _drawStructures(){
           ctx.fillStyle='#300';ctx.fillRect(s.tx*TILE,s.ty*TILE+TILE-2,TILE,2);
           ctx.fillStyle='#f44';ctx.fillRect(s.tx*TILE,s.ty*TILE+TILE-2,TILE*(s.hp/s.maxHp),2);
         }
-        // Emoji icon only at high zoom AND low density
-        if(cam.zoom>1.2 && !_densityMed){
-          const iconScale=tier>=4?1.05:tier>=2?0.92:0.82;
+        // Emoji icon only at medium zoom AND low density
+        if(cam.zoom>0.7 && !_densityMed){
+          const iconScale=tier>=4?1.15:tier>=2?1.0:0.88;
           ctx.font=`${Math.round(TILE*iconScale)}px serif`;
           ctx.fillText(s.icon,px,py);
         }
@@ -1236,123 +1662,183 @@ function _drawAdvancedBuilding(ctx, s, px, py, civ, tier, t, showShadow, showHP,
 
   ctx.save();
 
-  // Building footprint size scales with tier
-  const hw=S*(0.28+Math.min(tier,8)*0.06);
+  // Building footprint — significantly larger so buildings dwarf humans (r=TILE*0.9)
+  // Tier 0 = 1.1 tiles wide, tier 8 = 2.1 tiles wide
+  const hw=S*(0.55+Math.min(tier,8)*0.12);
 
-  // Shadow
+  // Shadow — offset to give 3D feel
   if(showShadow&&tier>=1){
-    ctx.globalAlpha=0.3;
-    ctx.fillStyle='rgba(0,0,0,0.6)';
-    ctx.fillRect(px-hw+tier*1.5, py-hw+tier*1.5, hw*2, hw*2);
+    ctx.globalAlpha=0.22;
+    ctx.fillStyle='rgba(0,0,0,0.7)';
+    const shadowOff=Math.min(tier*1.8, 10);
+    ctx.fillRect(px-hw+shadowOff, py-hw+shadowOff, hw*2, hw*2);
   }
 
   // Base color by type
-  let baseColor='#445566', roofColor='#334455', accentColor=civColor;
+  let baseColor='#445566', roofColor='#334455', accentColor=civColor, windowColor=accentColor;
   switch(s.type){
-    case 'palace':   baseColor='#8a6020'; roofColor='#ffd700'; accentColor='#ffd700'; break;
-    case 'cathedral':baseColor='#c0c0d0'; roofColor='#8080c0'; accentColor='#e0d0ff'; break;
-    case 'citadel':  baseColor='#606060'; roofColor='#404040'; accentColor='#888'; break;
-    case 'university':baseColor='#c08040';roofColor='#804020'; accentColor='#ffa040'; break;
-    case 'observatory':baseColor='#304060';roofColor='#203050';accentColor='#80c0ff'; break;
-    case 'factory':  baseColor='#505050'; roofColor='#303030'; accentColor='#ff8800'; break;
-    case 'skyscraper':baseColor='#334455';roofColor='#223344';accentColor=civColor; break;
-    case 'megacity_core':baseColor='#223344';roofColor='#112233';accentColor='#00ffff'; break;
-    case 'arcology': baseColor='#2a4a2a'; roofColor='#1a3a1a'; accentColor='#44ff88'; break;
-    case 'neural_hub':baseColor='#2a1a4a';roofColor='#1a0a3a';accentColor='#aa44ff'; break;
-    case 'market':   baseColor='#806020'; roofColor='#604010'; accentColor='#ffcc00'; break;
-    case 'barracks': baseColor='#602020'; roofColor='#401010'; accentColor='#ff4444'; break;
-    case 'temple':   baseColor='#604080'; roofColor='#402060'; accentColor='#cc88ff'; break;
-    case 'granary':  baseColor='#806040'; roofColor='#604020'; accentColor='#ffcc80'; break;
-    case 'harbor':   baseColor='#204060'; roofColor='#102040'; accentColor='#4488ff'; break;
-    case 'powerplant':baseColor='#404020';roofColor='#303010';accentColor='#ffff00'; break;
-    case 'airport':  baseColor='#404050'; roofColor='#303040'; accentColor='#88aaff'; break;
-    default: baseColor='#445566'; roofColor='#334455'; accentColor=civColor;
+    case 'palace':    baseColor='#7a5018'; roofColor='#c8a020'; accentColor='#ffd700'; windowColor='#ffe080'; break;
+    case 'cathedral': baseColor='#b0b0c8'; roofColor='#6060a0'; accentColor='#d0c0ff'; windowColor='#c0a0ff'; break;
+    case 'citadel':   baseColor='#505050'; roofColor='#303030'; accentColor='#aaaaaa'; windowColor='#cccccc'; break;
+    case 'university':baseColor='#b07030'; roofColor='#703010'; accentColor='#ffa040'; windowColor='#ffcc80'; break;
+    case 'observatory':baseColor='#203050';roofColor='#102030';accentColor='#60a0ff'; windowColor='#80c0ff'; break;
+    case 'factory':   baseColor='#484848'; roofColor='#282828'; accentColor='#ff8800'; windowColor='#ffaa44'; break;
+    case 'skyscraper':baseColor='#2a3a4a';roofColor='#1a2a3a';accentColor=civColor;   windowColor='#88ccff'; break;
+    case 'megacity_core':baseColor='#1a2a3a';roofColor='#0a1a2a';accentColor='#00ffff';windowColor='#44ffff'; break;
+    case 'arcology':  baseColor='#1e3a1e'; roofColor='#0e2a0e'; accentColor='#44ff88'; windowColor='#88ffaa'; break;
+    case 'neural_hub':baseColor='#1e0e3a';roofColor='#0e0028';accentColor='#aa44ff';  windowColor='#cc88ff'; break;
+    case 'market':    baseColor='#705010'; roofColor='#503000'; accentColor='#ffcc00'; windowColor='#ffe080'; break;
+    case 'barracks':  baseColor='#501818'; roofColor='#380808'; accentColor='#ff4444'; windowColor='#ff8888'; break;
+    case 'temple':    baseColor='#503060'; roofColor='#301840'; accentColor='#cc88ff'; windowColor='#ddaaff'; break;
+    case 'granary':   baseColor='#705030'; roofColor='#503010'; accentColor='#ffcc80'; windowColor='#ffe0a0'; break;
+    case 'harbor':    baseColor='#183050'; roofColor='#0a1830'; accentColor='#4488ff'; windowColor='#88aaff'; break;
+    case 'powerplant':baseColor='#383818';roofColor='#282808';accentColor='#ffff00';  windowColor='#ffff88'; break;
+    case 'airport':   baseColor='#383848'; roofColor='#282838'; accentColor='#88aaff'; windowColor='#aaccff'; break;
+    case 'library':   baseColor='#604020'; roofColor='#402010'; accentColor='#ffaa44'; windowColor='#ffcc88'; break;
+    case 'forge':     baseColor='#402020'; roofColor='#280808'; accentColor='#ff6600'; windowColor='#ff9944'; break;
+    case 'academy':   baseColor='#204040'; roofColor='#102828'; accentColor='#44ffcc'; windowColor='#88ffdd'; break;
+    case 'workshop':  baseColor='#503828'; roofColor='#382010'; accentColor='#cc8844'; windowColor='#ddaa66'; break;
+    case 'colosseum': baseColor='#806030'; roofColor='#604010'; accentColor='#ffd060'; windowColor='#ffe090'; break;
+    default: baseColor='#445566'; roofColor='#334455'; accentColor=civColor; windowColor=civColor;
   }
 
-  // Main building body
-  ctx.globalAlpha=0.92;
-  ctx.fillStyle=baseColor;
+  // ── Main building body ────────────────────────────────────────────────────
+  ctx.globalAlpha=0.95;
+
+  // Outer wall (slightly larger, darker)
+  ctx.fillStyle=roofColor;
   ctx.fillRect(px-hw, py-hw, hw*2, hw*2);
 
-  // Roof / top detail
-  const roofInset=hw*0.15;
-  ctx.fillStyle=roofColor;
-  ctx.fillRect(px-hw+roofInset, py-hw+roofInset, (hw-roofInset)*2, (hw-roofInset)*2);
+  // Inner body (main color, inset)
+  const inset=Math.max(1.5, hw*0.12);
+  ctx.fillStyle=baseColor;
+  ctx.fillRect(px-hw+inset, py-hw+inset, (hw-inset)*2, (hw-inset)*2);
 
-  // Windows grid for tall buildings — skip when many buildings on screen
-  if(tier>=3&&cam.zoom>0.6&&!densityHigh){
-    const cols=Math.max(2,Math.floor(hw*2/(S*0.22)));
-    const rows=Math.max(2,Math.floor(hw*2/(S*0.22)));
-    const ww=(hw*2/cols)*0.45, wh=(hw*2/rows)*0.45;
-    for(let r=0;r<rows;r++){
-      for(let c=0;c<cols;c++){
-        const wx=px-hw+(c+0.5)*(hw*2/cols);
-        const wy=py-hw+(r+0.5)*(hw*2/rows);
-        const lit=Math.sin(s.tx*7.3+s.ty*3.1+r*2.7+c*1.9+t*0.5)>0.1;
-        ctx.globalAlpha=lit?0.85:0.2;
-        ctx.fillStyle=lit?accentColor:'#111';
+  // ── Roof structure — varies by building type ──────────────────────────────
+  if(tier >= 2){
+    const roofInset=hw*0.22;
+    ctx.fillStyle=roofColor;
+    ctx.fillRect(px-hw+roofInset, py-hw+roofInset, (hw-roofInset)*2, (hw-roofInset)*2);
+
+    // Roof center detail (dome/flat top)
+    if(s.type==='cathedral'||s.type==='temple'||s.type==='observatory'){
+      // Dome — circle on top
+      ctx.globalAlpha=0.9;
+      ctx.fillStyle=accentColor;
+      ctx.beginPath();
+      ctx.arc(px, py, hw*0.38, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha=0.4;
+      ctx.strokeStyle='rgba(255,255,255,0.5)';
+      ctx.lineWidth=Math.max(0.5, S*0.04);
+      ctx.stroke();
+    } else if(s.type==='palace'||s.type==='citadel'){
+      // Corner towers
+      ctx.globalAlpha=0.9;
+      ctx.fillStyle=roofColor;
+      const towerR=hw*0.22;
+      for(const [ox,oy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){
+        ctx.fillRect(px+ox*(hw-towerR)-towerR, py+oy*(hw-towerR)-towerR, towerR*2, towerR*2);
+        ctx.fillStyle=accentColor;
+        ctx.globalAlpha=0.6;
+        ctx.fillRect(px+ox*(hw-towerR)-towerR*0.5, py+oy*(hw-towerR)-towerR*0.5, towerR, towerR);
+        ctx.fillStyle=roofColor;
+        ctx.globalAlpha=0.9;
+      }
+    } else if(s.type==='factory'||s.type==='powerplant'){
+      // Chimney stacks
+      ctx.globalAlpha=0.9;
+      ctx.fillStyle='#333';
+      const cw2=hw*0.18, ch2=hw*0.55;
+      ctx.fillRect(px-hw*0.5-cw2/2, py-hw-ch2+inset, cw2, ch2);
+      ctx.fillRect(px+hw*0.5-cw2/2, py-hw-ch2+inset, cw2, ch2);
+    } else if(s.type==='skyscraper'||s.type==='megacity_core'||s.type==='arcology'||s.type==='neural_hub'){
+      // Stepped top floors
+      ctx.globalAlpha=0.85;
+      ctx.fillStyle=baseColor;
+      const step2=hw*0.28;
+      ctx.fillRect(px-hw+step2, py-hw+step2, (hw-step2)*2, (hw-step2)*2);
+      ctx.fillStyle=accentColor;
+      ctx.globalAlpha=0.5;
+      ctx.fillRect(px-hw*0.25, py-hw*0.25, hw*0.5, hw*0.5);
+    }
+  }
+
+  // ── Windows grid — only at medium+ zoom, skip when very dense ────────────
+  if(tier>=2 && cam.zoom>0.5 && !densityHigh){
+    const cols=Math.max(2, Math.floor((hw*1.5)/(S*0.22)));
+    const rows=Math.max(2, Math.floor((hw*1.5)/(S*0.22)));
+    const ww=(hw*1.6/cols)*0.42, wh=(hw*1.6/rows)*0.42;
+    const gridX=px-hw*0.8, gridY=py-hw*0.8;
+    for(let row=0;row<rows;row++){
+      for(let col=0;col<cols;col++){
+        const wx=gridX+(col+0.5)*(hw*1.6/cols);
+        const wy=gridY+(row+0.5)*(hw*1.6/rows);
+        const lit=Math.sin(s.tx*7.3+s.ty*3.1+row*2.7+col*1.9+t*0.5)>0.05;
+        ctx.globalAlpha=lit?0.88:0.18;
+        ctx.fillStyle=lit?windowColor:'#0a0a14';
         ctx.fillRect(wx-ww/2, wy-wh/2, ww, wh);
       }
     }
   }
 
-  // Accent border / outline
-  ctx.globalAlpha=0.7;
+  // ── Accent border / outline ───────────────────────────────────────────────
+  ctx.globalAlpha=0.75;
   ctx.strokeStyle=accentColor;
-  ctx.lineWidth=Math.max(0.5, S*0.05);
+  ctx.lineWidth=Math.max(0.8, S*0.07);
   ctx.strokeRect(px-hw, py-hw, hw*2, hw*2);
 
-  // Special effects for ultra-advanced structures — skip at high density
-  if(k>50000&&!densityHigh){
-    // Neon glow — use cached gradient key to avoid recreating every frame
-    const glowKey=`${s.type}_${Math.round(hw)}_${accentColor}`;
-    ctx.globalAlpha=0.2*pulse;
-    const grd=ctx.createRadialGradient(px,py,0,px,py,hw*2.5);
+  // ── Neon/energy glow for ultra-advanced structures ────────────────────────
+  if(k>50000 && !densityHigh){
+    ctx.globalAlpha=0.18*pulse;
+    const grd=ctx.createRadialGradient(px,py,hw*0.5,px,py,hw*3.5);
     grd.addColorStop(0,accentColor);
     grd.addColorStop(1,'rgba(0,0,0,0)');
     ctx.fillStyle=grd;
-    ctx.beginPath();ctx.arc(px,py,hw*2.5,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(px,py,hw*3.5,0,Math.PI*2);ctx.fill();
   }
 
-  // Spire/antenna for tall buildings — skip at medium density
-  if(tier>=5&&cam.zoom>0.4&&!densityMed){
-    ctx.globalAlpha=0.9;
+  // ── Spire/antenna for tall buildings ─────────────────────────────────────
+  if(tier>=4 && cam.zoom>0.35 && !densityMed){
+    ctx.globalAlpha=0.92;
     ctx.strokeStyle=accentColor;
-    ctx.lineWidth=Math.max(0.5,S*0.04);
+    ctx.lineWidth=Math.max(0.8, S*0.06);
+    const spireH=S*(0.5+tier*0.12);
     ctx.beginPath();
-    ctx.moveTo(px,py-hw);
-    ctx.lineTo(px,py-hw-S*(0.3+tier*0.08));
+    ctx.moveTo(px, py-hw);
+    ctx.lineTo(px, py-hw-spireH);
     ctx.stroke();
-    // Blinking light at top
-    ctx.globalAlpha=(Math.sin(t*3+s.tx)>0)?0.9:0.2;
-    ctx.fillStyle='#ff4444';
-    ctx.beginPath();ctx.arc(px,py-hw-S*(0.3+tier*0.08),Math.max(1,S*0.07),0,Math.PI*2);ctx.fill();
+    // Blinking beacon
+    const blink=(Math.sin(t*3.5+s.tx)>0)?0.95:0.15;
+    ctx.globalAlpha=blink;
+    ctx.fillStyle='#ff3333';
+    ctx.beginPath();ctx.arc(px, py-hw-spireH, Math.max(1.2, S*0.09), 0, Math.PI*2);ctx.fill();
   }
 
-  // HP bar
-  if(showHP&&s.hp<s.maxHp){
+  // ── HP bar ────────────────────────────────────────────────────────────────
+  if(showHP && s.hp<s.maxHp){
     ctx.globalAlpha=1;
-    ctx.fillStyle='#300';ctx.fillRect(s.tx*TILE,s.ty*TILE+TILE-2,TILE,2);
-    ctx.fillStyle='#f44';ctx.fillRect(s.tx*TILE,s.ty*TILE+TILE-2,TILE*(s.hp/s.maxHp),2);
+    const bw=hw*2;
+    ctx.fillStyle='#300';ctx.fillRect(px-hw, py+hw+1, bw, 2.5);
+    ctx.fillStyle='#f44';ctx.fillRect(px-hw, py+hw+1, bw*(s.hp/s.maxHp), 2.5);
   }
 
   ctx.globalAlpha=1;
   ctx.restore();
 
-  // Label — only at close zoom, low density, never in crowded cities
-  if(cam.zoom>1.5&&cam.zoom<3.0&&s.label&&!densityMed){
-    const lbl=s.label;
+  // ── Label — only at close zoom, low density ───────────────────────────────
+  if(cam.zoom>1.2 && cam.zoom<3.5 && s.label && !densityMed){
     ctx.save();
-    ctx.globalAlpha=0.8;
+    ctx.globalAlpha=0.85;
     ctx.textAlign='center';
     ctx.textBaseline='bottom';
-    const fs=Math.round(Math.max(7,Math.min(11,9/cam.zoom)));
+    const fs=Math.round(Math.max(7, Math.min(11, 9/cam.zoom)));
     ctx.font=`${fs}px sans-serif`;
     ctx.strokeStyle='rgba(0,0,0,0.9)';
-    ctx.lineWidth=2/cam.zoom;
-    ctx.strokeText(lbl,px,py-hw-2);
+    ctx.lineWidth=2.5/cam.zoom;
+    ctx.strokeText(s.label, px, py-hw-3);
     ctx.fillStyle=accentColor;
-    ctx.fillText(lbl,px,py-hw-2);
+    ctx.fillText(s.label, px, py-hw-3);
     ctx.restore();
   }
 }
@@ -1689,6 +2175,77 @@ function _drawMegaStructure(s, px, py, civ, t, showShadow){
       ctx.beginPath();ctx.arc(px,py,S*0.5,0,Math.PI*2);ctx.fill();
       break;
     }
+
+    case 'colosseum':{
+      // Oval colosseum — Roman architecture top-down view
+      const rx=S*2.2, ry=S*1.5;
+      // Outer stone wall (thick)
+      ctx.globalAlpha=0.95;
+      ctx.strokeStyle='#c8a060';
+      ctx.lineWidth=Math.max(3, S*0.32);
+      ctx.beginPath();
+      ctx.ellipse(px,py,rx,ry,0,0,Math.PI*2);
+      ctx.stroke();
+      // Second inner wall
+      ctx.strokeStyle='#a08040';
+      ctx.lineWidth=Math.max(2, S*0.18);
+      ctx.beginPath();
+      ctx.ellipse(px,py,rx*0.72,ry*0.72,0,0,Math.PI*2);
+      ctx.stroke();
+      // Arena floor (sand)
+      ctx.globalAlpha=0.9;
+      ctx.fillStyle='#d4a84a';
+      ctx.beginPath();
+      ctx.ellipse(px,py,rx*0.48,ry*0.48,0,0,Math.PI*2);
+      ctx.fill();
+      // Arena cross lines
+      ctx.globalAlpha=0.35;
+      ctx.strokeStyle='#a07830';
+      ctx.lineWidth=Math.max(0.5, S*0.05);
+      ctx.beginPath();ctx.moveTo(px-rx*0.44,py);ctx.lineTo(px+rx*0.44,py);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(px,py-ry*0.44);ctx.lineTo(px,py+ry*0.44);ctx.stroke();
+      // Seating rows (arcs between walls)
+      ctx.globalAlpha=0.3;
+      ctx.strokeStyle='#b09050';
+      ctx.lineWidth=Math.max(0.5, S*0.04);
+      for(let row=0; row<4; row++){
+        const f=0.52+row*0.055;
+        ctx.beginPath();
+        ctx.ellipse(px,py,rx*f,ry*f,0,0,Math.PI*2);
+        ctx.stroke();
+      }
+      // Entrance gates (4 openings)
+      ctx.globalAlpha=0.7;
+      ctx.fillStyle='#1a1008';
+      const gateW=S*0.22, gateH=S*0.18;
+      ctx.fillRect(px-gateW/2, py-ry-gateH/2, gateW, gateH); // top
+      ctx.fillRect(px-gateW/2, py+ry-gateH/2, gateW, gateH); // bottom
+      ctx.fillRect(px-rx-gateH/2, py-gateW/2, gateH, gateW); // left
+      ctx.fillRect(px+rx-gateH/2, py-gateW/2, gateH, gateW); // right
+      // Civ color tint on stands
+      ctx.globalAlpha=0.18*pulse;
+      ctx.fillStyle=civColor;
+      ctx.beginPath();
+      ctx.ellipse(px,py,rx,ry,0,0,Math.PI*2);
+      ctx.fill();
+      // Active battle glow
+      const isActive = _colosseumBattle && _colosseumBattle.structureTx===s.tx && _colosseumBattle.structureTy===s.ty;
+      if(isActive){
+        ctx.globalAlpha=0.35*(0.5+Math.sin(_waterPhase*8)*0.5);
+        ctx.strokeStyle='#ffd700';
+        ctx.lineWidth=Math.max(2, S*0.2);
+        ctx.beginPath();
+        ctx.ellipse(px,py,rx*1.08,ry*1.08,0,0,Math.PI*2);
+        ctx.stroke();
+      }
+      // Outer glow
+      ctx.globalAlpha=0.15*pulse;
+      ctx.fillStyle='#ffd060';
+      ctx.beginPath();
+      ctx.ellipse(px,py,rx*1.4,ry*1.4,0,0,Math.PI*2);
+      ctx.fill();
+      break;
+    }
   }
 
   ctx.globalAlpha=1;
@@ -1721,8 +2278,8 @@ function _drawTouristSites(){
   if(cam.zoom < 0.6) return; // solo visible con zoom medio/alto
   _ctx.textAlign='center';_ctx.textBaseline='middle';
   const vx0=Math.floor(-cam.x/cam.zoom/TILE)-2, vy0=Math.floor(-cam.y/cam.zoom/TILE)-2;
-  const vx1=vx0+Math.ceil(_canvas.width/cam.zoom/TILE)+4;
-  const vy1=vy0+Math.ceil(_canvas.height/cam.zoom/TILE)+4;
+  const vx1=vx0+Math.ceil(_cw()/cam.zoom/TILE)+4;
+  const vy1=vy0+Math.ceil(_ch()/cam.zoom/TILE)+4;
   for(const s of sites){
     if(s.tx<vx0||s.tx>vx1||s.ty<vy0||s.ty>vy1) continue;
     const px=s.tx*TILE+TILE/2, py=s.ty*TILE+TILE/2;
@@ -1753,8 +2310,8 @@ function _drawMonuments(){
   if(!naturalMonuments||naturalMonuments.length===0)return;
   _ctx.textAlign='center';_ctx.textBaseline='middle';
   const vx0=Math.floor(-cam.x/cam.zoom/TILE)-2, vy0=Math.floor(-cam.y/cam.zoom/TILE)-2;
-  const vx1=vx0+Math.ceil(_canvas.width/cam.zoom/TILE)+4;
-  const vy1=vy0+Math.ceil(_canvas.height/cam.zoom/TILE)+4;
+  const vx1=vx0+Math.ceil(_cw()/cam.zoom/TILE)+4;
+  const vy1=vy0+Math.ceil(_ch()/cam.zoom/TILE)+4;
   for(const m of naturalMonuments){
     if(m.tx<vx0||m.tx>vx1||m.ty<vy0||m.ty>vy1)continue;
     const px=m.tx*TILE+TILE/2, py=m.ty*TILE+TILE/2;
@@ -1777,35 +2334,61 @@ function _drawMonuments(){
 }
 
 // ── Humans ────────────────────────────────────────────────────────────────────
+// ── Human action icon map ─────────────────────────────────────────────────────
+const ACTION_ICONS = {
+  'Descansando':'😴','Explorando':'🗺️','Recolectando':'🌿','Cazando':'🏹',
+  'Durmiendo':'💤','Construyendo':'🔨','Socializando':'💬','Pescando':'🎣',
+  'Minando':'⛏️','Reproduciéndose':'💕','Cultivando':'🌾','Fabricando':'⚙️',
+  'Curando':'💊','Liderando':'📣','Migrando':'🚶','Enfermo':'🤒',
+  'Destruyendo':'🔥','Fortificando':'🛡️','Patrullando':'👁️','Reparando':'🔧',
+};
+
+// ── Human movement trail (for followed/selected human) ────────────────────────
+const _humanTrail = new Map(); // humanId → [{px,py,age}]
+const TRAIL_MAX = 18;
+const TRAIL_FADE_SEC = 2.2;
+
+function _updateHumanTrail(h, dtSec){
+  if(!h || !h.alive) return;
+  let trail = _humanTrail.get(h.id);
+  if(!trail){ trail = []; _humanTrail.set(h.id, trail); }
+  const last = trail[trail.length-1];
+  if(!last || Math.hypot(h.px-last.px, h.py-last.py) > TILE*0.4){
+    trail.push({px:h.px, py:h.py, age:0});
+    if(trail.length > TRAIL_MAX) trail.shift();
+  }
+  for(const p of trail) p.age += dtSec;
+  while(trail.length > 0 && trail[0].age > TRAIL_FADE_SEC) trail.shift();
+}
+
 function _drawHumans(){
-  const r=Math.max(3,TILE*0.75);
+  const r=Math.max(2.5, TILE*0.45); // humans smaller relative to buildings
   _ctx.textAlign='center';
 
   const vx0=(-cam.x/cam.zoom)-r*3, vy0=(-cam.y/cam.zoom)-r*3;
-  const vx1=vx0+_canvas.width/cam.zoom+r*6, vy1=vy0+_canvas.height/cam.zoom+r*6;
+  const vx1=vx0+_cw()/cam.zoom+r*6, vy1=vy0+_ch()/cam.zoom+r*6;
   const showBars=cam.zoom>0.9;
-  const showName=false; // names removed — too cluttered at zoom
   const showWeapon=cam.zoom>1.5;
   const showRings=cam.zoom>0.7;
-  // LOD: at very low zoom just draw colored dots — massive perf win
+  const showActionBubble=cam.zoom>1.2;
+  const showName=cam.zoom>1.8;
   const dotOnly=cam.zoom<0.5;
   const minimalMode=cam.zoom<0.8;
 
-  // Use _cachedAlive (already filtered to alive) to avoid iterating dead humans
   const drawList = (typeof _cachedAlive !== 'undefined' && _cachedAlive.length > 0) ? _cachedAlive : humans;
 
-  // Count visible humans for density-based LOD
   let _visibleHumanCount=0;
   for(const h of drawList){ if(h.alive&&h.px>=vx0&&h.px<=vx1&&h.py>=vy0&&h.py<=vy1)_visibleHumanCount++; }
-  const _humanDense = _visibleHumanCount > 120; // suppress icons when crowded
-  const _humanVeryDense = _visibleHumanCount > 300; // suppress even rings
+  const _humanDense = _visibleHumanCount > 120;
+  const _humanVeryDense = _visibleHumanCount > 300;
+
+  const followedId = (typeof _autoFollowId !== 'undefined') ? _autoFollowId : null;
 
   for(const h of drawList){
     if(!h.alive)continue;
     const px=h.px, py=h.py;
     if(px<vx0||px>vx1||py<vy0||py>vy1)continue;
 
-    // Dot-only mode at extreme zoom-out
     if(dotOnly){
       _ctx.beginPath();
       _ctx.arc(px,py,Math.max(1.5,r*0.5),0,Math.PI*2);
@@ -1814,19 +2397,41 @@ function _drawHumans(){
       continue;
     }
 
-    // Civ ring — only at reasonable zoom and not very dense
-    if(showRings&&!_humanVeryDense&&h.civId!=null){
-      const civ=typeof civilizations!=='undefined'?civilizations.get(h.civId):null;
-      if(civ){
-        _ctx.beginPath();
-        _ctx.arc(px,py,r+2,0,Math.PI*2);
-        _ctx.strokeStyle=civ.color;
-        _ctx.lineWidth=1.5;
-        _ctx.stroke();
+    const civ=typeof civilizations!=='undefined'&&h.civId!=null?civilizations.get(h.civId):null;
+
+    // Movement trail for followed/selected human
+    if((h.id===followedId||h.selected)&&!_humanVeryDense){
+      const trail=_humanTrail.get(h.id);
+      if(trail&&trail.length>1){
+        _ctx.save();
+        for(let i=1;i<trail.length;i++){
+          const t0=trail[i-1], t1=trail[i];
+          const prog=i/trail.length;
+          const alpha=prog*0.55*(1-t1.age/TRAIL_FADE_SEC);
+          _ctx.globalAlpha=Math.max(0,alpha);
+          _ctx.strokeStyle=h.color;
+          _ctx.lineWidth=Math.max(1,(r*0.5)*prog);
+          _ctx.lineCap='round';
+          _ctx.beginPath();
+          _ctx.moveTo(t0.px,t0.py);
+          _ctx.lineTo(t1.px,t1.py);
+          _ctx.stroke();
+        }
+        _ctx.globalAlpha=1;
+        _ctx.restore();
       }
     }
 
-    // Prodigy aura — skip in minimal mode or very dense
+    // Civ ring
+    if(showRings&&!_humanVeryDense&&civ){
+      _ctx.beginPath();
+      _ctx.arc(px,py,r+2,0,Math.PI*2);
+      _ctx.strokeStyle=civ.color;
+      _ctx.lineWidth=1.5;
+      _ctx.stroke();
+    }
+
+    // Prodigy aura
     if(h.isProdigy&&!minimalMode&&!_humanVeryDense){
       const pulse=0.55+Math.sin(_waterPhase*4+h.id)*0.45;
       _ctx.beginPath();
@@ -1844,12 +2449,18 @@ function _drawHumans(){
       _ctx.globalAlpha=1;
     }
 
-    // Selected glow
+    // Selected glow — pulsing
     if(h.selected){
+      const pulse=0.6+Math.sin(_waterPhase*5+h.id)*0.4;
+      _ctx.beginPath();
+      _ctx.arc(px,py,r+7,0,Math.PI*2);
+      _ctx.fillStyle=`rgba(255,255,255,${0.15*pulse})`;
+      _ctx.fill();
       _ctx.beginPath();
       _ctx.arc(px,py,r+5,0,Math.PI*2);
-      _ctx.fillStyle='rgba(255,255,255,0.22)';
-      _ctx.fill();
+      _ctx.strokeStyle=`rgba(255,255,255,${0.7*pulse})`;
+      _ctx.lineWidth=2;
+      _ctx.stroke();
     }
 
     // Body
@@ -1857,9 +2468,14 @@ function _drawHumans(){
     _ctx.arc(px,py,r,0,Math.PI*2);
     _ctx.fillStyle=h.color;
     _ctx.fill();
+    // Outline for contrast
+    _ctx.beginPath();
+    _ctx.arc(px,py,r,0,Math.PI*2);
+    _ctx.strokeStyle='rgba(0,0,0,0.4)';
+    _ctx.lineWidth=1;
+    _ctx.stroke();
 
     if(!minimalMode){
-      // Gender dot
       _ctx.beginPath();
       _ctx.arc(px,py,r*0.38,0,Math.PI*2);
       _ctx.fillStyle=h.gender==='F'?'#ffaacc':'#aaccff';
@@ -1876,26 +2492,36 @@ function _drawHumans(){
       _ctx.stroke();
     }
 
-    // Health bar only
+    // Health + hunger bars
     if(showBars){
-      const bw=TILE*1.4, bx=px-bw/2, by=py-r-5;
-      _ctx.fillStyle='#111';
-      _ctx.fillRect(bx,by,bw,3);
-      _ctx.fillStyle=h.health>60?'#4f4':h.health>30?'#fa0':'#f44';
+      const bw=TILE*1.6, bx=px-bw/2, by=py-r-8;
+      _ctx.fillStyle='rgba(0,0,0,0.6)';
+      _ctx.fillRect(bx-1,by-1,bw+2,5);
+      _ctx.fillStyle=h.health>60?'#3d3':h.health>30?'#fa0':'#f44';
       _ctx.fillRect(bx,by,bw*(h.health/100),3);
+      if(h.hunger>40){
+        _ctx.fillStyle='rgba(0,0,0,0.5)';
+        _ctx.fillRect(bx-1,by+4,bw+2,4);
+        _ctx.fillStyle=`rgba(255,${Math.round(140*(1-h.hunger/100))},0,0.85)`;
+        _ctx.fillRect(bx,by+5,bw*(h.hunger/100),2);
+      }
     }
 
-    // Icons — only at higher zoom to save draw calls, skip when crowded
+    // Status icons above head
     if(showRings&&!_humanDense){
+      let iconY=py-r-4;
       if(h.isProdigy&&h.prodigyType){
         _ctx.font=`${Math.round(r*1.3)}px serif`;
-        _ctx.fillText(h.prodigyType.icon,px,py-r-4);
+        _ctx.fillText(h.prodigyType.icon,px,iconY);
+        iconY-=r*1.4;
       } else if(h.isLeader){
         _ctx.font=`${Math.round(r*1.1)}px serif`;
-        _ctx.fillText('👑',px,py-r-3);
-      } else if(h.sick){
-        _ctx.font=`${Math.round(r)}px serif`;
-        _ctx.fillText('🦠',px+r,py-r);
+        _ctx.fillText('👑',px,iconY);
+        iconY-=r*1.2;
+      }
+      if(h.sick){
+        _ctx.font=`${Math.round(r*0.9)}px serif`;
+        _ctx.fillText('🤒',px+r+1,py-r);
       }
     }
 
@@ -1903,20 +2529,19 @@ function _drawHumans(){
       const wi=typeof WEAPON_ICONS!=='undefined'?WEAPON_ICONS:['','🗡️','🪓','⚔️','🔱','🛡️','💣'];
       const icon=wi[Math.min(h.weaponTier,wi.length-1)]||'⚔️';
       _ctx.font=`${Math.round(r*0.85)}px serif`;
-      _ctx.fillText(icon,px-r-1,py-r);
+      _ctx.fillText(icon,px-r-2,py-r);
     }
 
-    // Soldier formation ring — square for soldiers in formation
+    // Soldier formation ring
     if(h.isSoldier&&showRings){
-      const civ2=typeof civilizations!=='undefined'&&h.civId!=null?civilizations.get(h.civId):null;
-      if(civ2&&civ2.atWarWith&&civ2.atWarWith.size>0){
+      if(civ&&civ.atWarWith&&civ.atWarWith.size>0){
         _ctx.strokeStyle='rgba(255,80,80,0.7)';
         _ctx.lineWidth=1.5;
         _ctx.strokeRect(px-r-2,py-r-2,(r+2)*2,(r+2)*2);
       }
     }
 
-    // Veteran glow (skip in minimal mode)
+    // Veteran glow
     if(h._veteranLevel>=2&&showRings&&!minimalMode){
       const pulse=0.5+Math.sin(_waterPhase*3+h.id*0.7)*0.5;
       _ctx.beginPath();
@@ -1928,7 +2553,7 @@ function _drawHumans(){
       _ctx.globalAlpha=1;
     }
 
-    // Golden age shimmer (skip in minimal mode)
+    // Golden age shimmer
     if(typeof _goldenAgeCivs!=='undefined'&&h.civId!=null&&_goldenAgeCivs.has(h.civId)&&showRings&&!minimalMode){
       const pulse=0.4+Math.sin(_waterPhase*2+h.id*0.3)*0.4;
       _ctx.beginPath();
@@ -1938,17 +2563,17 @@ function _drawHumans(){
       _ctx.stroke();
     }
 
-    // Transport icon — show when on water or high tier, skip when crowded
+    // Transport icon
     if(showWeapon&&h.transportTier>=1&&!_humanDense){
       const ti=['','⛵','🐎','🚂','🚗','✈️','🚁','🚀','🛸','🌌'];
       const icon=ti[Math.min(h.transportTier,9)];
       if(icon){
         _ctx.font=`${Math.round(r*0.85)}px serif`;
-        _ctx.fillText(icon,px+r+1,py-r);
+        _ctx.fillText(icon,px+r+2,py-r);
       }
     }
 
-    // Water ripple effect when sailing
+    // Water ripple
     if(h._onWater&&showRings&&!minimalMode){
       _ctx.beginPath();
       _ctx.arc(px,py,r+3+Math.sin(_waterPhase*5+h.id)*2,0,Math.PI*2);
@@ -1957,10 +2582,54 @@ function _drawHumans(){
       _ctx.stroke();
     }
 
-    if(showName){
-      _ctx.font='8px sans-serif';
-      _ctx.fillStyle='rgba(255,255,255,0.9)';
-      _ctx.fillText(h.name.split(' ')[0],px,py-r-9);
+    // Action bubble — what is this human doing right now
+    if(showActionBubble&&!_humanDense&&h.action){
+      const actionIcon=ACTION_ICONS[h.action]||'❓';
+      const bubbleX=px+r+3, bubbleY=py+r+3;
+      _ctx.save();
+      _ctx.font=`${Math.round(r*1.05)}px serif`;
+      _ctx.textAlign='center';
+      _ctx.textBaseline='middle';
+      _ctx.fillStyle='rgba(0,0,0,0.55)';
+      _ctx.beginPath();
+      _ctx.arc(bubbleX,bubbleY,r*0.75,0,Math.PI*2);
+      _ctx.fill();
+      _ctx.fillText(actionIcon,bubbleX,bubbleY);
+      _ctx.restore();
+    }
+
+    // Name label
+    if(showName&&!_humanDense){
+      const firstName=h.name.split(' ')[0];
+      _ctx.save();
+      _ctx.font=`bold ${Math.round(r*0.85)}px monospace`;
+      _ctx.textAlign='center';
+      _ctx.textBaseline='bottom';
+      const tw=_ctx.measureText(firstName).width;
+      const lx=px, ly=py-r-(showBars?12:5);
+      _ctx.fillStyle='rgba(0,0,0,0.65)';
+      _ctx.beginPath();
+      _ctx.roundRect(lx-tw/2-3,ly-r*0.9,tw+6,r*0.95,3);
+      _ctx.fill();
+      _ctx.fillStyle=civ?civ.color:'#e8d5a3';
+      _ctx.fillText(firstName,lx,ly);
+      _ctx.restore();
+    } else if(h.selected&&!showName){
+      // Always show name for selected human even at lower zoom
+      const firstName=h.name.split(' ')[0];
+      _ctx.save();
+      _ctx.font=`bold ${Math.round(r*0.9)}px monospace`;
+      _ctx.textAlign='center';
+      _ctx.textBaseline='bottom';
+      const tw=_ctx.measureText(firstName).width;
+      const lx=px, ly=py-r-(showBars?12:5);
+      _ctx.fillStyle='rgba(0,0,0,0.7)';
+      _ctx.beginPath();
+      _ctx.roundRect(lx-tw/2-3,ly-r*0.95,tw+6,r,3);
+      _ctx.fill();
+      _ctx.fillStyle='#fff';
+      _ctx.fillText(firstName,lx,ly);
+      _ctx.restore();
     }
   }
 }
@@ -1986,8 +2655,8 @@ function _drawIntelligenceCurve(){
   const ctx=_ctx;
   const gw=160,gh=50;
   // Bottom-right corner, above the world events panel (events panel is ~7*18+20 = 146px tall)
-  const gx=_canvas.width-gw-18;
-  const gy=_canvas.height-gh-60-160; // 160px above bottom to clear events panel
+  const gx=_cw()-gw-18;
+  const gy=_ch()-gh-60-20; // bottom-right corner, above clock
   ctx.save();
   ctx.fillStyle='rgba(0,0,0,0.60)';
   _roundRect(ctx,gx-4,gy-4,gw+8,gh+22,6);
@@ -2088,7 +2757,7 @@ function _buildLegendDOM(){
     ['🟦','Mar / Océano'],['🟫','Playa / Costa'],['🌵','Desierto'],['🟧','Mesa'],
     ['🌾','Sabana'],['🌿','Pantano'],['🌱','Manglar'],['🟩','Pradera'],
     ['🌳','Bosque'],['🌲','Bosque Boreal'],['🎋','Bosque de Bambú'],
-    ['🌴','Selva Tropical'],['🏔','Montaña'],['🌋','Volcánico'],
+    ['🌸','Bosque Sakura'],['🌴','Selva Tropical'],['🏔','Montaña'],['🌋','Volcánico'],
     ['❄️','Tundra'],['🧊','Glaciar'],['🪸','Arrecife de Coral'],['🏔','Nieve'],
   ];
   const items=[...baseItems,...extraItems,
@@ -2119,21 +2788,73 @@ function _drawLegend(){
 function _drawWorldEvents(){
   if(typeof worldEvents==='undefined'||worldEvents.length===0) return;
   const ctx=_ctx;
-  const maxShow=7;
+  const maxShow=6;
   const events=worldEvents.slice(0,maxShow);
-  const lh=18, pad=10, bw=300;
-  const bh=events.length*lh+pad*2;
-  const x=_canvas.width-bw-14, y=_canvas.height-14;
+  const lh=20, pad=10, bw=320;
+  const bh=events.length*lh+pad*2+14;
+  const x=_cw()-bw-14, y=_ch()-14;
+
   ctx.save();
-  ctx.fillStyle='rgba(0,0,0,0.65)';
-  _roundRect(ctx,x,y-bh,bw,bh,8);
+
+  // Background
+  ctx.fillStyle='rgba(3,8,20,0.88)';
+  _roundRect(ctx,x,y-bh,bw,bh,9);
   ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.07)';
+  ctx.lineWidth=1;
+  _roundRect(ctx,x,y-bh,bw,bh,9);
+  ctx.stroke();
+
+  // Title bar
+  ctx.fillStyle='rgba(255,255,255,0.04)';
+  ctx.fillRect(x,y-bh,bw,18);
+  ctx.font='bold 9px monospace';
+  ctx.fillStyle='#445';
+  ctx.textAlign='left';
+  ctx.textBaseline='middle';
+  ctx.fillText('EVENTOS RECIENTES',x+pad,y-bh+9);
+
+  // Events
   ctx.font='11px sans-serif';
   events.forEach((ev,i)=>{
-    const ly=y-bh+pad+(i+0.75)*lh;
-    ctx.fillStyle='#adf';
-    ctx.fillText(`Año ${ev.year}: ${ev.text}`,x+pad,ly);
+    const ly=y-bh+18+pad+(i+0.75)*lh;
+    const age=i/maxShow;
+    const alpha=1-age*0.55;
+    ctx.globalAlpha=alpha;
+
+    let color='#adf';
+    const txt=ev.text||'';
+    if(txt.includes('guerra')||txt.includes('Guerra')||txt.includes('batalla')) color='#f88';
+    else if(txt.includes('pandemia')||txt.includes('Epidemia')||txt.includes('Fiebre')||txt.includes('Cólera')) color='#8f8';
+    else if(txt.includes('terremoto')||txt.includes('tsunami')||txt.includes('volcán')||txt.includes('Volcán')) color='#f84';
+    else if(txt.includes('Oro')||txt.includes('invento')||txt.includes('Invento')||txt.includes('descubrimiento')) color='#ffd700';
+    else if(txt.includes('nuclear')||txt.includes('Nuclear')) color='#ff4400';
+    else if(txt.includes('IA')||txt.includes('Singularidad')) color='#aa44ff';
+    else if(txt.includes('hambruna')||txt.includes('Hambruna')) color='#cc8800';
+    else if(txt.includes('alianza')||txt.includes('paz')||txt.includes('Alianza')) color='#4af';
+    else if(txt.includes('líder')||txt.includes('Líder')||txt.includes('rey')||txt.includes('Rey')) color='#ffd700';
+
+    // Year badge
+    ctx.fillStyle='rgba(255,255,255,0.06)';
+    ctx.fillRect(x+pad,ly-8,40,14);
+    ctx.fillStyle='#556';
+    ctx.font='8px monospace';
+    ctx.textAlign='left';
+    ctx.fillText(String(ev.year||'?'),x+pad+2,ly+1);
+
+    // Event text
+    ctx.fillStyle=color;
+    ctx.font='11px sans-serif';
+    ctx.textAlign='left';
+    let displayText=txt;
+    const maxW=bw-pad*2-48;
+    while(ctx.measureText(displayText).width>maxW&&displayText.length>10){
+      displayText=displayText.slice(0,-2)+'…';
+    }
+    ctx.fillText(displayText,x+pad+46,ly+1);
   });
+
+  ctx.globalAlpha=1;
   ctx.restore();
 }
 
@@ -2148,77 +2869,87 @@ function _roundRect(ctx,x,y,w,h,r){
 }
 
 // ── Biome special effects ─────────────────────────────────────────────────────
+// Biome IDs for fast lookup (avoid getCell() proxy allocation per tile)
+const _BID_GLACIER      = BIOME_NAMES.indexOf('glacier');
+const _BID_TUNDRA       = BIOME_NAMES.indexOf('tundra');
+const _BID_CORAL        = BIOME_NAMES.indexOf('coral_reef');
+const _BID_VOLCANIC     = BIOME_NAMES.indexOf('volcanic');
+const _BID_MANGROVE     = BIOME_NAMES.indexOf('mangrove');
+const _BID_BAMBOO       = BIOME_NAMES.indexOf('bamboo_forest');
+const _BID_SAKURA       = BIOME_NAMES.indexOf('sakura_forest');
+
 function _drawBiomeEffects(){
   if(cam.zoom < 0.5) return;
+  if(!_tBiomeId) return; // terrain not generated yet
   const ctx = _ctx;
   const t = _waterPhase;
-  const vx0=Math.floor(-cam.x/cam.zoom/TILE)-1, vy0=Math.floor(-cam.y/cam.zoom/TILE)-1;
-  const vx1=vx0+Math.ceil(_canvas.width/cam.zoom/TILE)+2;
-  const vy1=vy0+Math.ceil(_canvas.height/cam.zoom/TILE)+2;
+  const vx0=Math.max(0,Math.floor(-cam.x/cam.zoom/TILE)-1);
+  const vy0=Math.max(0,Math.floor(-cam.y/cam.zoom/TILE)-1);
+  const vx1=Math.min(WORLD_W-1, vx0+Math.ceil(_cw()/cam.zoom/TILE)+2);
+  const vy1=Math.min(WORLD_H-1, vy0+Math.ceil(_ch()/cam.zoom/TILE)+2);
 
-  // Sample every 3 tiles for performance
-  const step = cam.zoom > 1.5 ? 1 : cam.zoom > 0.8 ? 2 : 3;
+  // Adaptive step: more tiles = bigger step
+  const visW = vx1-vx0, visH = vy1-vy0;
+  const step = (visW*visH > 8000) ? 4 : (visW*visH > 3000) ? 3 : cam.zoom > 1.5 ? 1 : 2;
 
   ctx.save();
-  for(let ty=Math.max(0,vy0);ty<=Math.min(WORLD_H-1,vy1);ty+=step){
-    for(let tx=Math.max(0,vx0);tx<=Math.min(WORLD_W-1,vx1);tx+=step){
-      const cell = getCell(tx,ty);
-      if(!cell) continue;
+  for(let ty=vy0; ty<=vy1; ty+=step){
+    for(let tx=vx0; tx<=vx1; tx+=step){
+      const bid = _tBiomeId[ty*WORLD_W+tx];
+      if(bid === undefined) continue;
       const px = tx*TILE+TILE/2, py = ty*TILE+TILE/2;
+      const tileW = TILE*step, tileH = TILE*step;
 
-      switch(cell.biome){
-        case 'glacier':{
-          // Shimmer azul-blanco
-          const g = 0.05 + Math.sin(t*1.5 + tx*0.3 + ty*0.2)*0.04;
-          ctx.globalAlpha = g;
-          ctx.fillStyle = '#aaddff';
-          ctx.fillRect(tx*TILE, ty*TILE, TILE*step, TILE*step);
-          break;
+      if(bid === _BID_GLACIER){
+        const g = 0.05 + Math.sin(t*1.5 + tx*0.3 + ty*0.2)*0.04;
+        ctx.globalAlpha = g;
+        ctx.fillStyle = '#aaddff';
+        ctx.fillRect(tx*TILE, ty*TILE, tileW, tileH);
+      } else if(bid === _BID_TUNDRA){
+        if(Math.sin(t*2 + tx*0.7 + ty*0.5) > 0.85){
+          ctx.globalAlpha = 0.35;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(px + Math.sin(t+tx)*3, py + ((t*20 + tx*7) % TILE) - TILE/2, 1.2, 0, Math.PI*2);
+          ctx.fill();
         }
-        case 'tundra':{
-          // Partículas de nieve ocasionales
-          if(Math.sin(t*2 + tx*0.7 + ty*0.5) > 0.85){
-            ctx.globalAlpha = 0.35;
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(px + Math.sin(t+tx)*3, py + ((t*20 + tx*7) % TILE) - TILE/2, 1, 0, Math.PI*2);
-            ctx.fill();
-          }
-          break;
+      } else if(bid === _BID_CORAL){
+        const pulse = 0.06 + Math.sin(t*2.5 + tx*0.4 + ty*0.6)*0.04;
+        ctx.globalAlpha = pulse;
+        ctx.fillStyle = '#00ffcc';
+        ctx.fillRect(tx*TILE, ty*TILE, tileW, tileH);
+      } else if(bid === _BID_VOLCANIC){
+        if(Math.sin(t*3 + tx*0.9 + ty*1.1) > 0.7){
+          ctx.globalAlpha = 0.12 + Math.random()*0.08;
+          ctx.fillStyle = '#ff4400';
+          ctx.fillRect(tx*TILE, ty*TILE, tileW, tileH);
         }
-        case 'coral_reef':{
-          // Brillo turquesa pulsante
-          const pulse = 0.06 + Math.sin(t*2.5 + tx*0.4 + ty*0.6)*0.04;
-          ctx.globalAlpha = pulse;
-          ctx.fillStyle = '#00ffcc';
-          ctx.fillRect(tx*TILE, ty*TILE, TILE*step, TILE*step);
-          break;
+      } else if(bid === _BID_MANGROVE){
+        const r = 0.04 + Math.sin(t*1.8 + tx*0.5)*0.03;
+        ctx.globalAlpha = r;
+        ctx.fillStyle = '#44aa44';
+        ctx.fillRect(tx*TILE, ty*TILE, tileW, tileH);
+      } else if(bid === _BID_BAMBOO){
+        if(Math.sin(t + tx*0.3) > 0.6){
+          ctx.globalAlpha = 0.06;
+          ctx.fillStyle = '#aaff44';
+          ctx.fillRect(tx*TILE, ty*TILE, tileW, tileH);
         }
-        case 'volcanic':{
-          // Brillo naranja-rojo intermitente
-          if(Math.sin(t*3 + tx*0.9 + ty*1.1) > 0.7){
-            ctx.globalAlpha = 0.12 + Math.random()*0.08;
-            ctx.fillStyle = '#ff4400';
-            ctx.fillRect(tx*TILE, ty*TILE, TILE*step, TILE*step);
-          }
-          break;
-        }
-        case 'mangrove':{
-          // Reflejo verde en el agua
-          const r = 0.04 + Math.sin(t*1.8 + tx*0.5)*0.03;
-          ctx.globalAlpha = r;
-          ctx.fillStyle = '#44aa44';
-          ctx.fillRect(tx*TILE, ty*TILE, TILE*step, TILE*step);
-          break;
-        }
-        case 'bamboo_forest':{
-          // Leve brillo verde-amarillo
-          if(Math.sin(t + tx*0.3) > 0.6){
-            ctx.globalAlpha = 0.06;
-            ctx.fillStyle = '#aaff44';
-            ctx.fillRect(tx*TILE, ty*TILE, TILE*step, TILE*step);
-          }
-          break;
+      } else if(bid === _BID_SAKURA){
+        // Tinte rosado suave
+        ctx.globalAlpha = 0.07 + Math.sin(t*1.5+tx*0.2)*0.03;
+        ctx.fillStyle = '#ffaacc';
+        ctx.fillRect(tx*TILE, ty*TILE, tileW, tileH);
+        // Pétalos flotantes (solo a zoom cercano)
+        if(cam.zoom > 0.8 && Math.sin(t*1.2 + tx*0.4 + ty*0.3) > 0.3){
+          const pp = (t*1.2 + tx*0.4 + ty*0.3) % (Math.PI*2);
+          const ox = Math.sin(pp*2.1)*TILE*0.6;
+          const oy = ((t*15 + tx*5) % (TILE*2)) - TILE;
+          ctx.globalAlpha = 0.55;
+          ctx.fillStyle = '#ffb8d0';
+          ctx.beginPath();
+          ctx.arc(px+ox, py+oy, TILE*0.14, 0, Math.PI*2);
+          ctx.fill();
         }
       }
     }
@@ -2226,7 +2957,6 @@ function _drawBiomeEffects(){
   ctx.globalAlpha = 1;
   ctx.restore();
 }
-
 // ── Battlefields, Wonders, Dark Age, Pandemic overlays ───────────────────────
 function _drawEpicOverlays(){
   if(cam.zoom < 0.4) return;
@@ -2236,8 +2966,8 @@ function _drawEpicOverlays(){
   // ── Campos de batalla — cruces rojas pulsantes ────────────────────────────
   if(typeof _battlefields !== 'undefined' && _battlefields.length > 0){
     const vx0=Math.floor(-cam.x/cam.zoom/TILE)-2, vy0=Math.floor(-cam.y/cam.zoom/TILE)-2;
-    const vx1=vx0+Math.ceil(_canvas.width/cam.zoom/TILE)+4;
-    const vy1=vy0+Math.ceil(_canvas.height/cam.zoom/TILE)+4;
+    const vx1=vx0+Math.ceil(_cw()/cam.zoom/TILE)+4;
+    const vy1=vy0+Math.ceil(_ch()/cam.zoom/TILE)+4;
     ctx.save();
     for(const bf of _battlefields){
       if(bf.tx<vx0||bf.tx>vx1||bf.ty<vy0||bf.ty>vy1) continue;
@@ -2336,18 +3066,18 @@ function _drawEpicOverlays(){
       ctx.save();
       const iceAlpha = gl * 0.45;
       // polo norte
-      const northH = _canvas.height * gl * 0.4;
+      const northH = _ch() * gl * 0.4;
       const gradN = ctx.createLinearGradient(0,0,0,northH);
       gradN.addColorStop(0, `rgba(200,230,255,${iceAlpha})`);
       gradN.addColorStop(1, 'rgba(200,230,255,0)');
       ctx.fillStyle = gradN;
-      ctx.fillRect(0, 0, _canvas.width, northH);
+      ctx.fillRect(0, 0, _cw(), northH);
       // polo sur
-      const gradS = ctx.createLinearGradient(0,_canvas.height,0,_canvas.height - northH);
+      const gradS = ctx.createLinearGradient(0,_ch(),0,_ch() - northH);
       gradS.addColorStop(0, `rgba(200,230,255,${iceAlpha})`);
       gradS.addColorStop(1, 'rgba(200,230,255,0)');
       ctx.fillStyle = gradS;
-      ctx.fillRect(0, _canvas.height - northH, _canvas.width, northH);
+      ctx.fillRect(0, _ch() - northH, _cw(), northH);
       ctx.restore();
     }
   }
@@ -2381,7 +3111,7 @@ function _drawEpicOverlays(){
       ctx.lineWidth = 0.5 / cam.zoom;
       const gridSize = TILE * 4;
       const wx0 = -cam.x/cam.zoom, wy0 = -cam.y/cam.zoom;
-      const wx1 = wx0 + _canvas.width/cam.zoom, wy1 = wy0 + _canvas.height/cam.zoom;
+      const wx1 = wx0 + _cw()/cam.zoom, wy1 = wy0 + _ch()/cam.zoom;
       const gx0 = Math.floor(wx0/gridSize)*gridSize;
       const gy0 = Math.floor(wy0/gridSize)*gridSize;
       for(let gx = gx0; gx < wx1; gx += gridSize){
@@ -2415,7 +3145,7 @@ function _drawPandemicHUD(){
   if(typeof _activePandemics === 'undefined' || _activePandemics.length === 0) return;
   const p = _activePandemics[0];
   const ctx = _ctx;
-  const x = _canvas.width/2, y = 108;
+  const x = _cw()/2, y = 108;
   const phaseColor = p.phase==='pico'?'#ff2200':p.phase==='incubacion'?'#ff8800':'#44aa44';
   const phaseLabel = p.phase==='pico'?'PICO':p.phase==='incubacion'?'INCUBACIÓN':'DECLIVE';
   ctx.save();
@@ -2435,7 +3165,7 @@ function _drawPandemicHUD(){
 function _drawClimateHUD(){
   if(typeof _climatePhase === 'undefined' || _climatePhase === 'templado') return;
   const ctx = _ctx;
-  const x = _canvas.width/2, y = 128;
+  const x = _cw()/2, y = 128;
   const icon = _climatePhase === 'calentamiento' ? '🌡️' : '🧊';
   const label = _climatePhase === 'calentamiento' ? 'CALENTAMIENTO GLOBAL' : 'ERA DE HIELO';
   const color = _climatePhase === 'calentamiento' ? '#ff8800' : '#88ccff';
@@ -2458,7 +3188,7 @@ function _drawAIPlagueHUD(){
   const state = getAIPlagueState();
   if(!state.active) return;
   const ctx = _ctx;
-  const x = _canvas.width/2, y = 148;
+  const x = _cw()/2, y = 148;
   const phaseLabels = ['','EXPANSIÓN','DOMINACIÓN','SINGULARIDAD'];
   const phaseColors = ['','#44ffaa','#ff8800','#aa44ff'];
   const label = phaseLabels[state.phase] || '';
@@ -2486,7 +3216,7 @@ function _drawGlobalizationHUD(){
   const lvl = getGlobalizationLevel();
   if(lvl < 0.1) return;
   const ctx = _ctx;
-  const x = _canvas.width/2, y = 168;
+  const x = _cw()/2, y = 168;
   const pct = Math.round(lvl * 100);
   const phases = ['','Integración Temprana','Integración Media','Integración Avanzada','Aldea Global'];
   const phaseIdx = lvl >= 1 ? 4 : lvl >= 0.75 ? 3 : lvl >= 0.5 ? 2 : 1;
@@ -2511,7 +3241,7 @@ function _drawNuclearHUD(){
   const silos = structures.filter(s => s.type === 'nuclear_silo');
   if(silos.length === 0) return;
   const ctx = _ctx;
-  const x = _canvas.width/2, y = 188;
+  const x = _cw()/2, y = 188;
   const pulse = 0.7 + Math.sin(_waterPhase * 4) * 0.3;
   ctx.save();
   ctx.textAlign = 'center';
@@ -2534,28 +3264,44 @@ function buildWaterTileList(){
   for(let ty=0;ty<WORLD_H;ty++) for(let tx=0;tx<WORLD_W;tx++){
     const cell=getCell(tx,ty);
     if(cell&&(cell.biome==='sea'||cell.biome==='deep_sea'))
-      _waterTiles.push({tx,ty,phase:(tx+ty)*0.15});
+      _waterTiles.push({tx,ty,phase:(tx+ty)*0.15,deep:cell.biome==='deep_sea'});
   }
 }
 
 function _drawWaterShimmer(){
   if(!_waterTiles) return;
   const x0=Math.floor(-cam.x/cam.zoom/TILE)-1, y0=Math.floor(-cam.y/cam.zoom/TILE)-1;
-  const x1=x0+Math.ceil(_canvas.width/cam.zoom/TILE)+2;
-  const y1=y0+Math.ceil(_canvas.height/cam.zoom/TILE)+2;
+  const x1=x0+Math.ceil(_cw()/cam.zoom/TILE)+2;
+  const y1=y0+Math.ceil(_ch()/cam.zoom/TILE)+2;
   const t=_waterPhase;
-  // Two shimmer layers for depth
-  _ctx.fillStyle='rgba(100,160,220,0.06)';
+
+  // Layer 1 — bright shimmer lines
+  _ctx.fillStyle='rgba(120,185,255,0.10)';
   for(const w of _waterTiles){
     if(w.tx<x0||w.tx>x1||w.ty<y0||w.ty>y1) continue;
-    if(Math.sin(t*1.2+w.phase)>0.5)
-      _ctx.fillRect(w.tx*TILE+1,w.ty*TILE+TILE*0.35,TILE-2,2);
+    const s=Math.sin(t*1.4+w.phase);
+    if(s>0.45){
+      const width=Math.round((s-0.45)*TILE*1.8);
+      _ctx.fillRect(w.tx*TILE+1, w.ty*TILE+TILE*0.3, Math.min(TILE-2,width), 2);
+    }
   }
-  _ctx.fillStyle='rgba(180,220,255,0.04)';
+  // Layer 2 — secondary shimmer
+  _ctx.fillStyle='rgba(200,235,255,0.07)';
   for(const w of _waterTiles){
     if(w.tx<x0||w.tx>x1||w.ty<y0||w.ty>y1) continue;
-    if(Math.sin(t*0.8+w.phase+1.5)>0.6)
-      _ctx.fillRect(w.tx*TILE+2,w.ty*TILE+TILE*0.65,TILE-4,1);
+    const s=Math.sin(t*0.9+w.phase+1.8);
+    if(s>0.55){
+      _ctx.fillRect(w.tx*TILE+2, w.ty*TILE+TILE*0.65, TILE-4, 1);
+    }
+  }
+  // Layer 3 — deep water tint for deep_sea tiles
+  if(cam.zoom>0.6){
+    _ctx.fillStyle='rgba(0,20,60,0.08)';
+    for(const w of _waterTiles){
+      if(!w.deep) continue;
+      if(w.tx<x0||w.tx>x1||w.ty<y0||w.ty>y1) continue;
+      _ctx.fillRect(w.tx*TILE, w.ty*TILE, TILE, TILE);
+    }
   }
 }
 
@@ -2563,23 +3309,23 @@ function _drawWaterShimmer(){
 function _drawMapVignette(){
   const W=WORLD_W*TILE, H=WORLD_H*TILE;
   const ctx=_ctx;
-  const edgeW=Math.min(W,H)*0.06;
+  const edgeW=Math.min(W,H)*0.09;
   ctx.save();
   // Top edge
   const gt=ctx.createLinearGradient(0,0,0,edgeW);
-  gt.addColorStop(0,'rgba(0,0,0,0.55)'); gt.addColorStop(1,'rgba(0,0,0,0)');
+  gt.addColorStop(0,'rgba(0,0,0,0.72)'); gt.addColorStop(1,'rgba(0,0,0,0)');
   ctx.fillStyle=gt; ctx.fillRect(0,0,W,edgeW);
   // Bottom edge
   const gb=ctx.createLinearGradient(0,H-edgeW,0,H);
-  gb.addColorStop(0,'rgba(0,0,0,0)'); gb.addColorStop(1,'rgba(0,0,0,0.55)');
+  gb.addColorStop(0,'rgba(0,0,0,0)'); gb.addColorStop(1,'rgba(0,0,0,0.72)');
   ctx.fillStyle=gb; ctx.fillRect(0,H-edgeW,W,edgeW);
   // Left edge
   const gl=ctx.createLinearGradient(0,0,edgeW,0);
-  gl.addColorStop(0,'rgba(0,0,0,0.55)'); gl.addColorStop(1,'rgba(0,0,0,0)');
+  gl.addColorStop(0,'rgba(0,0,0,0.72)'); gl.addColorStop(1,'rgba(0,0,0,0)');
   ctx.fillStyle=gl; ctx.fillRect(0,0,edgeW,H);
   // Right edge
   const gr=ctx.createLinearGradient(W-edgeW,0,W,0);
-  gr.addColorStop(0,'rgba(0,0,0,0)'); gr.addColorStop(1,'rgba(0,0,0,0.55)');
+  gr.addColorStop(0,'rgba(0,0,0,0)'); gr.addColorStop(1,'rgba(0,0,0,0.72)');
   ctx.fillStyle=gr; ctx.fillRect(W-edgeW,0,edgeW,H);
   ctx.restore();
 }
@@ -2685,8 +3431,8 @@ function _drawMediaStructures(){
   ctx.textBaseline = 'middle';
 
   const vx0=Math.floor(-cam.x/cam.zoom/TILE)-2, vy0=Math.floor(-cam.y/cam.zoom/TILE)-2;
-  const vx1=vx0+Math.ceil(_canvas.width/cam.zoom/TILE)+4;
-  const vy1=vy0+Math.ceil(_canvas.height/cam.zoom/TILE)+4;
+  const vx1=vx0+Math.ceil(_cw()/cam.zoom/TILE)+4;
+  const vy1=vy0+Math.ceil(_ch()/cam.zoom/TILE)+4;
 
   for(const [,civ] of civilizations){
     if(!civ._hasPrintingPress && !civ._hasRadio && !civ._hasTvStation && !civ._hasInternetHub) continue;

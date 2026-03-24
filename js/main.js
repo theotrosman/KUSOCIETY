@@ -17,13 +17,13 @@ console.log('[world] ready.');
 
 // ── Initial camera ────────────────────────────────────────────────────────────
 (function initCamera(){
-  const minFill=Math.max(canvas.width/(WORLD_W*TILE), canvas.height/(WORLD_H*TILE));
+  const minFill=Math.max(_cw()/(WORLD_W*TILE), _ch()/(WORLD_H*TILE));
   cam.zoom=Math.max(cam.minZoom, minFill*2.2);
   const target=humans.length>0?humans[0]:null;
   const wx=target?target.tx*TILE+TILE/2:(WORLD_W*TILE)/2;
   const wy=target?target.ty*TILE+TILE/2:(WORLD_H*TILE)/2;
-  cam.x=canvas.width/2-wx*cam.zoom;
-  cam.y=canvas.height/2-wy*cam.zoom;
+  cam.x=_cw()/2-wx*cam.zoom;
+  cam.y=_ch()/2-wy*cam.zoom;
   clampCamera();
 })();
 
@@ -73,8 +73,8 @@ function _tickAutoFollow(){
     _pickNextFollowTarget();
     return;
   }
-  const targetX=canvas.width/2-h.px*cam.zoom;
-  const targetY=canvas.height/2-h.py*cam.zoom;
+  const targetX=_cw()/2-h.px*cam.zoom;
+  const targetY=_ch()/2-h.py*cam.zoom;
   cam.x+=(targetX-cam.x)*0.08;
   cam.y+=(targetY-cam.y)*0.08;
   clampCamera();
@@ -451,6 +451,9 @@ function _renderChronicle(content){
 let drag={on:false,sx:0,sy:0,cx:0,cy:0};
 canvas.addEventListener('mousedown',e=>{ lastTs=null; drag={on:true,sx:e.clientX,sy:e.clientY,cx:cam.x,cy:cam.y}; });
 canvas.addEventListener('mousemove',e=>{
+  // Hover tooltip
+  _updateHoverTooltip(e.clientX, e.clientY);
+
   if(!drag.on)return;
   cam.x=drag.cx+(e.clientX-drag.sx);
   cam.y=drag.cy+(e.clientY-drag.sy);
@@ -464,8 +467,118 @@ canvas.addEventListener('mousemove',e=>{
     }
   }
 });
+canvas.addEventListener('mouseleave',()=>{ _hideHoverTooltip(); drag.on=false; });
+
+// ── Hover tooltip ─────────────────────────────────────────────────────────────
+let _hoverTooltip = null;
+let _hoverThrottle = 0;
+
+function _ensureHoverTooltip(){
+  if(!_hoverTooltip){
+    _hoverTooltip = document.createElement('div');
+    _hoverTooltip.id = 'hover-tooltip';
+    _hoverTooltip.style.cssText = [
+      'position:fixed','pointer-events:none','z-index:500',
+      'background:rgba(4,10,22,0.95)','border:1px solid rgba(255,255,255,0.12)',
+      'border-radius:8px','padding:7px 10px','font-family:monospace',
+      'font-size:11px','color:#dde','max-width:200px','line-height:1.5',
+      'box-shadow:0 4px 20px rgba(0,0,0,0.6)','display:none',
+      'backdrop-filter:blur(8px)',
+    ].join(';');
+    document.body.appendChild(_hoverTooltip);
+  }
+  return _hoverTooltip;
+}
+
+function _hideHoverTooltip(){
+  const t = _ensureHoverTooltip();
+  t.style.display = 'none';
+}
+
+function _updateHoverTooltip(mx, my){
+  // Throttle to ~30fps
+  const now = Date.now();
+  if(now - _hoverThrottle < 33) return;
+  _hoverThrottle = now;
+
+  if(typeof cam === 'undefined') return;
+  const wx = (mx - cam.x) / cam.zoom / TILE;
+  const wy = (my - cam.y) / cam.zoom / TILE;
+  const t = _ensureHoverTooltip();
+
+  // Check humans first
+  if(typeof getAlive !== 'undefined'){
+    for(const h of getAlive()){
+      if(Math.hypot(h.tx-wx, h.ty-wy) < 1.5){
+        const civ = typeof civilizations!=='undefined'&&h.civId!=null ? civilizations.get(h.civId) : null;
+        const ACTION_ICONS_TT = {
+          'Descansando':'😴','Explorando':'🗺️','Recolectando':'🌿','Cazando':'🏹',
+          'Durmiendo':'💤','Construyendo':'🔨','Socializando':'💬','Pescando':'🎣',
+          'Minando':'⛏️','Reproduciéndose':'💕','Cultivando':'🌾','Fabricando':'⚙️',
+          'Curando':'💊','Liderando':'📣','Migrando':'🚶','Enfermo':'🤒',
+          'Destruyendo':'🔥','Fortificando':'🛡️','Patrullando':'👁️','Reparando':'🔧',
+        };
+        const aIcon = ACTION_ICONS_TT[h.action]||'❓';
+        const hpColor = h.health>60?'#3d3':h.health>30?'#fa0':'#f44';
+        t.innerHTML = `
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <span style="width:10px;height:10px;border-radius:50%;background:${h.color};display:inline-block;${civ?`box-shadow:0 0 0 1.5px ${civ.color}`:''}"></span>
+            <span style="color:#e8d5a3;font-weight:bold">${h.name}</span>
+            <span style="color:#556;font-size:9px">${h.gender==='M'?'♂':'♀'}</span>
+          </div>
+          ${civ?`<div style="color:${civ.color};font-size:9px;margin-bottom:3px">${civ.name}</div>`:''}
+          <div style="color:#aaa;font-size:10px;margin-bottom:3px">${aIcon} ${h.action} · ${Math.floor(h.age)} años</div>
+          <div style="display:flex;gap:3px;margin-bottom:2px">
+            <div style="flex:1;background:#0d1520;border-radius:2px;height:4px"><div style="width:${h.health}%;height:100%;background:${hpColor};border-radius:2px"></div></div>
+          </div>
+          <div style="color:#778;font-size:9px">❤️${Math.round(h.health)}% · 🧠${Math.floor(h.knowledge)} · ⚔️${h.kills}</div>
+        `;
+        t.style.display = 'block';
+        t.style.left = (mx+14)+'px';
+        t.style.top = (my-10)+'px';
+        // Keep in viewport
+        const rect = t.getBoundingClientRect();
+        if(rect.right > window.innerWidth) t.style.left = (mx-rect.width-10)+'px';
+        if(rect.bottom > window.innerHeight) t.style.top = (my-rect.height+10)+'px';
+        return;
+      }
+    }
+  }
+
+  // Check structures
+  if(typeof structures !== 'undefined'){
+    for(const s of structures){
+      if(Math.hypot(s.tx-wx, s.ty-wy) < 1.2){
+        const civ = s.civId!=null&&typeof civilizations!=='undefined' ? civilizations.get(s.civId) : null;
+        const hpPct = Math.round(s.hp/s.maxHp*100);
+        const hpColor = hpPct>60?'#3d3':hpPct>30?'#fa0':'#f44';
+        t.innerHTML = `
+          <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px">
+            <span style="font-size:14px">${s.icon}</span>
+            <span style="color:#e8d5a3;font-weight:bold">${s.label}</span>
+          </div>
+          ${civ?`<div style="color:${civ.color};font-size:9px;margin-bottom:2px">${civ.name}</div>`:''}
+          <div style="color:#778;font-size:9px;margin-bottom:3px">Construido por ${s.builtBy||'?'} · Año ${s.builtYear||'?'}</div>
+          <div style="display:flex;gap:3px;margin-bottom:2px">
+            <div style="flex:1;background:#0d1520;border-radius:2px;height:4px"><div style="width:${hpPct}%;height:100%;background:${hpColor};border-radius:2px"></div></div>
+          </div>
+          <div style="color:#778;font-size:9px">🏗️ ${Math.round(s.hp)}/${s.maxHp} HP</div>
+        `;
+        t.style.display = 'block';
+        t.style.left = (mx+14)+'px';
+        t.style.top = (my-10)+'px';
+        const rect = t.getBoundingClientRect();
+        if(rect.right > window.innerWidth) t.style.left = (mx-rect.width-10)+'px';
+        if(rect.bottom > window.innerHeight) t.style.top = (my-rect.height+10)+'px';
+        return;
+      }
+    }
+  }
+
+  // Nothing hovered
+  t.style.display = 'none';
+}
 canvas.addEventListener('mouseup',()=>drag.on=false);
-canvas.addEventListener('mouseleave',()=>drag.on=false);
 canvas.addEventListener('wheel',e=>{ e.preventDefault(); lastTs=null; zoomAt(e.clientX,e.clientY,e.deltaY<0?1.12:0.89); },{passive:false});
 
 let lastPinch=null;
@@ -636,29 +749,40 @@ function _buildCard(h){
   const civ=typeof civilizations!=='undefined'&&h.civId!=null?civilizations.get(h.civId):null;
   const badges=_getHumanBadges(h);
   const isSelected=h.id===_selectedHumanId;
-  const hpColor=h.health>60?'#4f4':h.health>30?'#fa0':'#f44';
-  const badgeHtml=badges.slice(0,3).map(b=>`<span style="font-size:9px;background:rgba(0,0,0,0.4);border:1px solid ${b.color}44;color:${b.color};border-radius:3px;padding:0 3px">${b.icon}${b.label}</span>`).join('');
-  const civDot=civ?`<span style="width:6px;height:6px;border-radius:50%;background:${civ.color};display:inline-block;flex-shrink:0;margin-right:2px"></span>`:'';
+  const hpColor=h.health>60?'#3d3':h.health>30?'#fa0':'#f44';
+  const badgeHtml=badges.slice(0,2).map(b=>`<span style="font-size:8px;background:rgba(0,0,0,0.4);border:1px solid ${b.color}44;color:${b.color};border-radius:3px;padding:0 3px">${b.icon}</span>`).join('');
+  const civDot=civ?`<span style="width:6px;height:6px;border-radius:50%;background:${civ.color};display:inline-block;flex-shrink:0;box-shadow:0 0 4px ${civ.color}88"></span>`:'';
+
+  // Action icon
+  const ACTION_ICONS_CARD = {
+    'Descansando':'😴','Explorando':'🗺️','Recolectando':'🌿','Cazando':'🏹',
+    'Durmiendo':'💤','Construyendo':'🔨','Socializando':'💬','Pescando':'🎣',
+    'Minando':'⛏️','Reproduciéndose':'💕','Cultivando':'🌾','Fabricando':'⚙️',
+    'Curando':'💊','Liderando':'📣','Migrando':'🚶','Enfermo':'🤒',
+    'Destruyendo':'🔥','Fortificando':'🛡️','Patrullando':'👁️','Reparando':'🔧',
+  };
+  const actionIcon=ACTION_ICONS_CARD[h.action]||'❓';
 
   return `<div class="human-card${isSelected?' selected':''}" data-hid="${h.id}">
-    <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
+    <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">
       <span style="width:9px;height:9px;border-radius:50%;background:${h.color};display:inline-block;flex-shrink:0;${civ?`box-shadow:0 0 0 1.5px ${civ.color}`:''}"></span>
       ${civDot}
-      <span class="human-name" style="font-size:0.75rem">${h.name.split(' ')[0]}</span>
-      <span style="color:#666;font-size:0.6rem">${h.gender==='M'?'♂':'♀'}</span>
-      <span style="margin-left:auto;color:#777;font-size:0.6rem">${Math.floor(h.age)}a</span>
+      <span class="human-name">${h.name.split(' ')[0]}</span>
+      <span style="color:#556;font-size:0.6rem">${h.gender==='M'?'♂':'♀'}</span>
+      ${badgeHtml}
+      <span style="margin-left:auto;color:#667;font-size:0.6rem">${Math.floor(h.age)}a</span>
+      <span style="font-size:10px;margin-left:2px" title="${h.action}">${actionIcon}</span>
     </div>
-    ${badgeHtml?`<div style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:2px">${badgeHtml}</div>`:''}
     <div style="display:flex;gap:3px;align-items:center;margin-bottom:2px">
-      <div style="flex:1;height:3px;background:#111;border-radius:2px"><div style="width:${h.health}%;height:100%;background:${hpColor};border-radius:2px"></div></div>
-      <div style="flex:1;height:3px;background:#111;border-radius:2px"><div style="width:${h.hunger}%;height:100%;background:#f90;border-radius:2px"></div></div>
-      <div style="flex:1;height:3px;background:#111;border-radius:2px"><div style="width:${Math.min(100,h.knowledge/200)}%;height:100%;background:#a8f;border-radius:2px"></div></div>
+      <div style="flex:1;height:3px;background:#0d1520;border-radius:2px"><div style="width:${h.health}%;height:100%;background:${hpColor};border-radius:2px"></div></div>
+      <div style="flex:1;height:3px;background:#0d1520;border-radius:2px"><div style="width:${h.hunger}%;height:100%;background:#f90;border-radius:2px"></div></div>
+      <div style="flex:1;height:3px;background:#0d1520;border-radius:2px"><div style="width:${Math.min(100,h.knowledge/200)}%;height:100%;background:#a8f;border-radius:2px"></div></div>
     </div>
-    <div style="font-size:0.6rem;color:#6a9;display:flex;gap:6px">
+    <div style="font-size:0.6rem;color:#6a9;display:flex;gap:5px">
       <span>🧠${Math.floor(h.knowledge)}</span>
       <span>👶${h.children}</span>
       <span>⚔️${h.kills}</span>
-      <span style="color:#888;margin-left:auto;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px">${h.action}</span>
+      ${civ?`<span style="color:${civ.color};margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70px">${civ.name.split(' ').slice(-1)[0]}</span>`:''}
     </div>
   </div>`;
 }
@@ -681,96 +805,153 @@ function _updateDetailPanel() {
   if(!h){ panel.style.display='none'; return; }
   panel.style.display='block';
 
-  const bar=(v,col='#4f4',label='')=>`<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px"><span style="color:#888;font-size:9px;width:52px;flex-shrink:0">${label}</span><div style="flex:1;background:#1a2030;border-radius:3px;height:6px"><div style="width:${Math.round(Math.max(0,Math.min(100,v)))}%;height:100%;background:${col};border-radius:3px;transition:width 0.3s"></div></div><span style="color:#aaa;font-size:9px;width:26px;text-align:right">${Math.round(v)}%</span></div>`;
+  const bar=(v,col,icon,label)=>{
+    const pct=Math.round(Math.max(0,Math.min(100,v)));
+    const glow=pct<25?`box-shadow:0 0 6px ${col}88`:'';
+    return `<div style="margin-bottom:4px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+        <span style="color:#778;font-size:9px">${icon} ${label}</span>
+        <span style="color:#aaa;font-size:9px;font-weight:bold">${pct}%</span>
+      </div>
+      <div style="background:#0d1520;border-radius:4px;height:5px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${col};border-radius:4px;transition:width 0.4s;${glow}"></div>
+      </div>
+    </div>`;
+  };
+
   const civ=typeof civilizations!=='undefined'&&h.civId!=null?civilizations.get(h.civId):null;
   const badges=_getHumanBadges(h);
-  const badgeHtml=badges.map(b=>`<span style="font-size:9px;background:rgba(0,0,0,0.5);border:1px solid ${b.color}55;color:${b.color};border-radius:3px;padding:1px 4px;margin-right:2px">${b.icon} ${b.label}</span>`).join('');
   const weaponIdx=Math.min(h.weaponTier,typeof WEAPON_TIERS!=='undefined'?WEAPON_TIERS.length-1:6);
   const weaponName=typeof WEAPON_TIERS!=='undefined'?WEAPON_TIERS[weaponIdx]:'?';
   const weaponIcon=typeof WEAPON_ICONS!=='undefined'?WEAPON_ICONS[weaponIdx]:'⚔️';
 
-  // Civ info with society tier
+  // Action icon map (same as renderer)
+  const ACTION_ICONS_UI = {
+    'Descansando':'😴','Explorando':'🗺️','Recolectando':'🌿','Cazando':'🏹',
+    'Durmiendo':'💤','Construyendo':'🔨','Socializando':'💬','Pescando':'🎣',
+    'Minando':'⛏️','Reproduciéndose':'💕','Cultivando':'🌾','Fabricando':'⚙️',
+    'Curando':'💊','Liderando':'📣','Migrando':'🚶','Enfermo':'🤒',
+    'Destruyendo':'🔥','Fortificando':'🛡️','Patrullando':'👁️','Reparando':'🔧',
+  };
+  const actionIcon=ACTION_ICONS_UI[h.action]||'❓';
+  const actionColor=h.action==='Cazando'||h.action==='Destruyendo'?'#f88':
+    h.action==='Construyendo'||h.action==='Reparando'?'#fa0':
+    h.action==='Socializando'||h.action==='Reproduciéndose'?'#f9a':
+    h.action==='Explorando'||h.action==='Migrando'?'#8cf':
+    h.action==='Recolectando'||h.action==='Cultivando'||h.action==='Pescando'?'#8f8':
+    h.action==='Enfermo'?'#f44':'#aaa';
+
+  // Civ block
   const societyTier=civ?.societyTier;
-  const civLine=civ
-    ?`<div style="color:${civ.color};font-size:11px;margin-bottom:3px;display:flex;align-items:center;gap:4px">
-        <span style="width:8px;height:8px;border-radius:50%;background:${civ.color};display:inline-block"></span>
-        <b>${civ.name}</b>
-        ${societyTier?`<span style="color:#aaa;font-size:9px">${societyTier.icon} ${societyTier.name}</span>`:''}
-        <span style="color:#666;font-size:9px;margin-left:auto">Tech ${civ.techLevel}</span>
+  const civBlock=civ
+    ?`<div style="background:rgba(0,0,0,0.3);border:1px solid ${civ.color}33;border-radius:6px;padding:5px 8px;margin-bottom:5px;display:flex;align-items:center;gap:6px">
+        <span style="width:10px;height:10px;border-radius:50%;background:${civ.color};display:inline-block;flex-shrink:0;box-shadow:0 0 6px ${civ.color}88"></span>
+        <div style="flex:1;min-width:0">
+          <div style="color:${civ.color};font-size:11px;font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${civ.name}</div>
+          ${societyTier?`<div style="color:#778;font-size:9px">${societyTier.icon} ${societyTier.name} · Tech ${civ.techLevel}</div>`:''}
+        </div>
+        ${civ.atWarWith&&civ.atWarWith.size>0?`<span style="color:#f44;font-size:10px">⚔️ En guerra</span>`:''}
       </div>`
-    :'<div style="color:#666;font-size:11px;margin-bottom:3px">Sin civilización</div>';
+    :'<div style="color:#556;font-size:10px;margin-bottom:5px;padding:3px 0">🏕️ Sin civilización</div>';
 
-  // Formation info if soldier
-  const formationInfo=h.isSoldier&&civ&&typeof _getFormationType!=='undefined'
-    ?`<div style="color:#f88;font-size:10px;margin-bottom:3px">⚔️ Soldado · ${_getFormationType(civ.techLevel).name} · ${weaponIcon} ${weaponName}</div>`
-    :'';
+  // Status alerts
+  const alerts=[];
+  if(h.sick) alerts.push(`<div style="background:rgba(255,50,50,0.12);border:1px solid rgba(255,50,50,0.25);border-radius:5px;padding:3px 7px;color:#f88;font-size:10px;margin-bottom:3px">🦠 ${h.sickType?.name||'Enfermo'} — ${Math.ceil(h.sickTimer||0)} años</div>`);
+  if(h._trauma>30) alerts.push(`<div style="background:rgba(255,100,150,0.1);border:1px solid rgba(255,100,150,0.2);border-radius:5px;padding:3px 7px;color:#f8a;font-size:10px;margin-bottom:3px">💔 Trauma ${Math.round(h._trauma)}% ${h._veteranLevel>=2?'· 🏆 Leyenda':h._veteranLevel>=1?'· 🎖️ Veterano':''}</div>`);
+  if(typeof _goldenAgeCivs!=='undefined'&&civ&&_goldenAgeCivs.has(civ.id)){
+    const ga=_goldenAgeCivs.get(civ.id);
+    alerts.push(`<div style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.2);border-radius:5px;padding:3px 7px;color:#ffd700;font-size:10px;margin-bottom:3px">🌟 Edad de Oro — ${ga.yearsLeft} años</div>`);
+  }
+  if(h.isSoldier&&civ&&typeof _getFormationType!=='undefined'){
+    const ft=_getFormationType(civ.techLevel);
+    alerts.push(`<div style="background:rgba(255,80,80,0.08);border:1px solid rgba(255,80,80,0.2);border-radius:5px;padding:3px 7px;color:#f88;font-size:10px;margin-bottom:3px">⚔️ ${ft.name} · ${weaponIcon} ${weaponName}</div>`);
+  }
+  if(typeof _activeSpies2!=='undefined'){
+    const spy=_activeSpies2.find(s=>s.spyId===h.id);
+    if(spy) alerts.push(`<div style="background:rgba(170,68,255,0.1);border:1px solid rgba(170,68,255,0.25);border-radius:5px;padding:3px 7px;color:#a8f;font-size:10px;margin-bottom:3px">🕵️ Misión: ${spy.missionType.replace('_',' ')} — ${spy.yearsLeft} años</div>`);
+  }
 
-  // Disease
-  const diseaseLine=h.sick?`<div style="color:#f88;font-size:10px;margin-bottom:3px;background:rgba(255,50,50,0.1);border-radius:4px;padding:2px 5px">🦠 ${h.sickType?.name||'Enfermo'} — ${Math.ceil(h.sickTimer)} años restantes</div>`:'';
+  // Traits mini-bars
+  const traitBar=(v,icon)=>{
+    const pct=Math.round(Math.max(0,Math.min(100,v)));
+    const col=pct>70?'#4f4':pct>40?'#fa0':'#f44';
+    return `<div style="display:flex;align-items:center;gap:3px;flex:1">
+      <span style="font-size:9px">${icon}</span>
+      <div style="flex:1;background:#0d1520;border-radius:2px;height:3px">
+        <div style="width:${pct}%;height:100%;background:${col};border-radius:2px"></div>
+      </div>
+    </div>`;
+  };
 
-  // Trauma
-  const traumaLine=h._trauma>30?`<div style="color:#f8a;font-size:10px;margin-bottom:3px">💔 Trauma de guerra: ${Math.round(h._trauma)}% ${h._veteranLevel>=2?'🏆 Leyenda':h._veteranLevel>=1?'🎖️ Veterano':''}</div>`:'';
-
-  // Golden age
-  const goldenAgeActive=typeof _goldenAgeCivs!=='undefined'&&civ&&_goldenAgeCivs.has(civ.id);
-  const goldenAgeLine=goldenAgeActive?`<div style="color:#ffd700;font-size:10px;margin-bottom:3px;background:rgba(255,215,0,0.08);border-radius:4px;padding:2px 5px">🌟 Edad de Oro — ${_goldenAgeCivs.get(civ.id).yearsLeft} años restantes</div>`:'';
-
-  // Spy mission
-  const spyMission=typeof _activeSpies2!=='undefined'?_activeSpies2.find(s=>s.spyId===h.id):null;
-  const spyLine=spyMission?`<div style="color:#a8f;font-size:10px;margin-bottom:3px">🕵️ En misión: ${spyMission.missionType.replace('_',' ')} — ${spyMission.yearsLeft} años</div>`:'';
-
-  // Inventory — visual icons
+  // Inventory
   const invItems=[];
-  if(h.inventory.food>0) invItems.push(`<span title="Comida">🍖×${h.inventory.food}</span>`);
-  if(h.inventory.wood>0) invItems.push(`<span title="Madera">🪵×${h.inventory.wood}</span>`);
-  if(h.inventory.stone>0) invItems.push(`<span title="Piedra">🪨×${h.inventory.stone}</span>`);
-  if(h.isSoldier) invItems.push(`<span title="Arma">${weaponIcon}</span>`);
-  if(h.sick) invItems.push(`<span title="Enfermo">🦠</span>`);
-  if(h.partner) invItems.push(`<span title="Tiene pareja">💑</span>`);
-  if(h._isBandit) invItems.push(`<span title="Bandido">🗡️</span>`);
-  if(h._isMercenary) invItems.push(`<span title="Mercenario">💰</span>`);
-  if(h._veteranLevel>=2) invItems.push(`<span title="Leyenda">🏆</span>`);
-  else if(h._veteranLevel>=1) invItems.push(`<span title="Veterano">🎖️</span>`);
-  const invHtml=invItems.length>0
-    ?`<div style="background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.08);border-radius:5px;padding:4px 6px;margin-bottom:4px;display:flex;flex-wrap:wrap;gap:5px;font-size:13px">${invItems.join('')}</div>`
-    :'';
+  if(h.inventory.food>0) invItems.push(`<span style="background:rgba(255,150,0,0.15);border:1px solid rgba(255,150,0,0.25);border-radius:4px;padding:1px 5px;font-size:11px" title="Comida">🍖 ${h.inventory.food}</span>`);
+  if(h.inventory.wood>0) invItems.push(`<span style="background:rgba(100,180,80,0.15);border:1px solid rgba(100,180,80,0.25);border-radius:4px;padding:1px 5px;font-size:11px" title="Madera">🪵 ${h.inventory.wood}</span>`);
+  if(h.inventory.stone>0) invItems.push(`<span style="background:rgba(150,150,150,0.15);border:1px solid rgba(150,150,150,0.25);border-radius:4px;padding:1px 5px;font-size:11px" title="Piedra">🪨 ${h.inventory.stone}</span>`);
+  if(h.partner){const p=getHuman(h.partner);if(p)invItems.push(`<span style="background:rgba(255,100,150,0.15);border:1px solid rgba(255,100,150,0.25);border-radius:4px;padding:1px 5px;font-size:11px" title="Pareja">💑 ${p.name.split(' ')[0]}</span>`);}
+  if(h._isBandit) invItems.push(`<span style="background:rgba(200,50,50,0.15);border:1px solid rgba(200,50,50,0.25);border-radius:4px;padding:1px 5px;font-size:11px">🗡️ Bandido</span>`);
+  if(h._isMercenary) invItems.push(`<span style="background:rgba(255,200,0,0.15);border:1px solid rgba(255,200,0,0.25);border-radius:4px;padding:1px 5px;font-size:11px">💰 Mercenario</span>`);
 
-  // Life story — rich narrative
+  // Life story
   const lifeStory=_buildLifeStory(h,civ);
-
-  // Personality summary
   const personality=_getPersonalityDesc(h);
 
-  // Recent log
-  const logHtml=h.log.slice(0,6).map(l=>`<div style="color:#667;font-size:9px;line-height:1.4;border-bottom:1px solid rgba(255,255,255,0.03);padding:1px 0">${l}</div>`).join('')||'<div style="color:#445;font-size:9px">Sin eventos aún</div>';
+  // Recent log — styled entries
+  const logEntries=h.log.slice(0,5).map(l=>`<div style="color:#667;font-size:9px;line-height:1.5;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.03)">${l}</div>`).join('')||'<div style="color:#445;font-size:9px;font-style:italic">Sin eventos recientes</div>';
+
+  // Badges
+  const badgeHtml=badges.map(b=>`<span style="font-size:9px;background:rgba(0,0,0,0.5);border:1px solid ${b.color}44;color:${b.color};border-radius:3px;padding:1px 5px">${b.icon} ${b.label}</span>`).join('');
 
   panel.innerHTML=`
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-      <span style="width:14px;height:14px;border-radius:50%;background:${h.color};display:inline-block;flex-shrink:0;${civ?`box-shadow:0 0 0 2px ${civ.color}`:''}"></span>
-      <div>
-        <b style="color:#adf;font-size:13px">${h.name}</b>
-        <span style="color:#888;font-size:10px;margin-left:4px">${h.gender==='M'?'♂':'♀'} · ${Math.floor(h.age)} años</span>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+      <span style="width:16px;height:16px;border-radius:50%;background:${h.color};display:inline-block;flex-shrink:0;${civ?`box-shadow:0 0 0 2px ${civ.color},0 0 8px ${civ.color}55`:`box-shadow:0 0 6px ${h.color}88`}"></span>
+      <div style="flex:1;min-width:0">
+        <div style="color:#e8d5a3;font-size:13px;font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.name}</div>
+        <div style="color:#778;font-size:9px">${h.gender==='M'?'♂ Hombre':'♀ Mujer'} · ${Math.floor(h.age)} años · ${h.homeBase?h.homeBase.label:'Nómada'}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:1.2rem">${actionIcon}</div>
+        <div style="color:${actionColor};font-size:8px;white-space:nowrap">${h.action}</div>
       </div>
     </div>
-    ${badges.length?`<div style="margin-bottom:5px;flex-wrap:wrap;display:flex;gap:2px">${badgeHtml}</div>`:''}
-    ${civLine}${formationInfo}${diseaseLine}${traumaLine}${goldenAgeLine}${spyLine}
-    <div style="color:#8ac;font-size:10px;margin-bottom:4px;font-style:italic">${personality}</div>
-    <div style="color:#8c8;font-style:italic;margin-bottom:5px;font-size:11px;background:rgba(0,255,100,0.05);border-radius:4px;padding:2px 5px">${h.action}</div>
-    ${bar(h.health,'#4f4','❤️ Salud')}
-    ${bar(h.hunger,'#f90','🍖 Hambre')}
-    ${bar(h.energy,'#48f','⚡ Energía')}
-    ${bar(h.social,'#f4a','🗣️ Social')}
-    <div style="margin:4px 0 2px;color:#a8f;font-size:10px">🧠 Conocimiento: <b>${Math.floor(h.knowledge).toLocaleString()}</b> · 💰 Riqueza: <b>${Math.floor(h.wealth)}</b></div>
-    <div style="color:#8ac;font-size:10px;margin-bottom:4px">💪${h.traits.strength} 🗣${h.traits.charisma} 🧠${h.traits.intellect} 🌱${h.traits.fertility} · 🎯${h.aggression.toFixed(2)}</div>
-    <div style="color:#aaa;font-size:10px;margin-bottom:4px">👶 ${h.children} hijos · ⚔️ ${h.kills} victorias · 🏠 ${h.homeBase?h.homeBase.label:'Sin hogar'}</div>
-    <div style="font-size:10px;color:#888;margin-bottom:3px">🎒 Inventario:</div>
-    ${invHtml}
-    <div style="font-size:10px;color:#7a9;margin-bottom:3px;font-style:italic;line-height:1.4">${lifeStory}</div>
-    <div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:4px;margin-top:2px">
-      <div style="color:#556;font-size:9px;margin-bottom:2px;text-transform:uppercase;letter-spacing:1px">Historial reciente</div>
-      ${logHtml}
+
+    ${badges.length?`<div style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px">${badgeHtml}</div>`:''}
+
+    ${civBlock}
+    ${alerts.join('')}
+
+    <div style="color:#8ac;font-size:9px;margin-bottom:5px;font-style:italic;line-height:1.4">${personality} · ${lifeStory}</div>
+
+    <div style="margin-bottom:6px">
+      ${bar(h.health, h.health>60?'#3d3':h.health>30?'#fa0':'#f44', '❤️', 'Salud')}
+      ${bar(h.hunger, '#f90', '🍖', 'Hambre')}
+      ${bar(h.energy||50, '#48f', '⚡', 'Energía')}
+      ${bar(h.social, '#f4a', '🗣️', 'Social')}
     </div>
-    <button onclick="focusHuman(${h.id})" style="margin-top:7px;width:100%;background:rgba(100,160,255,0.15);border:1px solid rgba(100,160,255,0.3);color:#adf;border-radius:5px;padding:4px;cursor:pointer;font-size:11px">📍 Centrar cámara</button>
+
+    <div style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:6px 8px;margin-bottom:5px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="color:#a8f;font-size:10px">🧠 ${Math.floor(h.knowledge).toLocaleString()}</span>
+        <span style="color:#fda;font-size:10px">💰 ${Math.floor(h.wealth)}</span>
+        <span style="color:#8cf;font-size:10px">👶 ${h.children}</span>
+        <span style="color:#f88;font-size:10px">⚔️ ${h.kills}</span>
+      </div>
+      <div style="display:flex;gap:4px">
+        ${traitBar(h.traits.strength,'💪')}
+        ${traitBar(h.traits.charisma,'🗣️')}
+        ${traitBar(h.traits.intellect,'🧠')}
+        ${traitBar(h.traits.fertility,'🌱')}
+      </div>
+    </div>
+
+    ${invItems.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:5px">${invItems.join('')}</div>`:''}
+
+    <div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:5px;margin-top:2px">
+      <div style="color:#445;font-size:8px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px">Historial</div>
+      ${logEntries}
+    </div>
+
+    <button onclick="focusHuman(${h.id})" style="margin-top:7px;width:100%;background:rgba(100,160,255,0.12);border:1px solid rgba(100,160,255,0.25);color:#8cf;border-radius:6px;padding:5px;cursor:pointer;font-size:10px;font-family:monospace;transition:background 0.15s" onmouseover="this.style.background='rgba(100,160,255,0.22)'" onmouseout="this.style.background='rgba(100,160,255,0.12)'">📍 Centrar cámara</button>
   `;
 }
 
@@ -997,8 +1178,8 @@ function loop(ts){
   if(!_autoFollowMode&&_trackedHumanId!==null){
     const h=getHuman(_trackedHumanId);
     if(h&&h.alive){
-      const targetX=canvas.width/2-h.px*cam.zoom;
-      const targetY=canvas.height/2-h.py*cam.zoom;
+      const targetX=_cw()/2-h.px*cam.zoom;
+      const targetY=_ch()/2-h.py*cam.zoom;
       cam.x+=(targetX-cam.x)*0.08;
       cam.y+=(targetY-cam.y)*0.08;
       clampCamera();

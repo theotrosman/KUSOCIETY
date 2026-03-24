@@ -1201,11 +1201,10 @@ class NeuralBrain{
   reinforce(inp,actionIdx,reward){
     // Skip trivial updates — saves CPU on large populations
     if(Math.abs(reward)<0.002)return;
+    // Store only the action index and reward — not the full input (saves RAM)
     this.memory.push({inp:Float32Array.from(inp),actionIdx,reward});
-    if(this.memory.length>4)this.memory.shift(); // 8→4 saves RAM
-    // Only replay last 2 memories for speed
-    const start=Math.max(0,this.memory.length-2);
-    for(let m=start;m<this.memory.length;m++){
+    if(this.memory.length>2)this.memory.shift(); // cap at 2 memories
+    for(let m=0;m<this.memory.length;m++){
       const e=this.memory[m];
       const p=this.forward(e.inp);
       const eff=this.lr*e.reward;
@@ -1538,6 +1537,7 @@ class Human{
       if(this.sickTimer<=0||this.health<=0){
         if(this.health<=0&&!_immortal){this._die(this.sickType.name);return;}
         this.sick=false;this.immunity.add(this.sickType.name);
+        if(this.immunity.size>5){this.immunity.delete(this.immunity.values().next().value);}
         this.health=Math.max(1,this.health);
         this.addLog(`Se recuperó de ${this.sickType.name}`);this.sickType=null;
       }
@@ -1730,6 +1730,19 @@ class Human{
     const nearHuman=nearby.length>0?1:0;
     const reproReady=(this.age>=16&&this.age<=45&&this.reproTimer<=0&&this.hunger>50&&this.energy>40&&this._canReproduce)?1:0;
     const nearEnemy=this._findNearbyEnemy(nearby)?1:0;
+
+    // Force build BEFORE brain — brain never learns to build (no immediate reward)
+    // At high knowledge, humans should be building constantly
+    const _buildThreshold2 = this.knowledge > 5000 ? 0.55 : 0.75;
+    if(this._buildUrge>=_buildThreshold2&&this.hunger>40&&this.energy>25&&
+       (this.inventory.wood>=2||this.inventory.stone>=2)){
+      this._buildUrge=0;this._doBuild();
+      // Still run brain for learning but don't override the build action
+      const inputs2=[this.hunger/100,this.energy/100,this.health/100,nearFood,nearHuman,this.homeBase?1:0,Math.min(1,this.knowledge/2000)*intelMult,this.social/100,reproReady,Math.min(1,crowding/5),nearEnemy,this.aggression];
+      this.brain.reinforce(inputs2,5,0.3); // reward build action
+      this._prevHealth=this.health;this._prevHunger=this.hunger;
+      return;
+    }
 
     const inputs=[
       this.hunger/100, this.energy/100, this.health/100,
@@ -2127,15 +2140,25 @@ class Human{
           addChronicle('war',`${this.name.split(' ')[0]}: 25 victorias en combate`,`Veinticinco enemigos caídos. ${this.name.split(' ')[0]} de ${civName} se ha convertido en una fuerza de la naturaleza. Los bardos ya cantan sus hazañas. Los niños imitan sus movimientos. Los enemigos rezan para no cruzarse en su camino.`,'🗡️');
         }
         if(typeof registerCombat!=='undefined') registerCombat(enemy.tx,enemy.ty,true);
+        // Check if fight happened near a colosseum — trigger epic spectacle
+        if(typeof triggerColosseumBattle !== 'undefined'){
+          triggerColosseumBattle(this, enemy, true);
+        }
         enemy._die('combate');
       } else {
         if(typeof registerCombat!=='undefined') registerCombat(this.tx,this.ty,false);
+        if(typeof triggerColosseumBattle !== 'undefined'){
+          triggerColosseumBattle(this, enemy, false);
+        }
       }
     } else {
       const dmg=3+Math.floor(this._rng()*6);
       this.health=Math.max(0,this.health-dmg);
       this._warFlash=3;
       if(typeof registerCombat!=='undefined') registerCombat(this.tx,this.ty,false);
+      if(typeof triggerColosseumBattle !== 'undefined'){
+        triggerColosseumBattle(enemy, this, false);
+      }
     }
     this._warTimer=3+Math.floor(this._rng()*4);
     this.action=ACTIONS.LEAD;
@@ -3056,6 +3079,10 @@ class Human{
     this.alive=false;this.action=`Murió (${cause})`;
     this.addLog(`Murió de ${cause} a los ${Math.floor(this.age)} años`);
     _spatialRemove(this);
+    // Free memory — clear large per-human arrays/objects on death
+    this._nearbyCached.length=0;
+    this.immunity.clear();
+    this.log.length=0;
     if(typeof registerDeath!=='undefined') try{registerDeath(this,cause);}catch(e){}
     if(this.civId){
       const civ=civilizations.get(this.civId);
@@ -3076,7 +3103,15 @@ class Human{
     if(this.isProdigy){
       addMajorEvent(`✨ ${this.name.split(' ')[0]} (${this.prodigyType?.icon||'✨'} ${this.prodigyType?.name||'Prodigio'}) murió a los ${Math.floor(this.age)} años — su legado perdura`);
       addChronicle('wonder', `Muere ${this.name}, ${this.prodigyType?.name||'Prodigio'}`, `A los ${Math.floor(this.age)} años, ${this.name} cerró los ojos por última vez. Había llegado como una tormenta y se fue como el viento. ${this.kills>0?`${this.kills} enemigos cayeron ante él/ella. `:''}${this.children>0?`Dejó ${this.children} hijos. `:''}El mundo es un poco más oscuro sin ${this.prodigyType?.icon||'✨'} ${this.name.split(' ')[0]}.`, this.prodigyType?.icon||'✨');
-    } else if(this.children>0||this.isLeader||this.kills>2){
+      if(typeof pushEventNotif !== 'undefined') pushEventNotif('✨', `${this.name.split(' ')[0]} el Prodigio ha muerto (${Math.floor(this.age)} años)`, '#ffd700', this.tx, this.ty);
+    } else if(this.isLeader){
+      addWorldEvent(`💀 ${this.name.split(' ')[0]} murió de ${cause} (${Math.floor(this.age)}a, ${this.children} hijos, ${this.kills} victorias)`);
+      if(typeof pushEventNotif !== 'undefined'){
+        const civ2 = this.civId != null ? civilizations.get(this.civId) : null;
+        const civName = civ2 ? civ2.name : '';
+        pushEventNotif('👑', `Rey ${this.name.split(' ')[0]} de ${civName} ha muerto`, '#fda', this.tx, this.ty);
+      }
+    } else if(this.children>0||this.kills>2){
       addWorldEvent(`💀 ${this.name.split(' ')[0]} murió de ${cause} (${Math.floor(this.age)}a, ${this.children} hijos, ${this.kills} victorias)`);
     }
   }
@@ -3716,13 +3751,17 @@ function tickHumans(yearsElapsed){
   // Compact humans array — remove dead humans when they pile up to prevent memory leak
   // Only compact when dead count exceeds threshold to avoid frequent GC pressure
   const deadCount = humans.length - _cachedAliveCount;
-  if(deadCount > 200){
+  if(deadCount > 50){
     let w=0;
     for(let i=0;i<humans.length;i++){
       if(humans[i].alive){
         humans[w++]=humans[i];
       } else {
         _humanById.delete(humans[i].id);
+        // Null out brain to free neural net memory
+        humans[i].brain=null;
+        humans[i].inventory=null;
+        humans[i].traits=null;
       }
     }
     humans.length=w;

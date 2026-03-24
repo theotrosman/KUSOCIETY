@@ -842,6 +842,7 @@ function tickDiseaseMutation(yearsElapsed) {
       cure: original.cure * 1.5,
     };
     DISEASE_TYPES.push(mutant);
+    if(DISEASE_TYPES.length > 20) DISEASE_TYPES.shift(); // cap mutant diseases
     // Lanzar brote inmediato de la variante
     const host = _cachedAlive[Math.floor(Math.random() * _cachedAlive.length)];
     activeOutbreaks.push({ type: mutant, tx: host.tx, ty: host.ty, radius: 8 + Math.floor(Math.random() * 6), yearsLeft: mutant.duration });
@@ -1075,7 +1076,9 @@ function tickDynasticLegacy(yearsElapsed) {
     const prevLeaderName = leader ? leader.name.split(' ')[0] : '?';
     // Registrar en historial dinástico
     if (!_dynastyHistory.has(civ.id)) _dynastyHistory.set(civ.id, []);
-    _dynastyHistory.get(civ.id).push({ leaderName: prevLeaderName, yearStart: civ.founded, yearEnd: year });
+    const _dh = _dynastyHistory.get(civ.id);
+    _dh.push({ leaderName: prevLeaderName, yearStart: civ.founded, yearEnd: year });
+    if(_dh.length > 20) _dh.shift(); // cap per-civ dynasty history
     const dynastyLen = _dynastyHistory.get(civ.id).length;
     // Bonus al heredero: stats escalados por longitud de la dinastía
     const bonus = Math.min(30, dynastyLen * 5);
@@ -1784,6 +1787,7 @@ function tickGlobalClimate(yearsElapsed) {
     }
     if (!newBiome) continue;
     _climateChangedTiles.push({ tx, ty, originalBiome: cell.biome });
+    if(_climateChangedTiles.length > 500) _climateChangedTiles.shift();
     if (typeof modifyTerrain !== 'undefined') modifyTerrain(tx, ty, newBiome);
   }
   // Forzar migraciones desde zonas afectadas
@@ -1877,6 +1881,7 @@ function tickBattlefieldLegacy(yearsElapsed) {
     }
 
     _battlefields.push({ tx: zone.tx, ty: zone.ty, name: battleName, year, civA: civAName, civB: civBName, casualties, knowledgeBonus });
+    if(_battlefields.length>40) _battlefields.shift(); // cap memory
     addMajorEvent(`⚔️ La ${battleName} quedará en la historia — ${casualties} combatientes, ${civAName} vs ${civBName}`);
 
     // Pick a varied battle body
@@ -2057,6 +2062,7 @@ function tickLegendaryHeroes(yearsElapsed) {
     const civ = civilizations.get(h.civId);
     if (!civ) continue;
     _legends.push({ name: h.name, civId: h.civId, knowledge: h.knowledge, year: year });
+    if(_legends.length > 30) _legends.shift();
     // bonus a toda la civ
     for (const m of _cachedAlive.filter(x => x.civId === h.civId)) {
       m.knowledge = Math.min(99999, m.knowledge + 50);
@@ -3436,6 +3442,7 @@ function tickAdvancedDiplomacy(yearsElapsed) {
 
       best.effect(civA, civB);
       _treaties.push({ civA: civA.id, civB: civB.id, type: best.id, year, duration: best.duration });
+      if(_treaties.length > 30) _treaties.shift();
       addMajorEvent(`${best.icon} ${civA.name} y ${civB.name} firman un ${best.name}`);
       addChronicle('diplomacy', `${best.name}: ${civA.name} & ${civB.name}`,
         `Los representantes de ambas naciones se reunieron y sellaron un acuerdo que cambiaría sus relaciones para siempre. El ${best.name} fue firmado ante testigos de ambos pueblos.`, best.icon);
@@ -3495,6 +3502,7 @@ function tickTourism(yearsElapsed) {
     const anchor = epicStructures[Math.floor(Math.random() * epicStructures.length)];
     const siteName = TOURIST_SITE_NAMES[Math.floor(Math.random() * TOURIST_SITE_NAMES.length)];
     _touristSites.push({ civId: civ.id, tx: anchor.tx, ty: anchor.ty, name: siteName, visitors: 0, income: 0 });
+    if(_touristSites.length > 20) _touristSites.shift();
     addWorldEvent(`🗺️ ${civ.name} establece el ${siteName} como destino turístico`);
   }
 
@@ -3807,6 +3815,7 @@ function tickMercenaries(yearsElapsed) {
     const band = loners.slice(0, Math.min(5, loners.length));
     for (const m of band) { m._isMercenary = true; m.color = '#cc8800'; }
     _mercenaryBands.push({ leaderId: leader.id, members: band.map(m => m.id), hireCost: 20 + band.length * 5, tx: leader.tx, ty: leader.ty });
+    if(_mercenaryBands.length > 10) _mercenaryBands.shift();
     addWorldEvent(`⚔️💰 Banda de mercenarios formada: ${leader.name.split(' ')[0]} lidera ${band.length} guerreros de alquiler`);
   }
   // Civs en guerra contratan mercenarios
